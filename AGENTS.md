@@ -247,6 +247,7 @@ doctrine/V4-ACCOUNTING.md how the pool manager keeps its books, operation by ope
 doctrine/JUDGES.md      the questions every step answers, the usual tool for each, when to skip, what each cannot see
 doctrine/RETROFIT.md    arriving at a hook that already exists: mapping it onto the kit without modifying it
 doctrine/CHANGES.md     sketch mode, measuring variants before deciding, comparing two revisions, reopening a release
+doctrine/SIMULATE.md    the simulation sandbox: when to run it, the rules that make a number mean something, how it lies
 briefs/                 one template per role; fill the placeholders
 state/                  the convention to install in the owner's project
 foundry-kit/            hostile token, invariant skeleton + census, toy example

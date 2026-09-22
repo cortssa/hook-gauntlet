@@ -134,13 +134,21 @@ mv "$WORK/$FILE.mutated" "$WORK/$FILE"
 } | tee "$LOG"
 
 cd "$WORK" || exit 2
+# The mutant is built with --force, like the baseline above it. The reason is one incident (2026-09-22): a batch of
+# eight mutants of a contract the test deploys with `new` all reported SURVIVED with gas identical to the baseline to
+# the unit, and five died on a cleared build. The cause was NOT established - an attempt to reproduce the "stale
+# creation code kept by an incremental build" story (same shape, dirty tree) went red on the incremental build exactly
+# as on the clean one, and a mutation applied to a file forge never compiled explains the same symptoms. The "compiled
+# nothing" guard below sees neither case, so the build is forced regardless. It costs a full compile per mutant, a
+# fair price for a precaution in the one tool whose job is to tell a real red from a false green.
 # shellcheck disable=SC2086
-forge build $FORGE_FLAGS > "$LOG.build" 2>&1
+forge build --force $FORGE_FLAGS > "$LOG.build" 2>&1
 rc_build=$?
 cat "$LOG.build" >> "$LOG"
-# a build that compiled nothing after a source change means the change was not seen: refuse to call that a result
+# kept as a belt over the braces: with --force this should be unreachable, and if it ever fires the assumption above
+# is wrong and every result from this tool is in question
 if [ "$rc_build" -eq 0 ] && grep -q -i "No files changed, compilation skipped" "$LOG.build"; then
-  echo "mutate: forge compiled NOTHING after the change was applied. The mutant was not built. NOTHING PROVEN." | tee -a "$LOG"
+  echo "mutate: forge compiled NOTHING after the change was applied, DESPITE --force. NOTHING PROVEN." | tee -a "$LOG"
   rm -f "$LOG.build"; exit 2
 fi
 rm -f "$LOG.build"
@@ -156,7 +164,20 @@ cat "$LOG.test" >> "$LOG"
 mut_passed="$(passed_in "$LOG.test")"
 # forge prints every failing test twice (inside its suite, and again under "Failing tests:"): count DISTINCT lines
 mut_fails="$(grep -E '^\[FAIL' "$LOG.test" | cut -c1-160 | sort -u | wc -l | tr -d ' ')"
+# A mutant that breaks `setUp()` prints `[FAIL: setup failed: ...]` and would be counted as a kill, but NO TEST RAN
+# and no claim was tested: the mutant broke the fixture, not the thing the test asserts. That is NOTHING PROVEN, the
+# same as a mutant that does not compile. Found 2026-09-22 by a verifier reading this script rather than its output.
+# forge has TWO shapes for this and the guard must match both: `[FAIL: setup failed: ...] testName()` and
+# `[FAIL: <the revert reason>] setUp()`. The second one is what a real bricked fixture printed when this guard was
+# first tried, and the first version of the guard missed it.
+setup_fails="$(grep -E '^\[FAIL: setup failed|^\[FAIL.*\] setUp\(\)' "$LOG.test" | cut -c1-160 | sort -u | wc -l | tr -d ' ')"
 rm -f "$LOG.test.keep"; mv "$LOG.test" "$LOG.test.keep"
+
+if [ "$setup_fails" -gt 0 ]; then
+  echo "mutate: the mutant broke setUp(), so no test ran and no claim was tested. NOTHING PROVEN (see $LOG):" | tee -a "$LOG"
+  grep -E '^\[FAIL: setup failed|^\[FAIL.*\] setUp\(\)' "$LOG.test.keep" | cut -c1-160 | sort -u | head -5
+  rm -f "$LOG.test.keep"; exit 2
+fi
 
 if [ "$EXPECT" = "red" ]; then
   if [ "$rc_test" -ne 0 ] && [ "$mut_fails" -gt 0 ]; then

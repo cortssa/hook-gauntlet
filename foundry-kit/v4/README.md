@@ -355,6 +355,127 @@ restriction. It costs about three seconds of the build. Without it `forge build 
 
 ---
 
+## The simulation sandbox
+
+When to run it, the rules that make its numbers mean something, and how it lies: `doctrine/SIMULATE.md`. The pieces:
+
+### Step 1: engine and calibration
+
+`src/sim/` is a different kind of judge from everything above. A fuzz campaign searches for ONE sequence that breaks
+a rule. A simulation measures a DISTRIBUTION: given a population of agents, a clock with the target chain's cadence
+and an ordering model, who ends richer, who poorer, and how far execution drifts from the quote. Its evidence label
+is SUPPORTED (`doctrine/EVIDENCE.md`) and never more: it only measures the attacks somebody wrote an agent for.
+
+| file | what it is |
+| --- | --- |
+| `src/sim/ISimAgent.sol` | an agent is a contract with a wallet and three verbs: `observe`, `decide`, `settle`; an `Intent` is quoted when decided and executed `latency` steps later |
+| `src/sim/SimClock.sol` | the chain's cadence as parameters: L2 block time, and whether `block.number` is an L1 estimate (it is, on Arbitrum-style chains: one hook "block" spans ~120 sequencer blocks) |
+| `src/sim/SimLedger.sol` | per-agent books: decided / executed / refused, in / out / quoted, shortfall and windfall against the quote, gas, P&L in the quote currency - gross (`pnl`) and net of gas (`pnlNetOfGas`, at the price of gas the SCENARIO sets with `setGasPrice`, in raw quote per gas x 1e18; 0 is allowed but must be said, or the net P&L and the dump line refuse to run); one line per agent per run to `GAUNTLET_SIM`, ending `pnl  gasCost  pnlNet`. `test/sim/LedgerGas.t.sol` holds it to that |
+| `src/sim/SimEngine.sol` | the engine, with no opinion about the hook: the loop, the clock, FCFS ordering, the queue, the books - and four verbs a project binds (`_quote`, `_execute`, `_sqrtPriceNow`, `_balances`) |
+| `src/sim/ExampleScenario.sol` | the engine bound to the example hook: the quote is a snapshot-and-revert of the real swap (the same code path as the execution), `minOut` enforced as a router would. A project with its own router or quoter copies this file and binds its own |
+| `src/sim/agents/HonestTrader.sol` | the population's floor: fixed size every N steps, alternating, a slippage rule, a latency |
+| `test/sim/Calibration.t.sol` | THE MANDATORY FIRST RUN: one honest agent, zero latency, alone - quote equals execution to the wei, ledger equals wallet, nothing refused. If this is red the sandbox is wrong and no number it produces counts |
+| `test/sim/PartialFill.t.sol` | the calibration's blind spot: all the liquidity in one narrow range, so a swap bigger than the range walks out of it and the pool takes LESS than the input offered. The ledger must charge `Fill.amountInUsed`, not `Intent.amountIn`. Written because a mutant that charged the offered input SURVIVED the calibration - on a full-range pool every swap takes its whole input |
+| `scripts/sim-report.sh` | adds the ledger lines up over runs: a result is "over N runs", never one line read off a log |
+
+What a binding must do (a project's own copy of `ExampleScenario.sol`), in order:
+
+1. Override the five verbs: `_quote`, `_execute`, `_sqrtPriceNow`, `_balances`, `_referencePriceX96`.
+2. Call `_initEngine()` once its system is deployed.
+3. **Price gas: `ledger.setGasPrice(quotePerGasE18)`** right after `_initEngine()` - raw quote per unit of gas x 1e18,
+   0 for a chain whose gas nobody pays, but SAID. `run` refuses to start (`SimLedger.GasUnpriced`) until it is.
+4. Report `Fill.amountInUsed` on every executed swap (the engine refuses a fill without it).
+5. Honour `Intent.amountInQuote` - convert a quote-sized currency0 input at its reference price - or refuse it loudly.
+
+**Incompatible change (2026-09-22).** A binding written before this date stops at its first `run` with
+`GasUnpriced` until it adds step 3; the ledger's dump line has two more columns at the end (`gasCost`, `pnlNet`), which
+`sim-report.sh` reads; and `Intent` has a new field (`amountInQuote`), so an `Intent(...)` written positionally no longer
+compiles (named fields and `Intent memory it; it.x = ...` are unaffected).
+
+Measured on the example hook, three runs each, fresh state (the numbers are one machine's draws, in wei of the
+quote currency, and they are here to show the SHAPE, not to be quoted):
+
+```
+scenario       agent    runs  decided  executed  refused  shortfall/run  windfall/run  worst ever
+calibration    honest      3     40.0      40.0      0.0              0             0           0
+latency-one    honest      3     41.0      41.0      0.0              0   5.98e15               0
+latency-one    late        3     41.0      40.0      0.0   2.09e14         5.38e12       1.99e14
+```
+
+Two things the first run taught, both now asserted in the test file:
+
+1. **On this hook a stale quote costs money even with nobody hostile around.** The fee depends on how many swaps the
+   block has already seen, so a quote taken in one block and executed in the next is a different fee. The `late`
+   agent (latency 1) pays about 2e14 per run for it; the same agent at latency 0, alone, pays nothing.
+2. **"Zero latency" is not "nobody ahead of me".** Put the late agent in the world and the honest agent at latency 0
+   starts showing a gap too: its quote is of the block's opening state, and an intent submitted a step earlier is
+   ahead of it in the FCFS queue. The calibration therefore runs ALONE, and the test says why.
+
+### Step 2: the ordering model as a parameter, a main market, and two adversaries
+
+| file | what it is |
+| --- | --- |
+| `SimEngine.ordering` | `FCFS` (a single sequencer, no mempool: nobody sees a pending intent, nobody buys position) or `BUNDLE` (every intent about to execute is shown to the searchers, who place their own before and after it: a chain with a public mempool or builder bundles) |
+| `ISimSearcher` | the capability that only exists under BUNDLE: `wrap(victim)` before, `unwind(victim, fill)` after - by then the searcher knows what its front-run bought |
+| `ExampleScenario._addMainMarket` | a second, hookless v4 pool on the same currencies: the market where the token "really" trades, pushed by world traders. Real AMM math in the same EVM - no price stub. The ledger values P&L at ITS price |
+| `agents/Arbitrageur.sol` | the stale-quote extractor: trades on the venue under test whenever it lags the main market by more than a PRICE threshold in bps (set it above the round trip's cost, or it measures itself), and with `closeOnMain` realises every fill on the main market at its own latency. The attack that exists on an FCFS chain |
+| `agents/Sandwicher.sol` | the classic sandwich as a searcher: front-run at a multiple of the victim's size, back-run selling what the front-run bought. Only exists under BUNDLE |
+| `test/sim/Ordering.t.sol` | the SAME population (two world traders on the main market, a stream of honest swaps on the venue, an arbitrageur, a sandwicher) under both orderings; under BUNDLE the engine's own execution record is walked to assert front-run, victim, back-run, in that order, for every wrap |
+
+The same population, 60 steps, run under each ordering (three runs each; this population is deterministic, so the
+three agree - variation will come with a seeded price process and the fork of a real market):
+
+```
+                        decided  executed  shortfall/run   pnl/run
+population-fcfs   victim     30        29              0   -2.3e15
+population-fcfs   arb        31        30        5.4e15   -2.5e15
+population-fcfs   sandwich    0         0              0         0
+population-bundle victim     30        29        4.3e16   -5.1e16
+population-bundle arb        31        30        1.7e16   -1.7e16
+population-bundle sandwich  118       118              0   +1.4e16
+```
+
+Read across the two blocks and the ordering model is the whole result: under FCFS the sandwicher is never asked and
+earns nothing; under BUNDLE it wraps 59 intents (the arbitrageur's too - a searcher does not care whose), earns
+1.4e16, and the victim's cost goes from 2.3e15 to 5.1e16 - inside its 2 % slippage rule every time, which is how a
+sandwich is sized. On THIS hook the fee that rises with same-block volume did not stop it at these sizes; the
+number a hook author wants is the front-run size at which it does, and that is a sweep, not an assertion.
+
+Mutants, by hand: the front-run never executed -> "one front-run and one back-run per wrap: 59 != 118" (no fill, so
+no unwind - the shape check behind it is the second line of defence); a searcher intent left
+for the FCFS scan to execute again -> the bundle test dies (re-execution without end); searchers asked under FCFS ->
+"under FCFS nobody sees a pending intent: 118 != 0".
+
+### Step 3: the liquidity side, and a seeded world
+
+| file | what it is |
+| --- | --- |
+| `Intent.kind` | a swap, or a liquidity change (add / remove, with ticks and a delta): no quote, no slippage rule, executed as given in the agent's own position |
+| `Intent.amountInQuote` | the UNIT of `amountIn`: false (default) = the input currency; true = the agent sized the swap in currency1 (quote), and a binding that supports it converts a currency0 input at its reference price - one that does not refuses the intent (`ExampleScenario` does). Only the agent knows the unit, so a binding never guesses it: `HonestTrader`, `RandomTrader` and the `Arbitrageur`'s OPENING leg set it from `setSizeInQuote`; the arbitrageur's CLOSING leg never does, because it sells what the opening leg delivered. `test/sim/IntentUnit.t.sol` |
+| `agents/PassiveLP.sol` | the LP who is not watching: a position on at the start, off at `exitStep`. Its P&L is the number every other agent's profit is ultimately taken from |
+| `agents/JitLP.sol` | just-in-time liquidity as a searcher: a narrow position around the price in front of each swap, off behind it. Only exists under BUNDLE |
+| `agents/RandomTrader.sol` | the world, SEEDED: sizes and directions from a pseudo-random stream keyed by `SIM_SEED`. The same seed replays the same tape; a different seed gives a different one - both asserted |
+| `test/sim/Liquidity.t.sol` | the same population under both orderings inside ONE test, from one snapshot, so the two ledgers are directly comparable |
+
+Measured (seed 1, 60 steps, wei of the quote currency): the passive LP earns **1.39e16 under FCFS and 4.0e15 under
+BUNDLE** - the JIT LP, asked 29 times, took the rest and ended at **+2.67e16**; the victim's execution improved
+(more liquidity in front of it) and its P&L barely moved. That is the whole JIT story in three numbers, and the
+test asserts only its shape: the passive LP is worse off with the JIT LP in the world than without, on the same
+tape. Mutants: liquidity changes that never execute, a JIT position of 1 wei, a world that ignores its seed - each
+seen red by these tests.
+
+What is NOT here yet: a fork of the real target chain as the main market (needs the owner's `RPC_URL`), the LP's
+allowance as a parameter (it means something on a hook that pulls by allowance, not on a v4 position - the
+binding for such a hook adds it), latency drawn from a measured distribution, and the doctrine page that says when
+to run any of this. Listed so that nobody reads them as present.
+
+Mutation, by hand (`scripts/mutate.sh`): a quote off by one wei kills the calibration ("the quoter is not the
+executor: 40 != 0"). `executeAtStep > s` -> `!= s` in the FCFS loop SURVIVES, and is equivalent by construction:
+the loop never skips a step, so no intent is ever due in the past. If a scenario ever calls `run` twice, that
+equivalence ends - a limit, written here so it is not rediscovered.
+
+---
+
 ## What this module still does not do
 
 Written down because a list of gaps is the only honest end to a README.

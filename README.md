@@ -119,7 +119,7 @@ AGENTS.md        the agent's entry point: the rules, the phases and their gates,
 doctrine/        UPSTREAM (Uniswap's own docs and security framework come first) - NEXT (what do I do now?) -
                  JUDGES (ten tools, the question each answers, how each one lies) - EVIDENCE - VERIFY - LOOP -
                  TRIAGE - SEVERITY - HOOK-ATTACKS - V4-ACCOUNTING -
-                 INVARIANTS - FUZZ-ACTIONS - CHANGES - COST - RETROFIT - LESSONS
+                 INVARIANTS - FUZZ-ACTIONS - CHANGES - COST - RETROFIT - LESSONS - SIMULATE
 briefs/          one template per role: owner interview, spec, audit round, black-box, verifier, executor with
                  gates, promotion, handoff dossier
 state/           the three-file convention an agent installs in YOUR project

@@ -158,8 +158,10 @@ Count the findings per verdict at the top, with the tool's version and the exact
 
 ## What none of these can see
 
-Whether the spec describes a hook worth building; economic attacks that respect every rule (ordering, MEV, incentives);
-a blind spot shared by every model and every tool you used; a bug in the rule itself. That is what the black-box
+Whether the spec describes a hook worth building; economic attacks that respect every rule (ordering, MEV, incentives)
+- for these the simulation sandbox (`foundry-kit/v4/src/sim/`, `SIMULATE.md`) MEASURES what a named population of
+agents earns under a stated ordering model, and cannot see the agent nobody wrote; a blind spot shared by every model and every
+tool you used; a bug in the rule itself. That is what the black-box
 round, a second vendor, and the human audit at the end of this route are for. The dossier says so in those words.
 
 ## Origin, stated honestly

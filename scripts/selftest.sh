@@ -171,6 +171,18 @@ if command -v forge > /dev/null 2>&1 && [ -e "$KIT/lib" ]; then
   printf 'pragma solidity ^0.8.26;\ncontract A { uint256 public x; function inc() external { x++; } }\n' > "$M/src/A.sol"
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/A.sol";\ncontract AUnit is Test { function test_inc() public { A a = new A(); a.inc(); assertEq(a.x(), 1); } }\ncontract AInvariant is Test { A a; function setUp() public { a = new A(); targetContract(address(a)); } function invariant_never_decreases() public view { assertGe(a.x(), 0); } }\n' > "$M/test/A.t.sol"
 
+  # ---- a mutant that bricks setUp() prints `[FAIL: ...] setUp()` and NO test ran. mutate.sh must say NOTHING PROVEN and
+  # never KILLED: the test file below makes setUp depend on inc(), and the mutant turns inc() into an underflow.
+  printf 'pragma solidity ^0.8.26;
+import "forge-std/Test.sol";
+import "../src/A.sol";
+contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc(); require(a.x() == 1, "setUp depends on inc"); } function test_x() public { assertEq(a.x(), 1); } }
+' > "$M/test/SetUpDep.t.sol"
+  LABEL=m9s OUT_DIR="$TMP/mut" "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x--;" > "$TMP/o35" 2>&1
+  check "a mutant that bricks setUp() proves nothing, and is never KILLED" 2 $?
+  if grep -q "setUp()" "$TMP/o35"; then echo "  ok    the refusal names setUp()"; else echo "  FAIL  the refusal does not name setUp()"; fails=$((fails + 1)); fi
+  rm -f "$M/test/SetUpDep.t.sol"
+
   "$HERE/battery.sh" "$M" > "$TMP/o26" 2>&1; check "battery on a small green project" 0 $?
   TEST_FLAGS="--match-contract NoSuchContractAnywhere" "$HERE/battery.sh" "$M" > "$TMP/o27" 2>&1
   check "battery with a filter that matches NOTHING is not a pass" 1 $?
@@ -319,6 +331,39 @@ if command -v forge > /dev/null 2>&1 && [ -e "$KIT/lib" ]; then
   if [ -d "$M/corpus/invariant-third" ]; then echo "  ok    census.sh keeps one corpus per manager too"; else
     echo "  FAIL  census.sh ran the campaigns on the shared corpus"; fails=$((fails + 1)); fi
   rm -rf "$M/corpus" "$M/cache/invariant" "$M/census"
+
+  # ---- sim-report.sh: the arithmetic on a ledger written by hand
+  SR="$TMP/sim.tsv"
+  printf 'cal	honest	40	40	0	100	98	98	0	0	0	7000	-2
+' > "$SR"
+  printf 'cal	honest	40	38	2	100	96	99	4	3	1	9000	-6
+' >> "$SR"
+  printf 'cal	broken line with five fields	1	2	3
+' >> "$SR"
+  "$HERE/sim-report.sh" "$SR" > "$TMP/o90" 2>&1; check "sim-report over two runs and a broken line" 0 $?
+  # 13-field lines are from a ledger that did not price gas: 0 priced runs, and "-" for gasCost and net, never 0
+  if grep -Eq '^cal +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +0 +- +-$' "$TMP/o90" && grep -q "1 line(s) ignored" "$TMP/o90"; then
+    echo "  ok    and the means, the worst-ever and the ignored line are right"
+  else
+    echo "  FAIL  sim-report arithmetic is wrong:"; sed "s/^/        | /" "$TMP/o90"; fails=$((fails + 1))
+  fi
+  # 15-field lines carry gasCost and pnlNet: their means are over the priced runs, and a group that mixes priced and
+  # unpriced lines is named, because there pnl/run - net/run is not gasCost/run
+  SG="$TMP/simgas.tsv"
+  printf 'gas\thonest\t40\t40\t0\t100\t98\t98\t0\t0\t0\t7000\t-2\t10\t-12\n' > "$SG"
+  printf 'gas\thonest\t40\t38\t2\t100\t96\t99\t4\t3\t1\t9000\t-6\t30\t-36\n' >> "$SG"
+  printf 'mix\thonest\t40\t40\t0\t100\t98\t98\t0\t0\t0\t7000\t-2\t10\t-12\n' >> "$SG"
+  printf 'mix\thonest\t40\t38\t2\t100\t96\t99\t4\t3\t1\t9000\t-6\n' >> "$SG"
+  "$HERE/sim-report.sh" "$SG" > "$TMP/o92" 2>&1; check "sim-report over priced and mixed runs" 0 $?
+  if grep -Eq '^gas +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +2 +20 +-24$' "$TMP/o92" \
+    && grep -Eq '^mix +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +1 +10 +-12$' "$TMP/o92" \
+    && grep -q "mix honest: pnl/run is over 2 runs, gasCost/run and net/run over 1" "$TMP/o92" \
+    && ! grep -q "gas honest: pnl/run is over" "$TMP/o92"; then
+    echo "  ok    and the gas cost, the net P&L, the priced count and the mixed-group note are right"
+  else
+    echo "  FAIL  sim-report gas arithmetic is wrong:"; sed "s/^/        | /" "$TMP/o92"; fails=$((fails + 1))
+  fi
+  : > "$TMP/empty.tsv"; "$HERE/sim-report.sh" "$TMP/empty.tsv" > "$TMP/o91" 2>&1; check "an empty ledger measured nothing" 2 $?
 
   # ---- census.sh: the arithmetic on a file written by hand, then end to end on the kit's own example
   C="$TMP/census.tsv"

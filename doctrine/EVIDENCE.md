@@ -39,6 +39,30 @@ A test is evidence only after it has failed on code that is wrong in the way the
   reason (`LESSONS.md` 8, 11, 13).
 - An agent that writes the test does not also certify it. The mutant is run by the executor's gate
   (`briefs/executor-with-gates.md`), and its output is pasted, not summarised.
+- **The red has to come from a build that contains the mutant.** `scripts/mutate.sh` builds every mutant with
+  `--force`, and a mutation run by hand starts from cleared `out/` and `cache/`; gas identical to the baseline to the
+  unit is a reason to check the build before calling a mutant equivalent. The rule comes from one incident
+  (2026-09-22): a subagent's batch of eight mutants of a contract the test deploys with `new` all reported SURVIVED
+  with baseline gas, and five died on a cleared build. **The cause was not established.** The story told at the time -
+  incremental builds keeping the stale creation code of a `new`-deployed contract - did not reproduce: the same shape
+  on a dirty tree went red on the incremental build exactly as on the clean one. A mutation applied to a file forge
+  never compiled explains the same symptoms. Treat the forced build as a cheap precaution and the incident as a
+  symptom with an unknown cause, not as a measured property of forge.
+- **A survivor that cannot die is a bad question, not a finding.** When a mutant survives, first ask whether the
+  code can still reach the difference at all. A mutant that turns "due at or before this step" into "due at exactly
+  this step" is equivalent the moment the loop visits every step, and it will sit in a brief reporting SURVIVED
+  forever. Replace it with one that can fail, and say in the brief why the old one was retired.
+- **A pattern that never matched is not a mutant.** `mutate.sh` matches a line at a time, so a two-line pattern
+  matches nothing and the run exits 2. That is not a survivor and not a kill; it is a broken question, and a brief
+  that prints its exit code without reading it will carry the hole for as long as nobody looks.
+- **A test that returns early is a pass with zero assertions, and that pass is a lie.** The shape is always the same:
+  a precondition the environment may not meet - no fork URL, no RPC, a feature flag off, a `.call` that returned false
+  and was not checked, a `view` callee reached through `STATICCALL` that could not write - and a guard that `return`s
+  instead of failing or skipping. The suite prints PASS in microseconds, the battery counts it, and nothing was tested.
+  Measured 2026-09-22 on a fork test: 4 passed in 966 µs without `--fork-url`, zero assertions reached. The rule: a
+  precondition that is not met is `vm.skip(true, why)` - a skip the battery refuses unless accepted on purpose
+  (`ALLOW_SKIPS`), never a `return`; and a harness that calls into the contract under test checks the success flag of
+  every low-level call, so that a harness that silently does nothing cannot report a green.
 
 ## 3. What blocks the exit
 
