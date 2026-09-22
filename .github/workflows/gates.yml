@@ -11,6 +11,9 @@
 #     key goes into this repository or its CI. That leg is run locally (foundry-kit/v4/README.md) and reported in
 #     the dossier.
 # Foundry is PINNED: a nightly renames flags, and every flag in doctrine/JUDGES.md was checked against this version.
+# No `--offline` here: the runner has no compiler cached and `--offline` forbids forge from fetching solc 0.8.26 - the
+# first run of this workflow was red for exactly that, after a local replay had passed on a machine with solc cached.
+# Nothing in this workflow talks to an RPC, so there is nothing for `--offline` to protect.
 # A red run here is a finding, not a "flake": a fuzz campaign starts with no corpus in CI, so a rare counterexample
 # can appear on any push - read the log before re-running.
 
@@ -30,10 +33,10 @@ env:
 jobs:
   battery:
     name: battery (root kit + v4 module, source manager)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: ${{ env.FOUNDRY_VERSION }}
@@ -42,9 +45,9 @@ jobs:
       - name: Uniswap v4 sources for the v4 module, at the pinned commits (never vendored - BUSL-1.1)
         run: scripts/install-v4.sh foundry-kit/v4
       - name: battery, root kit
-        run: FORGE_FLAGS=--offline scripts/battery.sh foundry-kit
+        run: scripts/battery.sh foundry-kit
       - name: battery, v4 module, source manager
-        run: FORGE_FLAGS=--offline V4_MANAGER=source scripts/battery.sh foundry-kit/v4
+        run: V4_MANAGER=source scripts/battery.sh foundry-kit/v4
       - name: keep the logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -58,14 +61,14 @@ jobs:
   selftest:
     name: selftest (every guard seen red)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: ${{ env.FOUNDRY_VERSION }}
       - name: forge-std for the root kit, pinned
         run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
       - name: selftest
-        run: FOUNDRY_OFFLINE=true scripts/selftest.sh
+        run: scripts/selftest.sh
