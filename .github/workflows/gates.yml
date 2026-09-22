@@ -1,0 +1,71 @@
+# The kit's own gates, run by GitHub on every push: the same two commands a human runs locally, on a machine that is
+# not ours. A repository whose thesis is "gates" and that does not run its own gates in public is the loudest signal
+# an outside reviewer found in the file list - this file is the answer.
+#
+# What runs here and what does not:
+#   - on every push / pull request: the battery of the root kit and of the v4 module against the SOURCE manager
+#     (build, tests, sizes, stale-build check - one exit code each);
+#   - once a day and on demand: scripts/selftest.sh, which makes every guard in scripts/ go red on purpose
+#     (about fifteen minutes: it runs mutation cases);
+#   - NOT here: the battery against the REAL pool manager's bytecode. It needs an RPC endpoint, and no endpoint or
+#     key goes into this repository or its CI. That leg is run locally (foundry-kit/v4/README.md) and reported in
+#     the dossier.
+# Foundry is PINNED: a nightly renames flags, and every flag in doctrine/JUDGES.md was checked against this version.
+# A red run here is a finding, not a "flake": a fuzz campaign starts with no corpus in CI, so a rare counterexample
+# can appear on any push - read the log before re-running.
+
+name: gates
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+env:
+  FOUNDRY_VERSION: v1.8.1
+  FORGE_STD_TAG: v1.16.2
+
+jobs:
+  battery:
+    name: battery (root kit + v4 module, source manager)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+      - name: forge-std for the root kit, pinned
+        run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
+      - name: Uniswap v4 sources for the v4 module, at the pinned commits (never vendored - BUSL-1.1)
+        run: scripts/install-v4.sh foundry-kit/v4
+      - name: battery, root kit
+        run: FORGE_FLAGS=--offline scripts/battery.sh foundry-kit
+      - name: battery, v4 module, source manager
+        run: FORGE_FLAGS=--offline V4_MANAGER=source scripts/battery.sh foundry-kit/v4
+      - name: keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: battery-logs
+          path: |
+            foundry-kit/.gauntlet/reports/
+            foundry-kit/v4/.gauntlet/reports/
+          if-no-files-found: ignore
+
+  selftest:
+    name: selftest (every guard seen red)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+      - name: forge-std for the root kit, pinned
+        run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
+      - name: selftest
+        run: FOUNDRY_OFFLINE=true scripts/selftest.sh
