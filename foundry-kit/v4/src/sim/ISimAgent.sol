@@ -63,8 +63,16 @@ struct Fill {
     uint256 amountInUsed;
     uint24 feeCharged; // read from the manager's Swap event
     uint256 gasUsed;
-    bytes4 revertSelector; // when !executed
+    bytes4 revertSelector; // when !executed; `REFUSED_AT_QUOTE` when the engine never sent it
 }
+
+/// @dev The `Fill.revertSelector` of a swap the ENGINE did not send: its own quote at decision time was 0. A bot that
+/// reads its quote does not pay gas to buy nothing, so the engine does not execute it, charges no gas, and settles it
+/// at once with `executed == false` and this marker. The ledger counts it apart (`SimLedger.Books.refusedAtQuote`), never
+/// as a `refused` - that column is for what was sent and came back empty. Swaps only: every other kind carries no quote.
+/// Written after a binding's agents sent 841 swaps quoted 0 on a fork and all 841 came back empty, ~250 000 gas each
+/// (2026-09-22): the ledger read them as a market that refused, when the agent had been told "nothing" and sent anyway.
+bytes4 constant REFUSED_AT_QUOTE = bytes4(keccak256("RefusedAtQuote()"));
 
 /// @notice An agent is a contract with a wallet. Three verbs, in this order, every step:
 ///   observe(view)  - look (the scenario passes what it may see)

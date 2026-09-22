@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {ISimAgent, ISimSearcher, SimView, Intent, Fill} from "./ISimAgent.sol";
+import {ISimAgent, ISimSearcher, SimView, Intent, Fill, KIND_SWAP, REFUSED_AT_QUOTE} from "./ISimAgent.sol";
 import {SimClock} from "./SimClock.sol";
 import {SimLedger} from "./SimLedger.sol";
 
@@ -33,6 +33,13 @@ import {SimLedger} from "./SimLedger.sol";
 ///           after it. A chain with a public mempool or builder bundles. Sandwiches and JIT liquidity live here.
 /// Every number the ledger prints is a number UNDER ONE OF THESE, and the report says which. Run the same population
 /// under both: the difference is what the ordering model is worth to an attacker, and it is often the whole result.
+///
+/// A SWAP QUOTED 0 IS NOT SENT. The quote is taken when the intent is decided; if it says 0 - nothing fillable at that
+/// size, in that direction, now - the engine does what a bot that reads its quote does: it does not send. No `_execute`,
+/// no gas, no place in the queue's execution order, nothing shown to a searcher; the agent's `settle` is called at once
+/// with `executed == false` and `revertSelector == REFUSED_AT_QUOTE`, and the ledger counts it in `refusedAtQuote`, apart
+/// from `refused` (sent, and came back empty). Other kinds carry no quote and are untouched. Written after a binding's
+/// agents sent 841 swaps quoted 0 on a fork: every one came back empty at ~250 000 gas and read as a market refusing.
 abstract contract SimEngine is Test {
     enum Ordering {
         FCFS,
@@ -47,7 +54,7 @@ abstract contract SimEngine is Test {
     ISimSearcher[] internal searchers;
     Intent[] internal queue;
     bool[] internal done;
-    /// @notice the order in which intents were EXECUTED (1 = first), 0 = not yet. The one record that lets a test
+    /// @notice the order in which intents were EXECUTED (1 = first), 0 = not yet (or never: a swap refused at its quote). The one record that lets a test
     /// assert that a bundle ran front-run, victim, back-run in that order - and not merely that three swaps happened.
     uint256[] internal executedOrder;
     uint256 internal executedCount;
@@ -108,7 +115,8 @@ abstract contract SimEngine is Test {
         }
     }
 
-    function _submit(Intent memory it, address agent, uint256 decidedAt, uint256 executeAt) internal {
+    /// @return sent false when the intent was a swap quoted 0: settled here as REFUSED_AT_QUOTE, never to be executed
+    function _submit(Intent memory it, address agent, uint256 decidedAt, uint256 executeAt) internal returns (bool sent) {
         it.agent = agent;
         it.decidedAtStep = decidedAt;
         it.executeAtStep = executeAt;
@@ -121,6 +129,26 @@ abstract contract SimEngine is Test {
         queue.push(it);
         done.push(false);
         executedOrder.push(0);
+        if (_unsent(it)) {
+            _refuseAtQuote(queue.length - 1);
+            return false;
+        }
+        return true;
+    }
+
+    /// @notice a swap its own quote said returns nothing: a bot that reads its quote does not send it
+    function _unsent(Intent memory it) internal pure returns (bool) {
+        return it.kind == KIND_SWAP && it.quotedOut == 0;
+    }
+
+    /// @dev settled at decision time: marked done (the FCFS scan and the searchers never see it), no execution order, no
+    /// gas, counted apart from the refusals of the market
+    function _refuseAtQuote(uint256 i) internal {
+        done[i] = true;
+        Fill memory f;
+        f.revertSelector = REFUSED_AT_QUOTE;
+        ledger.noteRefusedAtQuote(queue[i]);
+        ISimAgent(queue[i].agent).settle(queue[i], f);
     }
 
     /// @notice every intent whose step has come, in submission order; under BUNDLE each one is first shown to the
@@ -157,11 +185,15 @@ abstract contract SimEngine is Test {
         returns (uint256[] memory out)
     {
         out = new uint256[](idx.length + its.length);
-        for (uint256 j = 0; j < idx.length; j++) out[j] = idx[j];
+        uint256 n = idx.length;
+        for (uint256 j = 0; j < n; j++) out[j] = idx[j];
         for (uint256 j = 0; j < its.length; j++) {
-            _submit(its[j], agent, s, s);
+            if (!_submit(its[j], agent, s, s)) continue; // a searcher's leg quoted 0: never sent, already settled
             done[queue.length - 1] = true; // executed here, not by the FCFS scan
-            out[idx.length + j] = queue.length - 1;
+            out[n++] = queue.length - 1;
+        }
+        assembly {
+            mstore(out, n) // only the legs that were sent
         }
     }
 

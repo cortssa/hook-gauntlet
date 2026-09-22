@@ -28,6 +28,9 @@ contract SimLedger {
         uint256 gasTotal;
         int256 value0AtStart; // balances at the start, for the P&L reading
         int256 value1AtStart;
+        /// @dev swaps the engine did not send because their own quote at decision time was 0 (`REFUSED_AT_QUOTE`): no
+        /// gas, never in `refused`. decided = executed + refused + refusedAtQuote + whatever is still in flight.
+        uint256 refusedAtQuote;
     }
 
     mapping(address => Books) public books;
@@ -45,7 +48,7 @@ contract SimLedger {
     /// @notice `pnlNetOfGas` (or the dump line) was asked for before the scenario priced gas
     error GasUnpriced();
 
-    /// @notice the books as a struct (the public getter returns a 12-tuple, which is stack-too-deep to unpack without via-IR)
+    /// @notice the books as a struct (the public getter returns a 13-tuple, which is stack-too-deep to unpack without via-IR)
     function get(address agent) external view returns (Books memory) {
         return books[agent];
     }
@@ -61,6 +64,11 @@ contract SimLedger {
 
     function noteDecided(Intent memory i) external {
         books[i.agent].decided += 1;
+    }
+
+    /// @notice a swap the engine did not send: quoted 0 at decision. Counted apart from `refused`, and no gas.
+    function noteRefusedAtQuote(Intent memory i) external {
+        books[i.agent].refusedAtQuote += 1;
     }
 
     function noteFill(Intent memory i, Fill memory f) external {
@@ -129,8 +137,10 @@ contract SimLedger {
     }
 
     /// @notice one line per agent: tab separated,
-    /// `label  agent  decided  executed  refused  in  out  quoted  shortfall  worst  windfall  gas  pnl  gasCost  pnlNet`
-    /// where `pnl` is gross, `gasCost` is `gasCost(agent)` and `pnlNet` is `pnlNetOfGas`, both in raw quote units.
+    /// `label  agent  decided  executed  refused  in  out  quoted  shortfall  worst  windfall  gas  pnl  gasCost  pnlNet  atQuote`
+    /// where `pnl` is gross, `gasCost` is `gasCost(agent)` and `pnlNet` is `pnlNetOfGas`, both in raw quote units, and
+    /// `atQuote` is `refusedAtQuote` (swaps never sent, quoted 0). It is LAST so that a reader of the older 15 columns
+    /// still reads the same numbers in the same places; `refused` no longer includes it.
     /// Reverts `GasUnpriced` until the scenario called `setGasPrice` (0 included).
     function line(string memory label, address agent, uint256 bal0, uint256 bal1, uint256 priceX96)
         public
@@ -148,7 +158,8 @@ contract SimLedger {
             vm.toString(pnl(agent, bal0, bal1, priceX96))
         );
         string memory d = string.concat(
-            "\t", vm.toString(gasCost(agent)), "\t", vm.toString(pnlNetOfGas(agent, bal0, bal1, priceX96))
+            "\t", vm.toString(gasCost(agent)), "\t", vm.toString(pnlNetOfGas(agent, bal0, bal1, priceX96)), "\t",
+            vm.toString(b.refusedAtQuote)
         );
         return string.concat(a, c, d);
     }

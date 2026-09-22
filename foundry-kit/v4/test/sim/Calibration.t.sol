@@ -58,7 +58,7 @@ contract CalibrationScenario is ExampleScenario {
         run(41); // one step more than the intents, so that the last one (decided at 40, due at 41) is settled
         _finish();
         SimLedger.Books memory b = booksOf(address(late));
-        assertEq(b.executed + b.refused, 40, "every intent settled one way or the other");
+        assertEq(b.executed + b.refused + b.refusedAtQuote, 40, "every intent settled one way or the other");
         assertGt(b.executed, 0);
         assertGt(b.shortfallTotal + b.windfallTotal, 0, "a stale quote on this hook should show a gap somewhere in 40 fills");
 

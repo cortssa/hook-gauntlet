@@ -342,7 +342,7 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
 ' >> "$SR"
   "$HERE/sim-report.sh" "$SR" > "$TMP/o90" 2>&1; check "sim-report over two runs and a broken line" 0 $?
   # 13-field lines are from a ledger that did not price gas: 0 priced runs, and "-" for gasCost and net, never 0
-  if grep -Eq '^cal +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +0 +- +-$' "$TMP/o90" && grep -q "1 line(s) ignored" "$TMP/o90"; then
+  if grep -Eq '^cal +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +0 +- +- +0 +-$' "$TMP/o90" && grep -q "1 line(s) ignored" "$TMP/o90"; then
     echo "  ok    and the means, the worst-ever and the ignored line are right"
   else
     echo "  FAIL  sim-report arithmetic is wrong:"; sed "s/^/        | /" "$TMP/o90"; fails=$((fails + 1))
@@ -355,13 +355,26 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   printf 'mix\thonest\t40\t40\t0\t100\t98\t98\t0\t0\t0\t7000\t-2\t10\t-12\n' >> "$SG"
   printf 'mix\thonest\t40\t38\t2\t100\t96\t99\t4\t3\t1\t9000\t-6\n' >> "$SG"
   "$HERE/sim-report.sh" "$SG" > "$TMP/o92" 2>&1; check "sim-report over priced and mixed runs" 0 $?
-  if grep -Eq '^gas +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +2 +20 +-24$' "$TMP/o92" \
-    && grep -Eq '^mix +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +1 +10 +-12$' "$TMP/o92" \
+  if grep -Eq '^gas +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +2 +20 +-24 +0 +-$' "$TMP/o92" \
+    && grep -Eq '^mix +honest +2 +40\.0 +39\.0 +1\.0 +2 +0 +3 +8000 +-4 +1 +10 +-12 +0 +-$' "$TMP/o92" \
     && grep -q "mix honest: pnl/run is over 2 runs, gasCost/run and net/run over 1" "$TMP/o92" \
     && ! grep -q "gas honest: pnl/run is over" "$TMP/o92"; then
     echo "  ok    and the gas cost, the net P&L, the priced count and the mixed-group note are right"
   else
     echo "  FAIL  sim-report gas arithmetic is wrong:"; sed "s/^/        | /" "$TMP/o92"; fails=$((fails + 1))
+  fi
+  # 16-field lines carry atQuote: swaps the engine never sent because their own quote was 0. Its mean is over the lines
+  # that carry it (never over the older ones, which would dilute it), and a group mixing the two is named
+  SQ="$TMP/simatq.tsv"
+  printf 'atq\tarb\t40\t30\t2\t100\t96\t99\t4\t3\t1\t9000\t-6\t30\t-36\t8\n' > "$SQ"
+  printf 'atq\tarb\t40\t30\t2\t100\t96\t99\t4\t3\t1\t9000\t-6\t30\t-36\t4\n' >> "$SQ"
+  printf 'atqmix\tarb\t40\t30\t2\t100\t96\t99\t4\t3\t1\t9000\t-6\t30\t-36\t8\n' >> "$SQ"
+  printf 'atqmix\tarb\t40\t30\t2\t100\t96\t99\t4\t3\t1\t9000\t-6\t30\t-36\n' >> "$SQ"
+  "$HERE/sim-report.sh" "$SQ" > "$TMP/o93" 2>&1; check "sim-report over runs with and without refusals at quote" 0 $?
+  if grep -Eq '^atq +arb +2 +40\.0 +30\.0 +2\.0 +4 +1 +3 +9000 +-6 +2 +30 +-36 +2 +6\.0$' "$TMP/o93" && grep -Eq '^atqmix +arb +2 +40\.0 +30\.0 +2\.0 +4 +1 +3 +9000 +-6 +2 +30 +-36 +1 +8\.0$' "$TMP/o93" && grep -q "atqmix arb: atQuote/run is over 1 runs of 2" "$TMP/o93" && grep -q "1 line(s) from a ledger without the atQuote column" "$TMP/o93" && ! grep -q "atq arb: atQuote/run is over" "$TMP/o93"; then
+    echo "  ok    and the refused-at-quote mean, its run count and the mixed-group note are right"
+  else
+    echo "  FAIL  sim-report refused-at-quote arithmetic is wrong:"; sed "s/^/        | /" "$TMP/o93"; fails=$((fails + 1))
   fi
   : > "$TMP/empty.tsv"; "$HERE/sim-report.sh" "$TMP/empty.tsv" > "$TMP/o91" 2>&1; check "an empty ledger measured nothing" 2 $?
 

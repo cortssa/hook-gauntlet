@@ -95,7 +95,7 @@ contract OrderingBUNDLE is PopulationScenario {
         assertGt(sandwich.wraps(), 0, "the sandwicher saw victims");
         assertEq(s.decided, sandwich.wraps() * 2, "one front-run and one back-run per wrap");
         assertGt(s.executed, 0);
-        assertEq(s.executed + s.refused, s.decided, "every searcher intent settled exactly once");
+        assertEq(s.executed + s.refused + s.refusedAtQuote, s.decided, "every searcher intent settled exactly once");
 
         // THE ORDER, asserted from the engine's own record: for every wrap, front-run, victim, back-run. Without
         // this a mutant that runs the back-run first would still show "two intents per wrap".

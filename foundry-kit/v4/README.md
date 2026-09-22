@@ -370,8 +370,8 @@ is SUPPORTED (`doctrine/EVIDENCE.md`) and never more: it only measures the attac
 | --- | --- |
 | `src/sim/ISimAgent.sol` | an agent is a contract with a wallet and three verbs: `observe`, `decide`, `settle`; an `Intent` is quoted when decided and executed `latency` steps later |
 | `src/sim/SimClock.sol` | the chain's cadence as parameters: L2 block time, and whether `block.number` is an L1 estimate (it is, on Arbitrum-style chains: one hook "block" spans ~120 sequencer blocks) |
-| `src/sim/SimLedger.sol` | per-agent books: decided / executed / refused, in / out / quoted, shortfall and windfall against the quote, gas, P&L in the quote currency - gross (`pnl`) and net of gas (`pnlNetOfGas`, at the price of gas the SCENARIO sets with `setGasPrice`, in raw quote per gas x 1e18; 0 is allowed but must be said, or the net P&L and the dump line refuse to run); one line per agent per run to `GAUNTLET_SIM`, ending `pnl  gasCost  pnlNet`. `test/sim/LedgerGas.t.sol` holds it to that |
-| `src/sim/SimEngine.sol` | the engine, with no opinion about the hook: the loop, the clock, FCFS ordering, the queue, the books - and four verbs a project binds (`_quote`, `_execute`, `_sqrtPriceNow`, `_balances`) |
+| `src/sim/SimLedger.sol` | per-agent books: decided / executed / refused, in / out / quoted, shortfall and windfall against the quote, gas, P&L in the quote currency - gross (`pnl`) and net of gas (`pnlNetOfGas`, at the price of gas the SCENARIO sets with `setGasPrice`, in raw quote per gas x 1e18; 0 is allowed but must be said, or the net P&L and the dump line refuse to run); one line per agent per run to `GAUNTLET_SIM`, ending `pnl  gasCost  pnlNet  atQuote`. `test/sim/LedgerGas.t.sol` holds it to that |
+| `src/sim/SimEngine.sol` | the engine, with no opinion about the hook: the loop, the clock, FCFS ordering, the queue, the books - and four verbs a project binds (`_quote`, `_execute`, `_sqrtPriceNow`, `_balances`). A swap whose own quote at decision time is 0 is NOT SENT: no `_execute`, no gas, settled at once with `executed == false` and `REFUSED_AT_QUOTE`, counted in `refusedAtQuote` (the dump line's last column), never in `refused`; other kinds untouched (`test/sim/RefusedAtQuote.t.sol`) |
 | `src/sim/ExampleScenario.sol` | the engine bound to the example hook: the quote is a snapshot-and-revert of the real swap (the same code path as the execution), `minOut` enforced as a router would. A project with its own router or quoter copies this file and binds its own |
 | `src/sim/agents/HonestTrader.sol` | the population's floor: fixed size every N steps, alternating, a slippage rule, a latency |
 | `test/sim/Calibration.t.sol` | THE MANDATORY FIRST RUN: one honest agent, zero latency, alone - quote equals execution to the wei, ledger equals wallet, nothing refused. If this is red the sandbox is wrong and no number it produces counts |
@@ -390,7 +390,9 @@ What a binding must do (a project's own copy of `ExampleScenario.sol`), in order
 **Incompatible change (2026-09-22).** A binding written before this date stops at its first `run` with
 `GasUnpriced` until it adds step 3; the ledger's dump line has two more columns at the end (`gasCost`, `pnlNet`), which
 `sim-report.sh` reads; and `Intent` has a new field (`amountInQuote`), so an `Intent(...)` written positionally no longer
-compiles (named fields and `Intent memory it; it.x = ...` are unaffected).
+compiles (named fields and `Intent memory it; it.x = ...` are unaffected). Later the same day the dump line gained a
+16th column at the end (`atQuote`, swaps quoted 0 and never sent), and `refused` stopped counting them: a reading of
+`refused` taken before that change includes them. Nothing changes for a binding.
 
 Measured on the example hook, three runs each, fresh state (the numbers are one machine's draws, in wei of the
 quote currency, and they are here to show the SHAPE, not to be quoted):

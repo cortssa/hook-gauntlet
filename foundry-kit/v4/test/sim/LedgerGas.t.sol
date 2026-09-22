@@ -60,8 +60,10 @@ contract LedgerGas is Test {
     function test_the_dump_line_carries_gas_cost_and_net_pnl() public {
         ledger.setGasPrice(2e18);
         string memory l = ledger.line("x", AGENT, 10, 1_500, Q96);
-        // the last two columns: gasCost, pnlNet
-        assertTrue(_endsWith(l, "\t500\t6000000\t-5999500"), "the dump line does not end with pnl, gasCost, pnlNet");
+        // pnl, gasCost, pnlNet, then atQuote (appended after them, so their places did not move)
+        assertTrue(
+            _endsWith(l, "\t500\t6000000\t-5999500\t0"), "the dump line does not end with pnl, gasCost, pnlNet, atQuote"
+        );
     }
 
     function _endsWith(string memory s, string memory suffix) internal pure returns (bool) {
