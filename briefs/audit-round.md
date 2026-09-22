@@ -80,7 +80,7 @@ avoid it.**
 
 The report contains: `ASSUMPTIONS`, `LEDGER`, the previous round's findings re-verified **in the code** one by
 one, then your new findings in the format below, then measured sizes and gas, then a verdict on whether this code
-is ready for the next phase.
+is ready for the next phase, and closes with the three fixed subsections below.
 
 Finding format, one per finding:
 
@@ -96,3 +96,20 @@ Label every finding with its evidence (`doctrine/EVIDENCE.md`). A finding you co
 **REASONED**: give the argument in a form someone else can attack - economic and ordering attacks often cannot be
 compiled, and dropping them because they would not compile is the worst outcome of a round. A REASONED high or
 medium keeps the loop open until it is tested, answered by the owner in writing, or handed to the human audit by name.
+
+### Close every round the same way
+
+Three fixed subsections, in this order, every line carrying the evidence label it would earn in the dossier
+(`doctrine/EVIDENCE.md` §1: PROVED / MODEL-TESTED / PROPERTY-TESTED / MUTATION-TESTED / TESTED / SUPPORTED / REASONED
+/ UNVERIFIED). Same three headings every round, same order, so a reader comparing rounds is comparing like to like.
+
+- **Explored.** What you actually walked this round - files read, entry points called, boundaries hit - one line
+  each, with the label the coverage earns.
+- **Not exercised.** What is in scope but this round did not reach - named, not left to be inferred from its
+  absence - one line each, with why (time, a blocked precondition, outside the pressure list you were given).
+- **Honest partiality.** What a deeper, paid review would still add that this round could not - the gap between
+  REASONED and PROVED / MODEL-TESTED / MUTATION-TESTED, written as a claim someone else can attack, not as a
+  disclaimer.
+
+Goes red at the executor's gate (`briefs/executor-with-gates.md`) exactly like a red test: a report missing one of
+the three, or carrying a line with no evidence label, does not pass.

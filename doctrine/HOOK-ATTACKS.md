@@ -65,6 +65,39 @@ Two public incidents are worth knowing before you read the table, because both w
 | 33 | **Forced failure by gas (63/64)** | Wherever the hook wraps a call in `try/catch` or checks `success`: the CALLER chooses the gas, and can make the inner call fail on purpose so that the "it failed, carry on" branch runs. What does that branch give them? | call with gas chosen so that only the inner call runs out; assert the outcome is one the spec allows |
 | 34 | **The protocol fee** | If governance turns a protocol fee on, does any arithmetic in the hook that assumed gross amounts still hold? The fee is taken in the input currency and is not a delta | run the suite with a non-zero protocol fee set on the manager |
 | 35 | **Custom curves / the hook takes the whole swap** | If the hook returns a delta equal to the whole specified amount (the pool's own curve does nothing): who guarantees the price, the solvency of the hook's reserves, and the behaviour at zero liquidity? | the reference model of `EVIDENCE.md` 5 is mandatory here; conservation of the hook's own reserves per action |
+| 36 | **Gate unit-confusion** | Does any `beforeSwap`/`afterSwap` gate compare a raw amount or a raw price to a fixed constant without asking which currency and which decimals it is looking at on THIS call? Two shapes: (a) a cap compared straight against raw `amountSpecified` - exact-in vs exact-out AND direction choose which currency is "specified", so one constant silently governs BOTH tokens, and on a sub-18-decimal specified token the cap fails OPEN; (b) a balance / skew / heavier-side gate on the two virtual reserves - `StateLibrary` gives `amount0 = L*2^96/sqrtP` and `amount1 = L*sqrtP/2^96`, so `amount0/amount1 = 1/price` (`L` cancels): an unanchored gate is really comparing the pool's raw price to an implicit `1.0`, permanently one-directional on any pair that is not a same-decimals pool near parity. | Fix: anchor to the pool's OWN reference - `sqrtPriceX96` captured at `afterInitialize` (flag `0x1000`) or an explicit target ratio - never a bare constant compared to a raw amount or a raw price. Test to write: exercise the gate at a price away from 1:1 and confirm BOTH legs can bind; repeat with a sub-18-decimal specified token and confirm the cap still holds. Goes red the moment either check only passes at parity, or only fires in one direction. |
+
+*Source of class 36: a third-party public checklist (aeon, `hook-checklist.md`, their class 10), read 2026-09-22.
+A harness that silently does nothing (an unchecked `.call`, a `view` callee reached through `STATICCALL`) is a different
+failure: `EVIDENCE.md` §2.*
+
+## Aeon cross-check additions to existing classes (2026-09-22)
+
+Three more items from the same source, each small enough to be a sub-bullet on a class this list already has rather
+than a class of its own. Source: aeon's public `hook-checklist.md`, classes 4 and 5 (their numbering).
+
+- **Class 28, shared positions - first-depositor / share inflation, named.** A hook that mints a shared LP position
+  on users' behalf inherits the classic vault bug: seed the position with a dust amount, then donate or transfer
+  tokens directly to the hook or the pool to move the price-per-share before the first real depositor mints. Guard:
+  seed and lock a minimum-liquidity floor, or mint shares at high enough precision that a dust-deposit-plus-direct-
+  transfer cannot move the rate. Goes red the moment a direct transfer, rather than a call through `addLiquidity`,
+  changes what the next depositor's shares are worth.
+- **Class 8, reentrancy - the guard's SCOPE, not just its presence.** "Has a reentrancy guard" is not the claim that
+  matters; "nothing but enter and exit can write the guard, and its scope matches the state it protects" is. A single
+  global transient slot for every pool the hook serves fails two ways: any other path that writes that slot - a
+  rebalance or maintenance helper that resets the flag so it can call back into the manager - disarms EVERY pool at
+  once for the rest of the transaction (the public incident the source names is exactly this); and a legitimate
+  nested action on pool B inside pool A's callback either is refused (liveness) or, with a set-then-clear flag,
+  clears the guard on its way out and leaves the rest of A's action unguarded. (Placed on class 8, not class 4: the
+  defect is in the guard, not in state keyed by `PoolId`.) Fix: one slot per `PoolId` or a depth counter, and no
+  function other than enter/exit may write it. Test to write: an action on pool B nested inside pool A's callback,
+  then a re-entry into A; and every helper that touches the slot, called mid-callback. Goes red the moment either
+  reaches state that should have been unreachable.
+- **Class 24, the layer in front of the hook - canonical hook enforced on the deploy paths.** Knowing which router
+  is trusted is not enough if the deploy path itself can be pointed at the wrong hook. Every path that deploys or
+  registers a pool or a token pair for this hook asserts `require(hook == expectedHookAddress)` before it goes live.
+  Goes red the moment a pool or token can be deployed against a look-alike hook address and this hook's own
+  admission rules never run.
 
 ## Where this list comes from, and how far to trust it
 
@@ -75,7 +108,10 @@ Security): classes 27-30 and the additions to 9 and 23 came from that diff (31-3
 full - it is more specific than this list about shared positions and price sources. It has NOT been diffed line by
 line against the audit reports; treat it as a good prompt list, and read the primary sources for
 the classes that apply to you. If the hook inherits from a maintained base (OpenZeppelin's `BaseHook`), classes 1 and 2
-come largely for free - check that they do, do not assume it.
+come largely for free - check that they do, do not assume it. Class 36, and the three sub-bullets on classes 8, 24
+and 28, came from a 2026-09-22 read of a third-party public checklist (aeon's `hook-checklist.md`) against this
+list; it had one class this list lacked entirely - see the class 36 note above for the attribution. What was
+read and not carried over (a verdict word, a badge, a rule that a clean report never fuzzes) is by design.
 
 Of these, this kit's own example hook exercises 1, 2, 3 (in part), 9, 14 (the cap) and 21. The rest have no code in
 this repository: the list tells you what to ask, the tests are yours to write.

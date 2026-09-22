@@ -32,6 +32,14 @@ question, not the presence of the script.
 | 9 | Would a different engine reach what mine does not? | Medusa, Echidna, on the same properties (Chimera layout) | optional to run; in full mode "not done" needs the owner's written reason |
 | 10 | Does it fit, and what does it cost? | `scripts/size.sh`, `forge snapshot` regenerated at promotion | yes - size and margin |
 
+**Row 7, extended - vendored dependency provenance.** The question in row 7 is not only about the pool manager's
+bytecode: it applies to every dependency vendored as source instead of installed as a package - a library copied in,
+a forked interface, a pinned commit checked in by hand. Before trusting a vendored copy, `sha256` it against the
+artifact of the real tagged release it claims to be. Goes red the moment the hashes differ; when that happens, do not
+patch the vendored copy and move on - flag it, do not use it as the basis for any claim until the mismatch is
+resolved with the owner, and say so in the dossier's dependency row (`briefs/handoff-dossier.md` section 1,
+`{{DEPS}}`).
+
 "Full mode" is the route for an immutable contract or one that holds other people's funds (`COST.md` section 1). In
 light mode the gates in the last column are recommendations - which does not make them skippable in silence: not
 following one is a divergence, and `AGENTS.md` section 6b says what a divergence owes (the question, the reason,

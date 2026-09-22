@@ -5,7 +5,7 @@ to give them back the days they would spend asking for what a dossier should alr
 known to be imperfect, and - the section they will read first - **what nobody checked**.
 
 Write it in the language the AUDITOR reads. If the spec is in another language because the owner reads that one,
-say so on the first line and translate at least sections 1, 4 and 8.
+say so on the first line and translate at least sections 0, 1, 4 and 9.
 
 It is assembled, not written: almost every section points at a file that already exists if the route was walked. If a
 section has nothing to point at, do not pad it. Write "not done" and the reason. An honest gap costs the auditor five
@@ -21,8 +21,18 @@ published guides; the dossier's author should cite the ones they checked against
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
 **Not deployed. Not audited by humans.** Prepared with AI agents under the owner's direction; every claim below carries
 its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
-**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 5, {{N_SKIPPED}} steps skipped with the owner's agreement** -
+**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement** -
 a dossier can be complete and thin at the same time; this line says which one it is.
+
+## 0. Executive summary (must)
+
+{{EXEC_SUMMARY}}
+
+Two to four sentences, before the reader hits a table: what the hook does, the round count and model families spent
+on it, the headline finding if there was one, and the one sentence the reader most needs before section 1 - whether
+anything here is still moving. No adjective a paid auditor would have to walk back later ("safe", "secure", "audited",
+"verified") - point at the evidence label instead (`doctrine/EVIDENCE.md`). Write it last, after every other section
+exists: it is the only section with no file to assemble from. Three honest sentences beat four padded ones.
 
 ## 1. Scope sheet (must)
 
@@ -80,7 +90,24 @@ Every finding that was accepted rather than fixed: what an attacker achieves, wh
 why it was not fixed, and who accepted it. -> `SPEC.md` section 6. Refusals with their reasons -> `DECISIONS.md`.
 An auditor judges new findings against this list; leaving something out of it is how a known issue becomes a "critical".
 
-## 5. What the judges said (must; the rows of `doctrine/JUDGES.md` - its row 1 is split in two here)
+## 5. Candidates raised and refuted (must)
+
+Every idea that was chased and found safe - a class walked in `doctrine/HOOK-ATTACKS.md`, a shape a round's brief
+named under "where to press hardest", a suspicion an owner or an agent raised in `DECISIONS.md` - listed even though
+it never became a finding. One line each: the candidate, the round or judge that refuted it, and the test or
+argument that closed it, with its evidence label. Do not fold this into section 4: an accepted trade-off and an
+attack that was tried and failed are not the same claim, and merging them hides which one a given row is.
+
+| candidate | round / judge that refuted it | test or argument | evidence label |
+|---|---|---|---|
+| {{CANDIDATE}} | {{ROUND}} | {{TEST_OR_ARGUMENT}} | {{LABEL}} |
+
+Goes red the same way section 9 (what was NOT checked) does: an empty table with no line explaining why nothing was
+raised this route is not a credible claim on any hook that went through more than one adversarial round. A reader
+who finds a class missing from both section 4 and this one cannot tell "safe" from "never looked at" - this section
+is what tells them apart.
+
+## 6. What the judges said (must; the rows of `doctrine/JUDGES.md` - its row 1 is split in two here)
 
 | judge | command, tool version | result, read from the output | where the output is |
 |---|---|---|---|
@@ -97,41 +124,41 @@ An auditor judges new findings against this list; leaving something out of it is
 | second fuzzing engine | | or "not done" | |
 | size, gas | | sizes and margins; gas of the main paths, regenerated for this revision | |
 
-## 6. The adversarial history (must)
+## 7. The adversarial history (must)
 
 The ROUND lines of `LOG.md` (`grep '^ROUND '`), one per round: id, kind (audit / black-box / verifier), model family, findings by severity, what
 changed because of it. Every report in full, in the repository. Say which model families were used; if only one, say
 that a blind spot shared by that family is invisible in everything above.
 
-## 7. Where we diverged from the usual process (must)
+## 8. Where we diverged from the usual process (must)
 
 Every divergence recorded under `AGENTS.md` section 6b: which question, what was done instead, why.
 
-## 8. What was NOT checked (must - the auditor reads this first)
+## 9. What was NOT checked (must - the auditor reads this first)
 
 Be specific. Examples of the form this takes: economic and ordering attacks (MEV, JIT liquidity) were reasoned about,
 not tested · native currency paths do not exist and were not tested · behaviour on chains other than {{CHAIN}} ·
 the deployment script was simulated, never broadcast · nothing here was reviewed by a human with security training ·
-rows of section 5 marked "not done".
+rows of section 6 marked "not done".
 
-## 9. Reproduce it (must)
+## 10. Reproduce it (must)
 
 From a clean checkout on a machine with nothing but Foundry: the exact commands, in order, that rebuild the bytecode
 (`forge clean` first), run the battery, and check the manifest. If it needs an RPC endpoint, say for which step; never
 include one.
 
-## 9b. What comes after the handoff (so the owner is ready for it)
+## 10b. What comes after the handoff (so the owner is ready for it)
 
 A professional review ends with a report and then a **fix review**. Expect to supply: a written response to every
 finding (fixed / acknowledged / disputed, with the reason); **one commit per fix**, so each can be reviewed alone; a
-changelog between the audited commit and the fixed one; and the re-run of section 5 on the fixed code. Findings come
+changelog between the audited commit and the fixed one; and the re-run of section 6 on the fixed code. Findings come
 back marked resolved, partially resolved or acknowledged - "acknowledged" is public, and it is the owner's name on it.
 Reports also carry a disclaimer that the review is not a guarantee; neither is this dossier.
 
 Separately from the code: key management, who can pause or upgrade, monitoring, an incident plan and a disclosure
 channel are not measured by anything in this kit. Say where they stand, or say "nothing yet".
 
-## 10. If applicable
+## 11. If applicable
 
 Deployment runbook and the rehearsal report (phase 7) · upgrade / pause procedure · off-chain components the guarantees
 depend on, and what happens when they are down or lying · incident plan: who can do what, how fast, if something goes
@@ -140,6 +167,6 @@ wrong after deployment · security contact.
 ---
 
 **Gate for phase 8:** every "must" section is filled or says "not done" with a reason, the not-done count is on the first
-line above AND in `STATE.md`, and every skip has the owner's written agreement; section 8 is not empty (an
-empty list of unchecked things is never true); a fresh agent, given only this dossier and the repository, can run
-section 9 to the end and get the numbers in section 5.
+line above AND in `STATE.md`, and every skip has the owner's written agreement; section 9 is not empty (an
+empty list of unchecked things is never true); section 5 is not empty either, on the same terms; a fresh agent, given
+only this dossier and the repository, can run section 10 to the end and get the numbers in section 6.

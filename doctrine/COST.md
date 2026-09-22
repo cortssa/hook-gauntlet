@@ -21,6 +21,15 @@ lost or stolen key, the storage layout across versions - `HOOK-ATTACKS.md` class
 Write the choice in `DECISIONS.md`, with a **ceiling**: the maximum number of rounds (or of money) the owner is
 willing to spend before stopping to reconsider. **STOP and ask when the ceiling is reached**, whatever the state.
 
+**On a large surface, the denominator does not shrink because you stopped early.** When depth is capped by the
+budget above - three of nine adapters read line by line, the rest scanned only for the shape of the other six -
+report the number actually reviewed against the number IN SCOPE, not against the number attempted: "3 of 9 reviewed,
+6 scanned only" is honest, "3 of 3 reviewed" is not, even if every one of the three came back clean. The skipped
+parts belong in the dossier's "what was NOT checked" by name (`briefs/handoff-dossier.md` section 9), not folded
+into a rounder claim. Goes red the moment a coverage sentence anywhere in the paperwork counts only what was looked
+at as the whole - `scripts/census.sh` and `forge coverage` already refuse to do this for code; the same rule applies
+when a human or an agent, not a tool, is doing the counting.
+
 ## 2. The local judges go first
 
 Compute on the owner's machine costs no model credits. Exhaust it before you buy an opinion.
