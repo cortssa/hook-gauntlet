@@ -1,0 +1,16 @@
+# build and run outputs - never commit these
+out/
+cache/
+broadcast/
+corpus/
+census/
+.gauntlet/
+
+# dependencies are fetched, not vendored (Uniswap's PoolManager is BUSL-1.1): scripts/install-v4.sh
+lib/
+
+# secrets and fetched fixtures
+.env
+.env.*
+foundry-kit/v4/fixtures/*.hex
+foundry-kit/v4/fixtures/*.json

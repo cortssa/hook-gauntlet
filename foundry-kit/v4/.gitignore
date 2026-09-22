@@ -1,0 +1,12 @@
+out/
+cache/
+lib/
+broadcast/
+.gauntlet/
+corpus/
+census/
+
+# Fetched fixtures: somebody else's compiled code, pulled from a chain by scripts/fetch-bytecode.sh.
+# Uniswap's PoolManager is BUSL-1.1. It is never committed here. Re-fetch it into your bench instead.
+fixtures/*.hex
+fixtures/*.json

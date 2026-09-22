@@ -1,0 +1,45 @@
+# hook-gauntlet foundry-kit.
+# Copy the settings you need into your own project's foundry.toml; the values here are the defaults the kit's
+# own tests and scripts assume.
+
+[profile.default]
+src = "src"
+test = "test"
+libs = ["lib"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+# The one path the tests may write to: the campaign census (HandlerBase.writeCensus), and only when
+# scripts/census.sh or scripts/fuzz-long.sh asks for it through GAUNTLET_CENSUS. Git-ignored.
+fs_permissions = [{ access = "read-write", path = "./census" }]
+
+[fuzz]
+runs = 256
+
+[invariant]
+runs = 64
+depth = 64
+# The setting that decides whether the suite means anything. With fail_on_revert = false the fuzzer is free to
+# spend a whole run bouncing off an input filter and still report green. With it true, every call into the
+# contract under test has to be wrapped in try/catch by the handler, and the catch branch has to classify the
+# failure: a revert you predicted is a data point, a revert you did not predict is a finding.
+fail_on_revert = true
+# keep the shrinker honest; a 200-call counterexample nobody can read is a finding nobody acts on
+shrink_run_limit = 5000
+# Coverage-guided fuzzing with a corpus that survives between runs: the campaign keeps the call sequences that
+# reached new code and starts from them next time, instead of re-discovering the easy paths. Git-ignored. Delete
+# the directory when the handler's list of actions changes shape. See doctrine/JUDGES.md.
+corpus_dir = "corpus/invariant"
+
+# The long profile: FOUNDRY_PROFILE=long, or scripts/fuzz-long.sh. Overnight, or before a promotion.
+[profile.long.invariant]
+runs = 1000
+depth = 128
+fail_on_revert = true
+shrink_run_limit = 20000
+corpus_dir = "corpus/invariant"
+
+[profile.long.fuzz]
+runs = 20000

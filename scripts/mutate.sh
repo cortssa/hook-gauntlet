@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+#
+# mutate.sh - apply ONE change to a throwaway copy of the project and say what the tests think of it.
+#
+# The problem it solves, twice:
+#
+#   EXPECT=red   (default) "does this test bite?" Break the code on purpose. A test that stays green over a
+#                broken contract is not a test. Every new invariant, every regression test and every guard
+#                gets one mutant it must kill, before it counts.
+#   EXPECT=green "which of these alternatives do I take?" When a fix can be written two or three ways and the
+#                hook is near the size limit or the gas ceiling, do not argue about it: build each variant,
+#                run the battery on it, read the bytes. The decision is then a table, not an opinion.
+#
+# The original is never touched. The change is applied to a copy, and the copy is deleted afterwards.
+# The change is a literal single-line string replacement that must match EXACTLY ONCE: a mutant that did not
+# apply, or applied in three places, proves nothing and is reported as such (rc=2), never as a result.
+#
+# Usage:   scripts/mutate.sh <project-dir> <file-relative-to-project> <old-string> <new-string>
+# Env:     EXPECT      red | green                          (default: red)
+#          TEST_FLAGS  flags for forge test                  (e.g. --match-contract Invariants)
+#          FORGE_FLAGS extra flags for forge                 (e.g. --offline)
+#          LABEL       a name for the log                    (default: mutant)
+#          OUT_DIR     where the log goes                    (default: <project>/.gauntlet/reports/mutants)
+#          KEEP=1      keep the copy and print its path
+#          BASELINE_MAY_BE_RED=1  only with EXPECT=green: accept a baseline with failing tests, for the flow "write the
+#                      regression test first, see it red, then compare candidate fixes". The variant must still be all green.
+#          COPY_ROOT   a parent directory to copy instead of the project alone, for a project that imports from
+#                      outside itself (a remapping like ../src/). The project must be inside it.
+# Exit:    0 the outcome matched EXPECT      (red: the mutant was KILLED;  green: the variant PASSED)
+#          1 the outcome did not match       (red: the mutant SURVIVED;   green: the variant FAILED)
+#          2 nothing was proven              (bad arguments, no unique match, the change does not compile, the UNCHANGED
+#                                             code is not green under the same TEST_FLAGS, or no test ran at all)
+# A limit, stated: the baseline is run ONCE. A test that is flaky without a fixed seed can be green there and red on a
+# mutant that changed nothing, and that reads as KILLED. Pin the seed in TEST_FLAGS (--fuzz-seed N) when the suite has
+# such a test, and read the failing test's message every time - it is printed for that reason.
+
+set -uo pipefail
+
+if [ "$#" -ne 4 ]; then
+  echo "usage: mutate.sh <project-dir> <file> <old-string> <new-string>"; exit 2
+fi
+PROJECT="$(cd "$1" 2> /dev/null && pwd)" || { echo "mutate: cannot enter $1"; exit 2; }
+FILE="$2"; export MUT_OLD="$3"; export MUT_NEW="$4"
+EXPECT="${EXPECT:-red}"
+TEST_FLAGS="${TEST_FLAGS:-}"
+FORGE_FLAGS="${FORGE_FLAGS:-}"
+LABEL="${LABEL:-mutant}"
+OUT_DIR="${OUT_DIR:-$PROJECT/.gauntlet/reports/mutants}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+case "$EXPECT" in red | green) ;; *) echo "mutate: EXPECT must be red or green"; exit 2 ;; esac
+[ -f "$PROJECT/$FILE" ] || { echo "mutate: no such file $PROJECT/$FILE"; exit 2; }
+[ -n "$MUT_OLD" ] || { echo "mutate: the old string is empty"; exit 2; }
+[ "$MUT_OLD" != "$MUT_NEW" ] || { echo "mutate: old and new are the same string"; exit 2; }
+
+mkdir -p "$OUT_DIR"
+LOG="$OUT_DIR/$LABEL.txt"
+COPY="$(mktemp -d)"
+cleanup() { if [ "${KEEP:-0}" = "1" ]; then echo "copy kept at $COPY"; else rm -rf "$COPY"; fi; }
+trap cleanup EXIT
+
+# -a keeps symlinks as symlinks, so a lib/ that points at a shared directory is not duplicated
+REL="."
+if [ -n "${COPY_ROOT:-}" ]; then
+  ROOT="$(cd "$COPY_ROOT" 2> /dev/null && pwd)" || { echo "mutate: cannot enter COPY_ROOT $COPY_ROOT"; exit 2; }
+  case "$PROJECT/" in
+    "$ROOT"/*) REL="${PROJECT#"$ROOT"}"; REL="${REL#/}"; [ -n "$REL" ] || REL="." ;;
+    *) echo "mutate: the project $PROJECT is not inside COPY_ROOT $ROOT"; exit 2 ;;
+  esac
+  cp -a "$ROOT/." "$COPY/"
+else
+  cp -a "$PROJECT/." "$COPY/"
+fi
+WORK="$COPY/$REL"
+
+# The UNCHANGED copy must build, or a failure further down would be blamed on the change.
+# It is built with --force, from nothing. A build cache copied from another path is NOT trustworthy: forge has been
+# measured reusing artifacts of the ORIGINAL source after the copy was mutated, which reported a broken contract as
+# SURVIVED and a broken variant as PASSED - a false green in the one tool whose job is to catch false greens. After
+# this forced build the cache belongs to this path, and the incremental build of the mutant is correct.
+# shellcheck disable=SC2086
+if ! (cd "$WORK" && forge build --force $FORGE_FLAGS > "$OUT_DIR/$LABEL.baseline.txt" 2>&1); then
+  echo "mutate: the copy does not compile BEFORE any change was applied. NOTHING PROVEN. The end of the build log:"
+  tail -n 12 "$OUT_DIR/$LABEL.baseline.txt" | sed "s/^/    | /"
+  echo "        If the error is an unresolved import, the project reaches outside its own directory (a relative"
+  echo "        remapping?): set COPY_ROOT to the parent that holds both. Otherwise fix the compile error first."
+  echo "        Full log: $OUT_DIR/$LABEL.baseline.txt"
+  exit 2
+fi
+
+# The UNCHANGED copy must also pass the SAME tests, and some must actually run. Otherwise "the tests went red" means
+# nothing: a typo in TEST_FLAGS, a fork test with no RPC, a flaky test - each would make every mutant look KILLED, and a
+# filter that matches nothing would make every broken variant look PASSED. This costs one extra run of the suite.
+passed_in() { grep -E 'Ran [0-9]+ test suites? .*: [0-9]+ tests? passed' "$1" | tail -1 | sed -E 's/.*: ([0-9]+) tests? passed.*/\1/'; }
+# shellcheck disable=SC2086
+(cd "$WORK" && forge test $FORGE_FLAGS $TEST_FLAGS > "$OUT_DIR/$LABEL.baseline-test.txt" 2>&1)
+rc_base=$?
+base_passed="$(passed_in "$OUT_DIR/$LABEL.baseline-test.txt")"
+base_red_ok=0
+if [ "$EXPECT" = "green" ] && [ "${BASELINE_MAY_BE_RED:-0}" = "1" ] && [ "$rc_base" -ne 0 ] && [ -n "$base_passed" ] \
+  && grep -qE '^\[FAIL' "$OUT_DIR/$LABEL.baseline-test.txt"; then
+  # the one flow in which a red baseline is the POINT: the regression test was written first, it is red on the unchanged
+  # code, and the variants are candidate fixes. The variant still has to come out fully green below.
+  base_red_ok=1
+  echo "mutate: the baseline is red, and BASELINE_MAY_BE_RED=1 says that is expected. Red before the change:"
+  grep -E '^\[FAIL' "$OUT_DIR/$LABEL.baseline-test.txt" | cut -c1-160 | sort -u | head -20
+fi
+if [ "$base_red_ok" -eq 0 ] && { [ "$rc_base" -ne 0 ] || [ -z "$base_passed" ] || [ "$base_passed" = "0" ]; }; then
+  echo "mutate: the UNCHANGED code does not pass these tests, or no test ran (rc=$rc_base, passed=${base_passed:-none})."
+  echo "        A red or empty baseline makes every verdict meaningless. NOTHING PROVEN. The end of the log:"
+  tail -n 8 "$OUT_DIR/$LABEL.baseline-test.txt" | sed "s/^/    | /"
+  exit 2
+fi
+
+# literal replacement, counted. Strings come through the environment so that awk does not interpret backslashes.
+export MUT_TARGET="$WORK/$FILE.mutated"
+count="$(awk '
+  BEGIN { old = ENVIRON["MUT_OLD"]; new = ENVIRON["MUT_NEW"]; n = 0 }
+  { line = $0; out = ""
+    while ((i = index(line, old)) > 0) { n++; out = out substr(line, 1, i - 1) new; line = substr(line, i + length(old)) }
+    print out line > ENVIRON["MUT_TARGET"] }
+  END { print n }' "$WORK/$FILE")"
+if [ "$count" != "1" ]; then
+  echo "mutate: the old string matched $count time(s) in $FILE; it must match exactly once. NOTHING PROVEN." | tee "$LOG"
+  exit 2
+fi
+mv "$WORK/$FILE.mutated" "$WORK/$FILE"
+
+{
+  echo "== $LABEL (EXPECT=$EXPECT) =="
+  echo "file: $FILE"
+  echo "-    $MUT_OLD"
+  echo "+    $MUT_NEW"
+} | tee "$LOG"
+
+cd "$WORK" || exit 2
+# shellcheck disable=SC2086
+forge build $FORGE_FLAGS > "$LOG.build" 2>&1
+rc_build=$?
+cat "$LOG.build" >> "$LOG"
+# a build that compiled nothing after a source change means the change was not seen: refuse to call that a result
+if [ "$rc_build" -eq 0 ] && grep -q -i "No files changed, compilation skipped" "$LOG.build"; then
+  echo "mutate: forge compiled NOTHING after the change was applied. The mutant was not built. NOTHING PROVEN." | tee -a "$LOG"
+  rm -f "$LOG.build"; exit 2
+fi
+rm -f "$LOG.build"
+if [ "$rc_build" -ne 0 ]; then
+  echo "mutate: the changed code does not compile. NOTHING PROVEN (see $LOG)." | tee -a "$LOG"
+  exit 2
+fi
+
+# shellcheck disable=SC2086
+forge test $FORGE_FLAGS $TEST_FLAGS > "$LOG.test" 2>&1
+rc_test=$?
+cat "$LOG.test" >> "$LOG"
+mut_passed="$(passed_in "$LOG.test")"
+# forge prints every failing test twice (inside its suite, and again under "Failing tests:"): count DISTINCT lines
+mut_fails="$(grep -E '^\[FAIL' "$LOG.test" | cut -c1-160 | sort -u | wc -l | tr -d ' ')"
+rm -f "$LOG.test.keep"; mv "$LOG.test" "$LOG.test.keep"
+
+if [ "$EXPECT" = "red" ]; then
+  if [ "$rc_test" -ne 0 ] && [ "$mut_fails" -gt 0 ]; then
+    echo "KILLED - $mut_fails test(s) went red on the mutant, and the same tests were green without it. Failing tests:" | tee -a "$LOG"
+    grep -E '^\[FAIL' "$LOG.test.keep" | cut -c1-160 | sort -u | head -20
+    echo "READ the message: a test that fails for a reason unrelated to the claim has not killed anything."
+    rm -f "$LOG.test.keep"; exit 0
+  fi
+  if [ "$rc_test" -ne 0 ]; then
+    echo "mutate: forge test failed on the mutant WITHOUT a single failing test (a crash? a bad flag?). NOTHING PROVEN (see $LOG)." | tee -a "$LOG"
+    rm -f "$LOG.test.keep"; exit 2
+  fi
+  echo "SURVIVED - the code was broken and every test stayed green. The rule you were checking does not bite." | tee -a "$LOG"
+  exit 1
+fi
+
+# EXPECT=green: a variant. It must pass, and the bytes are part of the answer.
+if [ "$rc_test" -ne 0 ]; then
+  echo "VARIANT FAILED the tests (see $LOG)." | tee -a "$LOG"
+  grep -E '^\[FAIL' "$LOG.test.keep" | cut -c1-160 | sort -u | head -20
+  rm -f "$LOG.test.keep"; exit 1
+fi
+if [ -z "$mut_passed" ] || [ "$mut_passed" = "0" ]; then
+  echo "mutate: no test ran against the variant. NOTHING PROVEN." | tee -a "$LOG"
+  rm -f "$LOG.test.keep"; exit 2
+fi
+rm -f "$LOG.test.keep"
+echo "VARIANT PASSED $mut_passed test(s). Sizes:" | tee -a "$LOG"
+if [ -x "$HERE/size.sh" ]; then
+  OUT_DIR="$OUT_DIR" LABEL="$LABEL-sizes" "$HERE/size.sh" "$WORK" | tee -a "$LOG"
+else
+  echo "size.sh not found next to mutate.sh: sizes NOT measured" | tee -a "$LOG"
+fi
+exit 0

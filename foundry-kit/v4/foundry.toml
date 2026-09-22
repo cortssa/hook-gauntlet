@@ -1,0 +1,59 @@
+# hook-gauntlet foundry-kit / v4 module.
+#
+# A separate Foundry project from the kit's root on purpose: the root kit's only dependency is forge-std, and
+# nobody who is not writing a v4 hook should have to compile a PoolManager to run it. `scripts/install-v4.sh`
+# fills lib/ here, and lib/ is git-ignored.
+
+[profile.default]
+src = "src"
+test = "test"
+libs = ["lib"]
+# ../src is the root kit (HostileERC20, HandlerBase, InvariantAsserts). Remapped, not copied.
+allow_paths = ["../src"]
+solc_version = "0.8.26"
+evm_version = "cancun"
+# PoolManager is a large contract that Uniswap compiles with via_ir and a very high optimizer run count. We
+# keep via_ir off, because turning it on multiplies compile time by something between five and twenty and the
+# gauntlet's inner loop is "change one line, re-run the battery". The run count is theirs. If your own hook
+# needs via_ir, turn it on for your project and measure the runtime size again: see `forge build --sizes`.
+optimizer = true
+optimizer_runs = 44444444
+via_ir = false
+# ...with ONE exception, measured. At these settings PoolManager compiles to 26 988 bytes, which is 2 412
+# over the EIP-170 limit: a manager that could not be deployed on any chain. Uniswap compiles it with the IR
+# pipeline, so we do too, for that one file. It costs about three seconds of the whole build and it brings
+# the manager to 24 050 bytes, 526 under the limit. Without this, `forge build --sizes` - and therefore
+# `scripts/battery.sh` - fails, and it is right to.
+additional_compiler_profiles = [{ name = "manager", via_ir = true, optimizer_runs = 44444444 }]
+compilation_restrictions = [
+  { paths = "lib/v4-core/src/PoolManager.sol", via_ir = true, optimizer_runs = 44444444 },
+]
+# The fixture path for the real-bytecode manager, read-only; and the campaign census (HandlerBase.writeCensus), which
+# is written only when scripts/census.sh or scripts/fuzz-long.sh asks for it through GAUNTLET_CENSUS. Nothing else.
+fs_permissions = [{ access = "read", path = "./fixtures" }, { access = "read-write", path = "./census" }]
+
+[fuzz]
+runs = 256
+
+[invariant]
+runs = 64
+depth = 64
+# Same setting, same reason as the root kit: without it the fuzzer can spend a whole run bouncing off an
+# input filter and still report green. Every call into the contract under test is wrapped in try/catch and
+# the catch branch classifies the failure.
+fail_on_revert = true
+shrink_run_limit = 5000
+# Coverage-guided fuzzing with a corpus that survives between runs: the campaign keeps the call sequences that
+# reached new code and starts from them next time, instead of re-discovering the easy paths. Git-ignored. Delete
+# the directory when the handler's list of actions changes shape. See doctrine/JUDGES.md.
+corpus_dir = "corpus/invariant"
+
+[profile.long.invariant]
+runs = 1000
+depth = 128
+fail_on_revert = true
+shrink_run_limit = 20000
+corpus_dir = "corpus/invariant"
+
+[profile.long.fuzz]
+runs = 20000

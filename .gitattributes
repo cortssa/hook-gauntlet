@@ -1,0 +1,7 @@
+# Line endings are LF everywhere, on every platform. A shell script checked out with CRLF fails in ways that do not
+# mention line endings (README, "What you need"), and a Solidity file with CRLF changes every hash in a manifest.
+* text=auto eol=lf
+*.sh text eol=lf
+*.sol text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
