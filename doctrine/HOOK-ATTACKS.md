@@ -15,7 +15,7 @@ auditor most needs to see, because those are the guarantees that stop holding th
 counter-example you tried - not a search result (`EVIDENCE.md` 6) - and one discovery round is told to break that list.
 A class with no decision is a hole - and "not supported" is not a decision until something REFUSES it and a test
 shows the refusal. If you find an undecided class on code that is already promoted, that is an owner decision
-(`NEXT.md` row 1): pin the current behaviour with a test, both ways, and ask.
+(`NEXT.md` row 3): pin the current behaviour with a test, both ways, and ask.
 Your hook will also have classes of its own that are not here; `INVARIANTS.md` is how you find those.
 
 Two public incidents are worth knowing before you read the table, because both were hooks and both were ordinary bugs:

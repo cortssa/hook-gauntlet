@@ -62,12 +62,21 @@ now cover the example too, since it lives inside them.
 
 ## What is in here
 
+Four of these overlap with utilities upstream ships, and the kit's own rule is that upstream wins - so here is why each
+one exists anyway. `HookMiner`: upstream's lives in `v4-periphery`, which this module does not install by default (the
+harness needs only `v4-core`); ours is the same search, and the flag mask is read from `Hooks.sol` of the pinned core,
+not copied, so a change in the mask's width is picked up on the next pin. `MinimalRouter` and `LiquidityHelper`: `v4-core`
+ships `PoolSwapTest` and `PoolModifyLiquidityTest`; ours are deliberately dumber (no hook-data plumbing, no take/settle
+options) so that a failure in a test is the hook's or the manager's, never the fixture's. `V4Harness` overlaps with
+`Deployers.sol`, which does not know about an etched manager. If any of these ever disagrees with its upstream twin on
+behaviour, the upstream one is right.
+
 | file | what it is |
 | --- | --- |
-| `src/V4Harness.sol` | the base your tests inherit: **both** managers, currencies, routers, pool helpers |
-| `src/HookMiner.sol` | CREATE2 salt search for an address carrying **exactly** the declared flags |
-| `src/MinimalRouter.sol` | the dumbest swap router that can settle its own deltas |
-| `src/LiquidityHelper.sol` | adds and removes liquidity inside its own unlock callback |
+| `src/V4Harness.sol` | the base your tests inherit: **both** managers, currencies, routers, pool helpers (overlaps `v4-core/test/utils/Deployers.sol`) |
+| `src/HookMiner.sol` | CREATE2 salt search for an address carrying **exactly** the declared flags (overlaps `v4-periphery/src/utils/HookMiner.sol`) |
+| `src/MinimalRouter.sol` | the dumbest swap router that can settle its own deltas (overlaps `v4-core/src/test/PoolSwapTest.sol`) |
+| `src/LiquidityHelper.sol` | adds and removes liquidity inside its own unlock callback (overlaps `PoolModifyLiquidityTest.sol`) |
 | `src/HostileHook.sol` | a hook that lies on demand, and declares nothing, so it can be mined to a WRONG address |
 | `src/SwapEventReader.sol` | reads the fee the manager's own `Swap` event reports |
 | `src/examples/CappedDynamicFeeHook.sol` | the worked toy: a congestion fee with a hard cap |

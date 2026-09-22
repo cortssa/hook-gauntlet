@@ -52,6 +52,10 @@ each page is available as plain Markdown.
 | the error a manager wraps a hook's revert in | ERC-7751, <https://eips.ethereum.org/EIPS/eip-7751> | the example handlers, `_classifyPoolFailure` |
 | how your target chain orders transactions, what `block.number` and `block.timestamp` mean there, its block time | **the chain's own documentation.** On an Arbitrum-style L2, for instance, `block.number` is an estimate of the L1 block and the sequencer is first-come-first-served; a hook with a "per block" rule, or a threat model that assumes a public mempool, means something different there | `HOOK-ATTACKS.md`, the class "What your CHAIN changes"; the spec's assumptions table |
 
+**When you cannot fetch** (no network, a sandbox, an endpoint the owner has not set): do not answer from memory
+instead. Label the claim UNVERIFIED, mark the judge that needed it "not done", carry both to the dossier's "not
+checked" section, and ask the owner for the page or the endpoint (`NEXT.md` row 7b is the model: ask, and wait).
+
 If a page in this table has moved, fix the table in your copy and tell us. If a page CONTRADICTS this kit, the page
 wins (and tell us).
 

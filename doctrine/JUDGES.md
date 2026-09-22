@@ -7,6 +7,11 @@ another way and write it down (`AGENTS.md` section 6b). If the question does not
 Almost everything here costs no model tokens: it runs on the owner's CPU - loudly, sometimes for an hour (see "What
 the local judges cost" below). Exhaust it before buying a round (`COST.md`).
 
+Every flag in the "usual tool" column was checked against `forge --help` of forge 1.8.1 on 2026-09-22 (`--mutate`,
+`--brutalize`, `--symbolic`, `--fuzz-seed`, `-j/--threads`; `corpus_dir` and `FOUNDRY_INVARIANT_CORPUS_DIR` by running
+them). Foundry renames flags between releases: before trusting a row, run `forge test --help | grep <flag>` on YOUR
+forge, and read <https://getfoundry.sh/llms.txt> for the current page (`doctrine/UPSTREAM.md` 1b).
+
 The "usual tool" column is how THIS kit's harness answers the question. A project that already answers it another
 way - it etches the real manager's bytecode in its own tests, it has a fork suite - has answered it. Judge the
 question, not the presence of the script.
@@ -16,12 +21,12 @@ question, not the presence of the script.
 | # | the question | usual tool | full-mode gate? |
 |---|---|---|---|
 | 1 | Does it build clean, and is there a basic mistake a machine would catch? | `forge build` with lints, `forge lint`, **Slither** with a written triage | yes - the triage |
-| 2 | Does each promise have a test that passes? | `forge test` - unit tests, one per row of the spec's hostile-actor table | yes |
+| 2 | Does each promise have a test that passes? | `forge test` - at least one piece of evidence per row of the spec's hostile-actor table: a unit test, a property, or REASONED with the reason | yes |
 | 3 | Does any SEQUENCE of actions break a rule? | Foundry invariant fuzzing, handler + hostile token, **corpus on** | yes |
 | 4 | Is the campaign reaching everything? | the campaign census (`scripts/census.sh`: runs in which each action succeeded, each boundary was reached; `CORE` and `REACH` make the ones that matter a gate), `forge coverage` by **branch** (if it will not compile: `--ir-minimum`; if that will not either: "not done", with the compiler error) | yes - branch numbers, or the reason there are none |
 | 5 | Do my tests bite? | `forge test --mutate`; `scripts/mutate.sh` for one aimed change | yes - score + survivors read |
 | 6 | Does the code survive dirty memory and junk in unused bits? | `forge test --brutalize` | no |
-| 7 | Does the manager's DEPLOYED CODE behave like the one I compiled? | the real manager's runtime bytecode etched into the tests (here: `scripts/fetch-bytecode.sh` + `V4_MANAGER=fixture`). This is its code, NOT its state: no owner, no protocol fee, no pools, the test chain id. Anything that depends on deployed state, real tokens or real periphery needs a FORK suite, which this kit does not ship | yes, once the chain is known |
+| 7 | Does the manager's deployed BYTECODE behave like the one I compiled? (Its STATE - owner, fees, existing pools, real periphery - is a different question, answered only by a fork suite, which this kit does not ship: see the next row and the phase-3 gate) | the real manager's runtime bytecode etched into the tests (here: `scripts/fetch-bytecode.sh` + `V4_MANAGER=fixture`). This is its code, NOT its state: no owner, no protocol fee, no pools, the test chain id. Anything that depends on deployed state, real tokens or real periphery needs a FORK suite, which this kit does not ship | yes, once the chain is known |
 | 8 | Does this arithmetic hold for EVERY input, not the ones I tried? | `forge test --symbolic` (needs an SMT solver), Halmos, Kontrol, Certora | optional to run; in full mode "not done" needs the owner's written reason. Say what was and was not proven |
 | 8b | Would an independently written model agree? | a deliberately dumb reference model, written from the SPEC, fuzzed side by side with the contract (`EVIDENCE.md` section 5) | yes, for a hook with its own arithmetic or accounting |
 | 9 | Would a different engine reach what mine does not? | Medusa, Echidna, on the same properties (Chimera layout) | optional to run; in full mode "not done" needs the owner's written reason |

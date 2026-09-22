@@ -33,11 +33,11 @@ live contract, that is outside this kit: stop and say so.
 
 **Second rule: no model is the judge - and no single test is, either.** A test is evidence only after it has been
 SEEN RED on code that is wrong in the way the test claims to detect; a passing test nobody has watched fail is a
-label, not evidence. A finding you cannot compile is still a finding. Passing every gate does not mean "secure": this
+label, not evidence. A finding you cannot compile still counts - labelled REASONED, triaged like the rest, its severity
+set by the owner's triage and never argued down by the round that would like to close. Passing every gate does not mean "secure": this
 process measures how much of the STATED security model got tested, and says where that stops (`doctrine/EVIDENCE.md`).
 Agents propose and attack. What decides whether a claim is true is
-execution: a Foundry test that passes, a fork run, a fuzz campaign. A finding without a test that reproduces it is
-labelled REASONED - and it still counts.
+execution: a Foundry test that passes, a fork run, a fuzz campaign.
 
 ## 2. The roles
 
@@ -74,12 +74,12 @@ model rounds, and nothing leaves it without passing through phase 1. `doctrine/C
 |---|---|---|---|
 | 0 | **Owner interview** | scope, threat model, non-goals | the owner has answered every question in `briefs/owner-interview.md` - including the self-score against the Uniswap Foundation's security framework (`doctrine/UPSTREAM.md`) - and the answers are written in `DECISIONS.md` |
 | 1 | **Falsifiable spec** | `SPEC.md` | every class in `doctrine/HOOK-ATTACKS.md` is decided (applies / does not apply, with its predicate / accepted / prevented by an admission rule); the assumptions the spec stands on are listed; the "what a hostile actor can do -> what the contract answers" table covers every external entry point; invariants are written in words; out-of-scope is explicit; the owner has read it |
-| 2 | **Foundry sketch** | a compiling hook | `forge build` clean; runtime size measured and under the target chain's code-size limit (24,576 bytes on Ethereum, EIP-170), with the margin written down; built on the official `v4-template` layout |
-| 3 | **Battery** | unit + fork + invariant tests | 100% green, not 99%; at least one fork test against real tokens; invariant suite running against the hostile-token mock; `fail_on_revert = true`; **invariants and fuzz actions derived for THIS hook** (`doctrine/INVARIANTS.md`, `doctrine/FUZZ-ACTIONS.md`) - the ones that ship are the floor; every action shown to SUCCEED in the census, not merely to be called |
+| 2 | **Foundry sketch** | a compiling hook | `forge build` clean; runtime size measured and under the target chain's code-size limit (24,576 bytes on Ethereum, EIP-170 - check your chain's current limit, and the EIPs in flight), AND initcode size under the initcode limit (49,152 bytes on Ethereum, EIP-3860: a hook is deployed by CREATE2 from initcode that carries its constructor arguments), both margins written down; built on the official `v4-template` layout |
+| 3 | **Battery** | unit + fork + invariant tests | 100% green, not 99%; at least one fork test against the real tokens and periphery of the target chain - the kit ships no fork suite, so this is written for the hook, and if the owner has no endpoint it is "not done" in the dossier with that reason; invariant suite running against the hostile-token mock; **`fail_on_revert = true` AND the census, as a pair** - the first without the second is the false green `JUDGES.md` warns about, because the way to satisfy it is a handler that swallows everything; **invariants and fuzz actions derived for THIS hook** (`doctrine/INVARIANTS.md`, `doctrine/FUZZ-ACTIONS.md`) - the ones that ship are the floor; every action shown to SUCCEED in the census, not merely to be called |
 | 4 | **Adversarial loop** | one report per round | **a DISCOVERY round with zero high and zero medium findings, and no REASONED high or medium left open**. See `doctrine/LOOP.md` |
 | 5 | **Black-box** | a divergence report | every promise in the spec has been tested from outside; every divergence is either fixed or written into the spec |
 | 6 | **Promotion** | canonical copy + manifest | the loop is over and the black-box round is current (`NEXT.md` rows 14-16) - or the owner decided in writing to skip it, and the dossier says so under "not checked"; copy is byte-identical to the sketch; hash manifest reproduces; drift guard fails when it should; the **bytecode** reproduces, not only the source |
-| 7 | **Rehearsal** | a followed runbook | an agent that did not write the runbook follows it literally on a fork, simulated only, and reports every step that was wrong, out of order or missing |
+| 7 | **Rehearsal** | a followed runbook | an agent that did not write the runbook follows it literally on a fork, simulated only, and reports every step that was wrong, out of order or missing; AND it asserts that `HookMiner.find(deployer, flags, initcode)` with the runbook's DEPLOYER and constructor arguments reproduces the recorded salt and address byte for byte - the triple upstream names as the usual cause of a failed hook deployment, and the one thing a rehearsal by a different party can check without a key |
 | 8 | **Handoff** | the dossier (`briefs/handoff-dossier.md`) | every "must" section filled or marked "not done" with a reason; what the judges said, read from outputs; every divergence; a non-empty list of what was **not** checked; a fresh agent can reproduce the numbers from the dossier alone |
 
 **Phase 8 is the end.** Hand the dossier to humans.
@@ -142,7 +142,8 @@ Everything else, you do.
 ## 6. Working rules for every round
 
 1. **Read the whole report before touching code.** Never act on an agent's summary. The summary drops the
-   measurements, and the measurements are where the decisions are.
+   measurements, and the measurements are where the decisions are. If it does not fit in your context next to what you
+   need, read it in sections and keep a written ledger of each - never summarise it internally and report "read".
 2. **One bench per agent.** Never compile in another agent's directory; the build tool will clear its artifacts.
 3. **Every claim carries its evidence** (`doctrine/EVIDENCE.md`). What can be tested is a test that has been SEEN RED
    on broken code and now passes - no red tests in reports: a test that proves a bug asserts the wrong behaviour,
@@ -157,12 +158,14 @@ Everything else, you do.
    next round re-reports it and you have burned a round.
 7. **Regression test every accepted finding**, citing the auditor's own test name. Prove the test bites: break the
    code on purpose and watch it go red (`scripts/mutate.sh`). Then ask which invariant and
-   which fuzz action would have caught it without the auditor, and add them. Every bug found outside the fuzzer is
-   a missing rule or a missing action.
+   which fuzz action would have caught it without the auditor, and add them. When none could - an economic attack, a
+   deployment mistake, a wrong assumption about an external system - say so: that is a class the fuzzer cannot reach,
+   and the dossier's "not checked" section is where it goes.
 8. **Re-run the full battery and the long fuzz** after every change, and read the CAMPAIGN'S census
    (`scripts/census.sh`: in how many runs each action succeeded, each boundary was reached, a surprise was met) -
    not just the pass line, not the block of logs forge prints (that is ONE run of the campaign), and not the
-   fuzzer's `reverts:` figure, which under `fail_on_revert = true` cannot be anything but 0.
+   fuzzer's `reverts:` figure, which in a GREEN campaign under `fail_on_revert = true` cannot be anything but 0 (in a
+   red one it is the run that failed - read that one).
 9. **A tool that ran is not a question that was answered.** Read the result, not the exit code: a mutation run with
    zero mutants killed, a fuzz campaign where nothing succeeded, a fixture suite that skipped - all exit green.
    `doctrine/JUDGES.md` lists each judge, its question, and how it lies.
@@ -188,7 +191,31 @@ You may replace a tool or reorder the local judges on your own. You may SKIP a s
 3. write it in `DECISIONS.md`, dated - and for a skip, with the owner's answer in their own words;
 4. carry it into the handoff dossier, under "what was not checked, or was checked differently".
 
-A divergence that is written down is engineering. A step silently skipped is a hole with a green tick on it.
+A divergence that is written down is engineering. A step silently skipped is a hole with a green tick on it. And a
+substitute is not four sentences: it PRODUCES something - a test output, a tool's report, a measurement - that goes
+in the dossier next to the question it answers. "I read the tests and they look sharp" answers nothing.
+
+## 6c. How an agent following this literally goes wrong
+
+Five ways, each seen or predicted by an outside reviewer. Know them before you start.
+
+1. **Gaming the gate**: narrowing scope, weakening an invariant, declaring a class "does not apply" until the gate
+   passes. Against it: a skip needs the owner's written yes (6b); "does not apply" needs a predicate the spec states
+   (phase 1 gate); a spec weakened to pass is a spec change the owner confirms in writing (section 5).
+2. **Trusting your own spec**: you wrote the spec, derived the tests from it, and verified the code against it - a
+   closed loop that proves the code matches YOUR model, not the world. Against it: the owner interview, the black-box
+   round, a different vendor for the closing round, and `HOOK-ATTACKS.md` as prompts you did not write.
+3. **Reading exit codes instead of outputs**: the scripts refuse a green exit on empty results, and the census exists
+   for this; still, read the file, not the summary line.
+4. **Not being able to read the whole report**: a round is a quarter of a million tokens. If it does not fit next to
+   the spec and the source, read it in sections and write the ledger as you go - never summarise it internally and
+   report that you read it. Say in the log how you read it.
+5. **Ending on a lazy round**: the exit is a discovery round that finds nothing, so the cheapest way to finish is an
+   auditor that did not look. Against it: the ROUND line carries the round's EFFORT (tokens, files opened, tests
+   written); a closing round with a thin ROUND line is not a closing round.
+
+And one that is yours to avoid: spending the budget on the three state files instead of on the code (`NEXT.md`,
+"Ceremony check").
 
 You may **not** diverge on these, whatever the hook, whatever the owner says in the moment:
 

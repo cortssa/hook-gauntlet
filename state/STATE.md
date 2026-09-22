@@ -17,8 +17,7 @@ ceiling:                   8 model rounds (adversarial + black-box) agreed in ph
 waiting_on_owner:          F-24, accept or fix (does not block round 6)
 ```
 
-*These lines are what `doctrine/NEXT.md` reads. With them as they stand: row 1 is true (F-24 is with the owner) but it is
-not terminal, and nothing below depends on that answer; row 3 is false; the next true row is the black-box round (row
+*These lines are what `doctrine/NEXT.md` reads. With them as they stand: row 1 is false (no high is waiting); row 2 is false (5 of 8 used); row 3 is true (F-24 is with the owner) but nothing below depends on that answer; the next true row is the black-box round (row
 12): a round has run, the battery is green, and it has never been run. It goes before round 6.*
 
 ## Where we are

@@ -1,6 +1,8 @@
 # hook-gauntlet
 
-*From idea to audit-ready, for Uniswap v4 hooks.*
+*From idea to audit-ready, for Uniswap v4 hooks.* Audit-ready means ready to BE audited: a human audit is the next
+step, not something this repository replaces or shortens by more than the days an auditor spends asking for what a
+dossier should already say.
 
 A repository written for **agents**. You have an idea for a v4 hook, or a hook you already wrote. You give your
 agent this repository and your idea. The agent walks a nine-phase route, with a gate at each phase, and the output
@@ -32,7 +34,7 @@ scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on 
 ```
 
 Then, in your own project, to your agent: *"Read `AGENTS.md` in hook-gauntlet, all of it. My idea is: ... Start at
-phase 0 and interview me."* From there the agent's next step always comes from one table,
+phase 0 and interview me."* From there the agent's next step comes from one decision table,
 [`doctrine/NEXT.md`](doctrine/NEXT.md), and everything it decides is written in three files in YOUR repository
 (`STATE.md`, `DECISIONS.md`, `LOG.md`), so a different agent - or you - can pick it up cold.
 
@@ -151,7 +153,9 @@ adapters/        claude-code (the path this was run on), codex (untested)
 
 ## What you need
 
-Foundry, `bash`, `git`, and an agent that can read files and run a terminal. The v4 module needs Uniswap's
+Foundry, `bash`, `git`, and an agent that can read files and run a terminal; Slither (Python) for the static-analysis
+judge, which full mode requires and which is an install your agent must ask you for. `forge install foundry-rs/forge-std`
+in `foundry-kit/` before the self-test (it says INCOMPLETE without it). The v4 module needs Uniswap's
 sources: `scripts/install-v4.sh` fetches them at pinned commits into a git-ignored `lib/`. They are not in this
 repository and must not be - `PoolManager` is BUSL-1.1. The scripts are exercised on Linux
 and bash 5. **On Windows, run everything inside WSL** and keep the project on the Linux side: paths, line endings
@@ -202,8 +206,10 @@ Compute is the real cost. Two modes:
 | **light** | 3 adversarial rounds + 1 black-box |
 | **full** | rounds until a discovery round closes with zero high and zero medium findings and nothing reasoned is left open, plus a black-box round and a verifier round. Open-ended: the effort this was distilled from took 25 rounds |
 
-**We do not publish a price.** We did not meter the project this was distilled from, and a kit whose first rule is
-"measure, do not infer" is not going to open with an invented number. The ROUND line of each `LOG.md` entry records the real cost of each of
+**We do not publish a price**, but here is the arithmetic from the one round we metered: about 250k tokens and half
+an hour per round on a 440-line hook, so a light-mode run (a ceiling of 4) is on the order of a million tokens of round
+traffic, once, n = 1, before the orchestrator's own reading. We did not meter the project this was distilled from, and a kit whose first rule is
+"measure, do not infer" is not going to dress that up as a price list. The ROUND line of each `LOG.md` entry records the real cost of each of
 your rounds. The one number we have measured is in *Status* below.
 
 The long fuzz campaign is the other cost, and it is CPU time, not model spend: expect tens of minutes per run.
@@ -241,7 +247,12 @@ from all of these:
 - **Foundry's invariant testing and `forge fuzz`** - the judge in this kit is Foundry. The doctrine is mostly a set
   of rules about how to read its output honestly.
 - The published audit-report conventions of the human audit firms, for the shape of a finding: severity, who
-  loses, cost to the attacker, fix, and the test that proves it.
+  loses, cost to the attacker, fix, and the test that proves it - and their audit-readiness guides, from which the
+  dossier's "must" rows were taken (the research notes behind it are not in this repository; the guides themselves
+  are a web search away and the dossier template says which rows are theirs).
+- Most of this repository is packaging of those four sources for an agent. What outside reviewers agreed was new:
+  the rule that a test counts only once seen red, the campaign census, "questions fixed, tools free", the mandatory
+  "not checked" section, and the catalogue in `doctrine/JUDGES.md` of how each tool lies.
 
 ## Status
 
@@ -262,6 +273,9 @@ from all of these:
 Each pass was a fresh model instance, on a frozen tree (a manifest of hashes checked before and after), forbidden to
 read the authors' notes, and told to assume the previous fixes were wrong.
 
+Severity here is the kit's own scale for a repository of Markdown and bash: **high** = a gate that passed when it
+should have failed, **medium** = a guard that could be beaten or a fix that opened a door, **low** = wording and numbers.
+
 | pass | high | medium | low + informative | what it was mostly about |
 |---|---|---|---|---|
 | 1 - independent audit | 3 | 9 | 19 | **false greens in the gate scripts themselves**: a battery that passed with zero tests, a mutation script that said KILLED on any error, a long fuzz that passed with no campaign |
@@ -280,7 +294,9 @@ with this kit and one brief, ran **one audit round**. Neither could see the key 
 
 | | normal audit brief | brief that reasons backwards from the harm |
 |---|---|---|
-| planted defects found | 6 / 6 | 6 / 6 |
+| planted defects found (recall against the key) | 6 / 6 | 6 / 6 |
+| findings emitted in total | 12 (6 planted + 4 beyond the key + 2 informative) | 11 (6 + 3 + 2) |
+| false alarms among those adjudicated | none found; 2 of arm A's extras were not adjudicated | none found |
 | red herring | dismissed, with a test | dismissed, with a test |
 | real findings beyond the key, confirmed afterwards by reading the source | 1 high, 1 medium (+2 unadjudicated) | 2 high, 1 low |
 | tokens / wall clock | 269k / 28 min | ~230k / ~20 min |

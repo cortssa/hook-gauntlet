@@ -1,7 +1,7 @@
 # Template: the handoff dossier (phase 8)
 
 The reader is a professional auditor who has never heard of this project and is paid by the day. The dossier exists
-to give them back their first week: what the hook is for, what it promises, what was tried against it, what is
+to give them back the days they would spend asking for what a dossier should already say: what the hook is for, what it promises, what was tried against it, what is
 known to be imperfect, and - the section they will read first - **what nobody checked**.
 
 Write it in the language the AUDITOR reads. If the spec is in another language because the owner reads that one,
@@ -11,7 +11,8 @@ It is assembled, not written: almost every section points at a file that already
 section has nothing to point at, do not pad it. Write "not done" and the reason. An honest gap costs the auditor five
 minutes; a confident paragraph over a gap costs them a day and costs you their trust.
 
-Items marked **must** are what audit firms' own readiness guides ask for. **if applicable** means: say "n/a" and why.
+Items marked **must** are what audit firms' own readiness guides ask for (the rows were taken from several firms'
+published guides; the dossier's author should cite the ones they checked against, with dates, in the scope sheet). **if applicable** means: say "n/a" and why.
 
 ---
 
@@ -31,7 +32,8 @@ a dossier can be complete and thin at the same time; this line says which one it
 | files in scope, with lines of code each | {{FILES_SLOC}} |
 | out of scope, and why | {{OUT_OF_SCOPE}} |
 | compiler, EVM version, optimizer, `via_ir` | {{BUILD}} |
-| runtime size and margin to the target chain's code-size limit (24,576 bytes on Ethereum, EIP-170), per contract | {{SIZES}} |
+| runtime size and margin to the target chain's code-size limit (24,576 bytes on Ethereum, EIP-170), per contract; initcode size and margin to the initcode limit (49,152 on Ethereum, EIP-3860) | {{SIZES}} |
+| pool admission: which pools may use this hook, who may create one, what the hook does with a `PoolKey` and `hookData` it has never seen (in v4 anyone can initialise a pool pointing at a hook unless `beforeInitialize` refuses) | {{POOL_ADMISSION}} |
 | external calls the hook makes, and to whom | {{EXTERNAL_CALLS}} |
 | oracles and price sources it depends on (including a pool's own spot price) | {{PRICE_SOURCES}} |
 | prior HUMAN security reviews (firm, date, report) - or "none" | {{PRIOR_REVIEWS}} |
@@ -85,7 +87,7 @@ An auditor judges new findings against this list; leaving something out of it is
 | build + lints | | warnings: | |
 | static analysis | | N findings: fixed / by design / accepted / false positive -> `STATIC-TRIAGE.md` | |
 | unit tests | | passed / failed / skipped | |
-| invariant fuzzing | | runs x depth, calls; corpus on? the CAMPAIGN census from `scripts/census.sh` - for each core action, in how many runs it succeeded at least once; for each boundary, in how many runs it was reached; runs with an unexplained revert (not the smoke test's numbers, and not the one block of logs forge prints: that is a single run). `reverts: 0` is not a result: with `fail_on_revert = true` it cannot be anything else | |
+| invariant fuzzing | | runs x depth, calls; corpus on? the CAMPAIGN census from `scripts/census.sh` - for each core action, in how many runs it succeeded at least once; for each boundary, in how many runs it was reached; runs with an unexplained revert (not the smoke test's numbers, and not the one block of logs forge prints: that is a single run). `reverts: 0` is not a result: in a green campaign with `fail_on_revert = true` it cannot be anything else | |
 | coverage | | lines / **branches** per file in scope; every uncovered branch named | |
 | mutation | | which files, against which tests; mutants generated, killed, survived, invalid, skipped, timed out; each survivor -> test or proof of equivalence (`MUTANTS.md`) | |
 | brutalize | | | |
