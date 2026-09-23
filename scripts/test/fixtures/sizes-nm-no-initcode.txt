@@ -1,0 +1,40 @@
+No files changed, compilation skipped
+
+╭---------------------+------------------+--------------------╮
+| Contract            | Runtime Size (B) | Runtime Margin (B) |
++============================================================+
+| CallbackSpy         | 1,219            | 23,357             |
+|---------------------+------------------+--------------------|
+| DirtyCalldataTarget | 446              | 24,130             |
+|---------------------+------------------+--------------------|
+| HostileERC20        | 6,358            | 18,218             |
+|---------------------+------------------+--------------------|
+| Reader              | 351              | 24,225             |
+|---------------------+------------------+--------------------|
+| ReentrantActor      | 948              | 23,628             |
+|---------------------+------------------+--------------------|
+| ReturnDataToken     | 1,530            | 23,046             |
+|---------------------+------------------+--------------------|
+| Sink                | 174              | 24,402             |
+|---------------------+------------------+--------------------|
+| ToyVault            | 1,672            | 22,904             |
+|---------------------+------------------+--------------------|
+| TruthOf             | 350              | 24,226             |
+|---------------------+------------------+--------------------|
+| TruthReader         | 350              | 24,226             |
+|---------------------+------------------+--------------------|
+| Victim              | 654              | 23,922             |
+╰---------------------+------------------+--------------------╯
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+   ╭▸ src/examples/ToyVault.sol:71:30
+   │
+71 │     address public immutable token;
+   │                              ━━━━━ help: consider using: `TOKEN`
+   │
+   ╰ help: https://getfoundry.sh/forge/linting/screaming-snake-case-immutable
+
+note[screaming-snake-case-immutable]: immutables should use SCREAMING_SNAKE_CASE
+   ╭▸ test/HostileERC20.t.sol:54:35
+   │
+54 │     HostileERC20 public immutable token;

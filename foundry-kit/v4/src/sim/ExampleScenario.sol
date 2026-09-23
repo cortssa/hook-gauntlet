@@ -88,7 +88,7 @@ abstract contract ExampleScenario is V4Harness, SimEngine {
         _registerAgent(a);
     }
 
-    // ------------------------------------------------------------------ the four verbs
+    // ------------------------------------------------------------------ the five verbs (the fifth, _referencePriceX96, is below)
     /// @notice what the swap would return NOW: run it in a snapshot and roll the state back. This is exactly what an
     /// off-chain quoter does (a revert-and-catch simulation), and it is the honest quote: the same code path, the
     /// same block, the same hook state.

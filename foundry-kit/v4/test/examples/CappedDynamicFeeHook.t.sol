@@ -53,46 +53,67 @@ contract CappedDynamicFeeHookTest is V4Harness {
 
     // ------------------------------------------------------------------ the arithmetic
     function test_the_fee_schedule_climbs_and_then_stops() public view {
-        assertEq(hook.feeForSwapIndex(0), hook.BASE_FEE());
-        assertEq(hook.feeForSwapIndex(1), hook.BASE_FEE() + hook.STEP());
-        assertEq(hook.feeForSwapIndex(2), hook.BASE_FEE() + 2 * hook.STEP());
-        assertEq(hook.feeForSwapIndex(9), hook.MAX_FEE());
-        assertEq(hook.feeForSwapIndex(10), hook.MAX_FEE());
-        assertEq(hook.feeForSwapIndex(type(uint32).max), hook.MAX_FEE(), "the cap has to hold at the top too");
+        assertEq(hook.feeForCongestion(0), hook.BASE_FEE());
+        assertEq(hook.feeForCongestion(1), hook.BASE_FEE() + hook.STEP());
+        assertEq(hook.feeForCongestion(2), hook.BASE_FEE() + 2 * hook.STEP());
+        assertEq(hook.feeForCongestion(9), hook.MAX_FEE());
+        assertEq(hook.feeForCongestion(10), hook.MAX_FEE());
+        assertEq(hook.feeForCongestion(type(uint32).max), hook.MAX_FEE(), "the cap has to hold at the top too");
     }
 
     function testFuzz_the_fee_is_never_above_the_cap_or_below_the_base(uint32 n) public view {
-        uint24 fee = hook.feeForSwapIndex(n);
+        uint24 fee = hook.feeForCongestion(n);
         assertLe(fee, hook.MAX_FEE());
         assertGe(fee, hook.BASE_FEE());
         assertLe(fee, LPFeeLibrary.MAX_LP_FEE, "a fee above 100% is not a fee");
     }
 
     // ------------------------------------------------------------------ what the pool actually charged
-    function test_the_first_swap_of_a_block_pays_the_base_fee() public {
+    function test_the_first_block_of_a_pool_pays_the_base_fee() public {
         assertEq(_swapAndReadFee(1e16), hook.BASE_FEE());
     }
 
-    function test_each_further_swap_in_the_same_block_pays_one_step_more() public {
+    /// @notice the rule since round r01 (F1): swaps inside a block do not move that block's fee
+    function test_every_swap_in_a_block_pays_the_same_fee() public {
         assertEq(_swapAndReadFee(1e16), hook.BASE_FEE());
-        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE() + hook.STEP());
-        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE() + 2 * hook.STEP());
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE(), "the second swap of a block paid more than the first");
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE(), "the third swap of a block paid more than the first");
+    }
+
+    /// @dev every roll in this file that follows another in the same test is from `vm.getBlockNumber()`, never from
+    /// `block.number`: the optimizer treats `block.number` as constant for the whole transaction and may re-read it
+    /// wherever it is used. Measured here: with `vm.roll(block.number + 1)` twice the second roll went nowhere, and
+    /// with `uint256 b0 = vm.getBlockNumber(); ... vm.roll(b0 + 2)` it went to block 4 - `b0` was NUMBER again, after the
+    /// first roll. A test that rolls twice has to hold the block number in something the optimizer cannot re-read.
+    function test_the_next_block_pays_one_step_more_per_swap_of_the_previous_block() public {
+        uint256 b0 = vm.getBlockNumber();
+        for (uint256 i = 0; i < 3; i++) _swapAndReadFee(1e16);
+        vm.roll(b0 + 1);
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE() + 3 * hook.STEP(), "three swaps last block, three steps now");
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE() + 3 * hook.STEP(), "and the same for the rest of the block");
+        vm.roll(b0 + 2);
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE() + 2 * hook.STEP(), "two swaps last block, two steps now");
     }
 
     function test_congestion_cannot_push_the_fee_past_the_cap() public {
+        for (uint256 i = 0; i < 20; i++) {
+            assertLe(_swapAndReadFee(1e15), hook.MAX_FEE(), "the pool charged more than the cap");
+        }
+        vm.roll(block.number + 1);
         uint24 last;
         for (uint256 i = 0; i < 20; i++) {
             last = _swapAndReadFee(1e15);
             assertLe(last, hook.MAX_FEE(), "the pool charged more than the cap");
         }
-        assertEq(last, hook.MAX_FEE(), "twenty swaps in one block should have reached the cap");
+        assertEq(last, hook.MAX_FEE(), "twenty swaps in the previous block should have set the cap");
     }
 
-    function test_the_next_block_starts_again_at_the_base() public {
+    function test_a_block_after_an_idle_one_starts_again_at_the_base() public {
         _swapAndReadFee(1e16);
         _swapAndReadFee(1e16);
-        vm.roll(block.number + 1);
-        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE(), "the counter did not reset with the block");
+        vm.roll(block.number + 2); // the block in between saw no swap
+        assertEq(hook.quoteNextFee(key), hook.BASE_FEE(), "the quote carried congestion across an idle block");
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE(), "the fee carried congestion across an idle block");
     }
 
     /// @dev Defence (b) says the counter saturates. Nobody can make four billion swaps in a test, so the state
@@ -103,21 +124,23 @@ contract CappedDynamicFeeHookTest is V4Harness {
         PoolId id = PoolIdLibrary.toId(key);
         bytes32 slot = keccak256(abi.encode(PoolId.unwrap(id), uint256(0)));
         uint256 word = uint256(vm.load(address(hook), slot));
-        // known (8 bits) | blockNumber (64) | swapsInBlock (32) | lastQuotedFee (24), packed from the low end
+        // known (8 bits) | blockNumber (64) | swapsInBlock (32) | blockFee (24), packed from the low end
         assertEq(uint32(word >> 72), hook.poolState(id).swapsInBlock, "the storage layout moved: fix the offset");
         assertEq(uint32(word >> 72), 1);
 
         vm.store(address(hook), slot, bytes32(word | (uint256(type(uint32).max) << 72)));
         assertEq(hook.poolState(id).swapsInBlock, type(uint32).max);
 
-        assertEq(_swapAndReadFee(1e16), hook.MAX_FEE());
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE(), "the fee of a block moved inside it");
         assertEq(hook.poolState(id).swapsInBlock, type(uint32).max, "the counter wrapped");
-        assertEq(_swapAndReadFee(1e16), hook.MAX_FEE(), "a wrapped counter drops the fee to the base mid-block");
+        vm.roll(block.number + 1);
+        assertEq(_swapAndReadFee(1e16), hook.MAX_FEE(), "a wrapped counter drops the next block's fee to the base");
     }
 
     // ------------------------------------------------------------------ the quote (the read nobody fuzzes)
     function test_the_quote_is_what_the_next_swap_is_charged() public {
-        for (uint256 i = 0; i < 4; i++) {
+        for (uint256 i = 0; i < 8; i++) {
+            if (i == 4) vm.roll(block.number + 1); // both sides of a block boundary: a base block, then a stepped one
             uint24 quoted = hook.quoteNextFee(key);
             uint24 charged = _swapAndReadFee(1e16);
             assertEq(charged, quoted, "the hook quoted one fee and the pool charged another");
@@ -226,14 +249,25 @@ contract CappedDynamicFeeHookTest is V4Harness {
     /// looks like. No chain rolls backwards; the point is that the hook was never relying on the chain for
     /// this, it was relying on an identity, and an identity is what gets asserted.
     function test_a_stored_block_ahead_of_the_current_one_resets_and_the_quote_agrees() public {
-        vm.roll(block.number + 10);
-        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE());
+        uint256 b0 = vm.getBlockNumber();
+        vm.roll(b0 + 9);
+        _swapAndReadFee(1e16);
+        _swapAndReadFee(1e16);
+        vm.roll(b0 + 10);
+        // the stored block now carries a fee that is NOT the base, so a stale read of it is visible
+        assertEq(_swapAndReadFee(1e16), hook.BASE_FEE() + 2 * hook.STEP());
         assertEq(hook.poolState(PoolIdLibrary.toId(key)).swapsInBlock, 1, "the counter did not move");
 
-        vm.roll(block.number - 5); // the hook's stored block is now AHEAD of block.number
+        vm.roll(b0 + 5); // the hook's stored block is now AHEAD of block.number
 
         uint24 quoted = hook.quoteNextFee(key);
         assertEq(quoted, hook.BASE_FEE(), "a stored block that is not this block is stale, whichever side");
+        assertEq(_swapAndReadFee(1e16), quoted, "the hook quoted one fee and the pool charged another");
+        assertEq(_swapAndReadFee(1e16), quoted, "and the block's fee did not move inside it");
+        // ... and the state really moved to THIS block: its two swaps set the next block's fee
+        vm.roll(b0 + 6);
+        quoted = hook.quoteNextFee(key);
+        assertEq(quoted, hook.BASE_FEE() + 2 * hook.STEP(), "the swaps after the roll-back were not counted");
         assertEq(_swapAndReadFee(1e16), quoted, "the hook quoted one fee and the pool charged another");
     }
 

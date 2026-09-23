@@ -74,6 +74,17 @@ contract CappedFeeHandler is HandlerBase, InvariantAsserts {
     uint256 public quoteChecks;
     uint256 public swapsOk;
     uint256 public capReached;
+    /// @notice THE GROWTH RULE'S GHOSTS (round r01, finding F1). The first quote read in each block, and the times any
+    /// later quote or charge IN THAT BLOCK differed from it. "charged == quoted" above compares a swap with the quote
+    /// read immediately before it, and was green while a victim who read its quote EARLIER in the block could be
+    /// charged ten times that quote by anyone placing swaps in between. This compares every swap with the block's
+    /// first quote instead. Must stay 0.
+    uint256 public quoteBlock;
+    uint24 public firstQuoteOfBlock;
+    uint256 public inBlockFeeMoves;
+    /// @notice times a victim's quote, read before somebody else's dust in the same block, was not what it was charged
+    uint256 public victimQuoteBroken;
+    uint256 public victimChecks;
     /// @notice liquidity this handler believes each actor has in the pool, by the salt it used.
     mapping(address => uint256) public liquidityOf;
     /// @notice everything created out of nothing, PER CURRENCY. `HandlerBase.ghostMinted` is one counter and
@@ -185,25 +196,79 @@ contract CappedFeeHandler is HandlerBase, InvariantAsserts {
     /// act.
     ///
     /// The fix is not a bigger campaign, it is an action that reaches the state: one call, many swaps, no
-    /// block change in between. Ask of your own hook: which of my rules only bites after N things happen in
+    /// block change in between (and, since round r01, one block step after them, where they are charged). Ask of your own hook: which of my rules only bites after N things happen in
     /// a row, and does my handler have an action that does N things in a row?
     function swapBurst(uint256 actorSeed, uint256 amount, uint256 n) public counted("swapBurst") {
         address a = _actor(actorSeed);
-        // The cap is reached on the TENTH swap of a block (`BASE_FEE + 9 * STEP == MAX_FEE`), so a uniform
-        // 2..14 burst is long enough only about a third of the time, and then only if the currencies let
-        // every one of those swaps through. Measured on a fresh corpus: the campaign reached the cap in as
-        // few as 3 of 65 runs, and a campaign that never reaches the boundary cannot tell a capped hook
-        // from an uncapped one - which is exactly the mutant this action exists to kill.
+        // The cap needs NINE swaps in a block (`BASE_FEE + 9 * STEP == MAX_FEE`), and since round r01 it is paid in
+        // the block AFTER them. A uniform 2..14 burst is long enough only about a third of the time, and then only if
+        // the currencies let every one of those swaps through. Measured on a fresh corpus (the first rule, same
+        // shape): the campaign reached the cap in as few as 3 of 65 runs, and a campaign that never reaches the
+        // boundary cannot tell a capped hook from an uncapped one - which is exactly the mutant this action exists
+        // to kill.
         //
-        // So half the bursts are deliberately long enough. Having written an action that does N things in
-        // a row, make sure it does N and not "on average, fewer than N".
+        // So half the bursts are deliberately long enough, and every burst ends by stepping ONE block and swapping
+        // once, which is where the congestion it built is charged. Having written an action that does N things in
+        // a row, make sure it does N and not "on average, fewer than N" - and that it reaches the place where N
+        // things are paid for.
         uint256 count = _bitOneIn(n, 2) ? bound(n, 10, 14) : bound(n, 2, 14);
         uint256 size = bound(amount, 1, MAX_SWAP / 8);
         bool any;
         for (uint256 i = 0; i < count; i++) {
             if (_doSwap(a, size, i % 2 == 0)) any = true;
         }
+        vm.roll(vm.getBlockNumber() + 1);
+        vm.warp(vm.getBlockTimestamp() + 12);
+        if (_doSwap(a, size, true)) any = true;
         if (any) _noteSuccess("swapBurst");
+    }
+
+    /// @notice the fee the last successful swap was charged (read by `dustAheadOfVictim`)
+    uint24 internal lastCharged;
+
+    /// @notice record the first quote of a block; any later quote in the same block that differs is a move
+    function _noteQuoteInBlock(uint24 q) internal {
+        // the cheatcode, not `block.number`: `swapBurst` rolls the block and then swaps in the same frame, and the
+        // optimizer may reuse a read of `block.number` taken before the roll
+        uint256 bn = vm.getBlockNumber();
+        if (bn != quoteBlock) {
+            quoteBlock = bn;
+            firstQuoteOfBlock = q;
+        } else if (q != firstQuoteOfBlock) {
+            inBlockFeeMoves += 1;
+        }
+    }
+
+    /// @notice F1's ORDERING, as an action (round r01). A victim reads its quote; somebody else places `n` dust swaps
+    /// in the same block; then the victim swaps and is compared with the quote IT read, not one read just before its
+    /// swap. `swapBurst` produces the interleaving too, but only `invariant_the_fee_never_moves_inside_a_block` asks
+    /// about it; this action puts F1's exact shape in the campaign, with the victim's own check and a reach boundary,
+    /// so that the census says how often the ordering the round found was actually tried.
+    function dustAheadOfVictim(uint256 victimSeed, uint256 attackerSeed, uint256 n, uint256 amount)
+        public
+        counted("dustAheadOfVictim")
+    {
+        address v = _actor(victimSeed);
+        address x = _actor(attackerSeed);
+        uint24 quotedToVictim;
+        try hook.quoteNextFee(key) returns (uint24 q) {
+            quotedToVictim = q;
+        } catch {
+            _unexpectedRevert("quoteNextFee reverted on a pool the hook was initialised with");
+            return;
+        }
+        _noteQuoteInBlock(quotedToVictim);
+        uint256 dust = bound(n, 1, 12);
+        uint256 dustOk;
+        for (uint256 i = 0; i < dust; i++) {
+            if (_doSwap(x, 1, i % 2 == 0)) dustOk += 1;
+        }
+        if (_doSwap(v, bound(amount, 1, MAX_SWAP), true)) {
+            victimChecks += 1;
+            if (lastCharged != quotedToVictim) victimQuoteBroken += 1;
+            if (dustOk > 0) _noteReached("victim traded after dust in its block");
+            _noteSuccess("dustAheadOfVictim");
+        }
     }
 
     function _doSwap(address a, uint256 amount, bool zeroForOne) internal returns (bool ok) {
@@ -219,6 +284,7 @@ contract CappedFeeHandler is HandlerBase, InvariantAsserts {
             _unexpectedRevert("quoteNextFee reverted on a pool the hook was initialised with");
             return false;
         }
+        _noteQuoteInBlock(quoted);
 
         vm.recordLogs();
         vm.prank(a);
@@ -234,10 +300,13 @@ contract CappedFeeHandler is HandlerBase, InvariantAsserts {
             swapsOk += 1;
             ok = true;
             (bool found, uint24 charged) = SwapEventReader.lastSwapFee(vm.getRecordedLogs(), address(manager));
+            lastCharged = 0; // a swap that left no Swap event is compared as 0, never as the previous swap's fee
             if (found) {
                 quoteChecks += 1;
                 // AROUND THE ACTION: what the hook SAID, against what the pool DID.
                 if (charged != quoted) quoteMismatches += 1;
+                if (charged != firstQuoteOfBlock) inBlockFeeMoves += 1;
+                lastCharged = charged;
                 if (charged > maxFeeCharged) maxFeeCharged = charged;
                 if (charged == hook.MAX_FEE()) {
                     capReached += 1;
@@ -355,6 +424,7 @@ contract CappedFeeHandler is HandlerBase, InvariantAsserts {
     /// trusts.
     function readQuote() public counted("readQuote") {
         try hook.quoteNextFee(key) returns (uint24 q) {
+            _noteQuoteInBlock(q);
             _noteSuccess("readQuote");
             require(q <= hook.MAX_FEE(), "the hook quoted more than its own cap");
             require(q >= hook.BASE_FEE(), "the hook quoted less than its own base");
@@ -534,7 +604,8 @@ contract CappedDynamicFeeHookInvariants is V4Harness, InvariantAsserts {
         handler.seed(100_000e18, 50e18);
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](18);
+        bytes4[] memory sel = new bytes4[](19);
+        sel[18] = CappedFeeHandler.dustAheadOfVictim.selector;
         sel[15] = CappedFeeHandler.swapBurst.selector;
         sel[16] = CappedFeeHandler.setManagerUnreadable.selector;
         sel[17] = CappedFeeHandler.calmDown.selector;
@@ -557,7 +628,7 @@ contract CappedDynamicFeeHookInvariants is V4Harness, InvariantAsserts {
         // Every public action of the handler is in this list. `setManagerUnreadable` was written, documented
         // as covering item 3 of the threat model, and left out of this array: it never ran, and nothing said
         // so. Count the rows of the selector table forge prints against the actions in the handler.
-        assertEq(sel.length, 18, "the selector list and the handler have drifted apart");
+        assertEq(sel.length, 19, "the selector list and the handler have drifted apart");
     }
 
     /// @notice THE CAMPAIGN'S OWN CENSUS: one line per run into a file, added up by `scripts/census.sh`.
@@ -591,6 +662,15 @@ contract CappedDynamicFeeHookInvariants is V4Harness, InvariantAsserts {
         assertEq(handler.quoteMismatches(), 0, "the hook quoted one fee and the pool charged another");
     }
 
+    /// @notice THE GROWTH RULE (round r01, F1): inside one block the fee does not move. Every quote read and every swap
+    /// charged in a block equals the first quote read in it - so a quote read at any point of a block binds every swap
+    /// after it in that block, whoever else trades in between. Written after a discovery round found the ordering the
+    /// invariant above could not see; seen red on the old rule before the hook was changed.
+    function invariant_the_fee_never_moves_inside_a_block() public view {
+        assertEq(handler.inBlockFeeMoves(), 0, "the fee moved inside a block: a quote read earlier in it is a lie");
+        assertEq(handler.victimQuoteBroken(), 0, "a victim was charged other than the quote it read before the dust");
+    }
+
     /// @notice the hook has no delta permissions, so it can never end an action holding value. Anything it
     /// holds was pushed at it, and it is stuck there.
     function invariant_the_hook_is_not_a_wallet() public view {
@@ -620,8 +700,8 @@ contract CappedDynamicFeeHookInvariants is V4Harness, InvariantAsserts {
     function invariant_the_hooks_own_state_is_within_its_bounds() public view {
         CappedDynamicFeeHook.PoolState memory s = hook.poolState(key.toId());
         assertTrue(s.known, "the hook forgot a pool it was initialised with");
-        assertLe(s.lastQuotedFee, hook.MAX_FEE(), "stored quote above the cap");
-        assertGe(s.lastQuotedFee, hook.BASE_FEE(), "stored quote below the base");
+        assertLe(s.blockFee, hook.MAX_FEE(), "stored quote above the cap");
+        assertGe(s.blockFee, hook.BASE_FEE(), "stored quote below the base");
         assertLe(uint256(s.blockNumber), block.number, "the hook thinks it is in the future");
     }
 
@@ -656,6 +736,7 @@ contract CappedDynamicFeeHookInvariants is V4Harness, InvariantAsserts {
         handler.fundReserve(1e18, YES);
 
         handler.readQuote();
+        handler.dustAheadOfVictim(1, 2, 9, 1e18);
         handler.swapBurst(1, 1e15, 12);
         assertGt(handler.capReached(), 0, "twelve swaps in one block should have reached the cap");
 
@@ -713,6 +794,9 @@ contract CappedDynamicFeeHookInvariants is V4Harness, InvariantAsserts {
         handler.assertExercised("readQuote", 2);
         handler.assertExercised("setManagerUnreadable", 2);
         handler.assertExercised("calmDown", 1);
+        handler.assertExercised("dustAheadOfVictim", 1);
+        handler.assertReached("victim traded after dust in its block", 1);
+        assertGt(handler.victimChecks(), 0, "the F1 ordering was never checked");
         // the REACH census, not only the success census: the cap is the boundary every promise of this hook
         // is about, and an invariant that guards a boundary the suite never reaches guards nothing.
         handler.assertReached("fee at the cap", 1);
@@ -723,6 +807,7 @@ contract CappedDynamicFeeHookInvariants is V4Harness, InvariantAsserts {
 
         invariant_the_pool_never_charged_more_than_the_cap();
         invariant_every_quote_matched_the_execution();
+        invariant_the_fee_never_moves_inside_a_block();
         invariant_the_hook_is_not_a_wallet();
         invariant_the_router_and_the_helper_are_empty_between_actions();
         invariant_the_hooks_own_state_is_within_its_bounds();

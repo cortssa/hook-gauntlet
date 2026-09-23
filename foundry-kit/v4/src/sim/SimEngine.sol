@@ -9,12 +9,13 @@ import {SimLedger} from "./SimLedger.sol";
 /// @title SimEngine - the simulation sandbox's engine, with no opinion about the hook
 /// @notice A clock with the target chain's cadence, a queue of intents that are QUOTED when decided and EXECUTED
 /// `latency` steps later under an ordering model, agents as contracts, and a ledger per agent. It knows nothing
-/// about pools, routers or hooks: a project binds it to its own system by overriding four verbs -
+/// about pools, routers or hooks: a project binds it to its own system by overriding five verbs -
 ///
 ///   _quote(intent)        what would this intent return NOW (a quoter, a lens, a swap in a snapshot)
 ///   _execute(intent)      do it, and say what happened
 ///   _sqrtPriceNow(venue)  the price the agents may observe, per venue
 ///   _balances(agent)      the two balances the ledger values
+///   _referencePriceX96()  the price the ledger values currency0 at (the main market's, when there is one)
 ///
 /// `ExampleScenario.sol` binds it to the kit's example hook; a project with its own router and its own quoter binds
 /// it to those. The loop, the clock, the queue and the books are the same either way.
@@ -70,7 +71,7 @@ abstract contract SimEngine is Test {
     error FillWithoutInput(uint256 intentIndex);
     string internal label = "scenario";
 
-    // ------------------------------------------------------------------ the four verbs a project binds
+    // ------------------------------------------------------------------ the five verbs a project binds
     function _quote(Intent memory it) internal virtual returns (uint256 out);
     function _execute(Intent memory it) internal virtual returns (Fill memory f);
     function _sqrtPriceNow(uint8 venue) internal view virtual returns (uint160);

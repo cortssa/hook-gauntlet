@@ -16,6 +16,13 @@
 # Env:     V4_WITH_PERIPHERY=1  also install v4-periphery (not needed by the harness; useful if YOUR hook
 #                               imports the position manager, the quoter or the routers)
 #          V4_FORCE=1           re-clone even if the pin already matches
+#          V4_LOCAL_SRC=<dir>   OFFLINE: copy from local clones instead of fetching - <dir>/v4-core (with its
+#                               submodules lib/forge-std and lib/solmate checked out) and, with V4_WITH_PERIPHERY=1,
+#                               <dir>/v4-periphery. Nothing is fetched. Each clone must be AT THE PIN and clean: the
+#                               source is checked before anything is copied, and the copy is checked again exactly as a
+#                               fetched one is (HEAD == pin, each submodule == what the parent's tree pins). A clone at
+#                               another commit, with local changes, or without a submodule is refused. Any earlier
+#                               install of the project, e.g. `<other project>/lib`, is a valid source.
 # Exit:    0 everything present at the pinned commits, 1 otherwise.
 #
 # Nothing else is installed: no npm, no pip, no foundryup. If `git` and `forge` are not already on the
@@ -52,6 +59,12 @@ for pin_name in V4_CORE_PIN V4_PERIPHERY_PIN; do
   fi
 done
 
+V4_LOCAL_SRC="${V4_LOCAL_SRC:-}"
+if [ -n "$V4_LOCAL_SRC" ]; then
+  [ -d "$V4_LOCAL_SRC/v4-core" ] || { echo "install-v4: V4_LOCAL_SRC=$V4_LOCAL_SRC has no v4-core/ clone. Nothing copied."; exit 1; }
+  V4_LOCAL_SRC="$(cd "$V4_LOCAL_SRC" && pwd)"
+fi
+
 PROJECT="${1:-$HERE/../foundry-kit/v4}"
 [ -d "$PROJECT" ] || { echo "install-v4: no such project directory: $PROJECT"; exit 1; }
 PROJECT="$(cd "$PROJECT" && pwd)"
@@ -66,7 +79,7 @@ command -v git > /dev/null 2>&1 || { echo "install-v4: git not found"; exit 1; }
 fetch_pinned() {
   name="$1"; repo="$2"; pin="$3"; dest="$LIB/$1"
 
-  if [ -d "$dest/.git" ] && [ "${V4_FORCE:-0}" != "1" ]; then
+  if [ -e "$dest/.git" ] && [ "${V4_FORCE:-0}" != "1" ]; then
     have="$(git -C "$dest" rev-parse HEAD 2>/dev/null)"
     if [ "$have" = "$pin" ]; then
       echo "install-v4: $name already at $pin"
@@ -75,15 +88,34 @@ fetch_pinned() {
     echo "install-v4: $name is at ${have:-unknown}, wanted $pin - refetching"
   fi
 
-  rm -rf "$dest" || return 1
-  git init -q "$dest" || return 1
-  git -C "$dest" remote add origin "$repo" || return 1
-  if ! git -C "$dest" fetch -q --depth 1 origin "$pin"; then
-    echo "install-v4: shallow fetch of $pin refused, falling back to a full clone of $name"
-    git -C "$dest" fetch -q origin || { echo "install-v4: cannot fetch $name from $repo"; return 1; }
+  if [ -n "$V4_LOCAL_SRC" ]; then
+    # OFFLINE: the local clone is checked BEFORE anything in the project is touched, then copied, then checked again
+    # below by the same line that checks a fetched one
+    local_src="$V4_LOCAL_SRC/$name"
+    [ -e "$local_src/.git" ] || { echo "install-v4: $local_src is not a git clone. Nothing copied."; return 1; }
+    have_src="$(git -C "$local_src" rev-parse HEAD 2> /dev/null)"
+    if [ "$have_src" != "$pin" ]; then
+      echo "install-v4: the local clone $local_src is at ${have_src:-unknown}, the pin is $pin. Refused: nothing copied."
+      return 1
+    fi
+    if [ -n "$(git -C "$local_src" status --porcelain --untracked-files=no --ignore-submodules=none 2> /dev/null)" ]; then
+      echo "install-v4: the local clone $local_src is at the pin but has LOCAL CHANGES. Refused: nothing copied."
+      return 1
+    fi
+    rm -rf "$dest" || return 1
+    cp -a "$local_src" "$dest" || { echo "install-v4: cannot copy $local_src"; return 1; }
+    echo "install-v4: $name copied from the local clone $local_src (offline)"
+  else
+    rm -rf "$dest" || return 1
+    git init -q "$dest" || return 1
+    git -C "$dest" remote add origin "$repo" || return 1
+    if ! git -C "$dest" fetch -q --depth 1 origin "$pin"; then
+      echo "install-v4: shallow fetch of $pin refused, falling back to a full clone of $name"
+      git -C "$dest" fetch -q origin || { echo "install-v4: cannot fetch $name from $repo"; return 1; }
+    fi
+    # check out the PIN by name: after a full fetch FETCH_HEAD is the tip of the default branch, not the pin
+    git -C "$dest" checkout -q "$pin" 2> /dev/null || git -C "$dest" checkout -q FETCH_HEAD || return 1
   fi
-  # check out the PIN by name: after a full fetch FETCH_HEAD is the tip of the default branch, not the pin
-  git -C "$dest" checkout -q "$pin" 2> /dev/null || git -C "$dest" checkout -q FETCH_HEAD || return 1
 
   got="$(git -C "$dest" rev-parse HEAD)"
   [ "$got" = "$pin" ] || { echo "install-v4: $name checked out $got, expected $pin"; return 1; }
@@ -100,9 +132,15 @@ fetch_submodules() {
     url="$(git -C "$parent" config -f .gitmodules --get "submodule.$sub.url" 2>/dev/null)"
     [ -n "$url" ] || { echo "install-v4: no url for $sub in $parent/.gitmodules"; return 1; }
 
-    if [ -d "$parent/$sub/.git" ] && [ "${V4_FORCE:-0}" != "1" ]; then
+    # `-e`, not `-d`: a submodule checked out by `git submodule update` has a .git FILE pointing into its parent
+    if [ -e "$parent/$sub/.git" ] && [ "${V4_FORCE:-0}" != "1" ]; then
       have="$(git -C "$parent/$sub" rev-parse HEAD 2>/dev/null)"
       [ "$have" = "$want" ] && { echo "install-v4:   $sub already at $want"; continue; }
+    fi
+    if [ -n "$V4_LOCAL_SRC" ]; then
+      # offline, a submodule comes inside the copied clone or not at all: there is nowhere to fetch it from
+      echo "install-v4:   $sub is missing or not at $want in the local clone's copy (offline: nothing to fetch). Refused."
+      return 1
     fi
 
     rm -rf "${parent:?}/$sub"
@@ -134,9 +172,10 @@ fi
 echo
 echo "== install-v4 summary =="
 echo "project        $PROJECT"
+[ -n "$V4_LOCAL_SRC" ] && echo "source         local clones in $V4_LOCAL_SRC (offline), verified against the pins below"
 echo "v4-core        $V4_CORE_PIN"
 for sub in $V4_CORE_SUBMODULES; do
-  if [ -d "$LIB/v4-core/$sub/.git" ]; then
+  if [ -e "$LIB/v4-core/$sub/.git" ]; then
     echo "  $sub  $(git -C "$LIB/v4-core/$sub" rev-parse HEAD)"
   else
     echo "  $sub  MISSING"; rc=1

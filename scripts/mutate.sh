@@ -103,7 +103,11 @@ esac
 # this forced build the cache belongs to this path, and the incremental build of the mutant is correct.
 # shellcheck disable=SC2086
 if ! (cd "$WORK" && forge build --force $FORGE_FLAGS > "$OUT_DIR/$LABEL.baseline.txt" 2>&1); then
-  echo "mutate: the copy does not compile BEFORE any change was applied. NOTHING PROVEN. The end of the build log:"
+  echo "mutate: the copy does not compile BEFORE any change was applied. NOTHING PROVEN."
+  # the FIRST error, then the end: solc's errors and warnings share one listing in no fixed order, so the end of a
+  # failed build can be all warnings and the import that did not resolve never on the screen (a fresh reader met that)
+  echo "        first error: $(first_error_line "$OUT_DIR/$LABEL.baseline.txt" || echo "(none recognised - read the log)")"
+  echo "        The end of the build log:"
   tail -n 12 "$OUT_DIR/$LABEL.baseline.txt" | sed "s/^/    | /"
   echo "        If the error is an unresolved import, the project reaches outside its own directory (a relative"
   echo "        remapping?): set COPY_ROOT to the parent that holds both. Otherwise fix the compile error first."
@@ -178,6 +182,7 @@ fi
 rm -f "$LOG.build"
 if [ "$rc_build" -ne 0 ]; then
   echo "mutate: the changed code does not compile. NOTHING PROVEN (see $LOG)." | tee -a "$LOG"
+  echo "        first error: $(first_error_line "$LOG" || echo "(none recognised - read the log)")" | tee -a "$LOG"
   exit 2
 fi
 

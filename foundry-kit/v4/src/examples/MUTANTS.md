@@ -16,9 +16,16 @@ cd foundry-kit/v4 && forge test --mutate src/examples/CappedDynamicFeeHook.sol
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | first run | 93 | 89 | 79 | **10** | 4 | 88.8 % | 51 s |
 | after the tests below | 93 | 89 | **83** | 6, all equivalent | 4 | **93.3 %** | 51-67 s |
+| the one-block-late rule (round r01, F1), 2026-09-23 | 109 | 104 | **98** | 6, the same six equivalents | 5 | **94.2 %** | 166 s |
 
 forge 1.8.1, solc 0.8.26. Re-measured after an independent audit and after the handler was reworked: same
 generated count, same score, 55 s. The time varies with what else the machine is doing; the counts do not.
+
+**The third row is a different hook.** Round r01 found that the first rule (the n-th swap of a block pays `n` steps)
+let anyone raise a victim's fee inside the victim's own block (`SPEC.md`, F1), and the rule changed: every swap of a
+block now pays the fee the PREVIOUS block's count set. The new code generates 16 more mutants (`_feeOfThisBlock`, the
+stored `blockFee`); every one of them was killed, and the survivors are exactly the six equivalents argued below, at
+their new lines. The families below are written about the code as it is now; where the first rule differed it says so.
 
 ## What the first run said
 
@@ -51,9 +58,12 @@ mining puts your own address in a region the hand-written fixtures in your tests
 ## Family two: the block comparison, in both directions (2 mutants, both killed)
 
 ```solidity
-return feeForSwapIndex(s.blockNumber == uint64(block.number) ? s.swapsInBlock : 0);  // -> >=
-if (s.blockNumber != uint64(block.number)) { ... reset ... }                          // -> <
+if (s.blockNumber == uint64(block.number)) return s.blockFee;   // in _feeOfThisBlock -> >=
+if (s.blockNumber != uint64(block.number)) { ... move to this block ... }   // in beforeSwap -> <
 ```
+
+(Under the first rule the first line was `return feeForSwapIndex(s.blockNumber == uint64(block.number) ? ... : 0)` in
+the quote; the mutation and the lesson are the same.)
 
 Both mutations are invisible while the stored block number is never ahead of the current one, which is to say
 while the chain only moves forwards. The hook, though, is not relying on the chain here - it is asserting an
@@ -63,7 +73,18 @@ a replay or a fork pinned behind cached state looks like.
 
 Killed by `test_a_stored_block_ahead_of_the_current_one_resets_and_the_quote_agrees`, which rolls the block
 backwards and then asserts the two things the hook promises: the counter is stale, and **the quote and the
-execution still agree**. Each mutation breaks one side of that agreement, so one test kills both.
+execution still agree**. Each mutation breaks one side of that agreement, so one test kills both. Under the
+one-block-late rule the test first gives the stored block a fee that is NOT the base (a stale read of the base would
+have been invisible) and then checks that the swaps after the roll-back set the next block's fee - the `<` mutant
+never moves the state to the current block, so it charges right and counts wrong.
+
+## The fix of round r01, seen red by hand (`scripts/mutate.sh`, COPY_ROOT=foundry-kit)
+
+The within-block growth put back into the fixed hook - `return s.blockFee;` -> `return feeForCongestion(s.swapsInBlock);`
+in `_feeOfThisBlock`, the first rule's behaviour in one line - is KILLED three ways, each alone: by the round's own test
+(`5000 != 500`), by the campaign alone with `invariant_the_fee_never_moves_inside_a_block` (`17 != 0` on its draw), and
+by the unit suite. And the F2 decision: a mutant that refuses native pools in `afterInitialize` is KILLED by
+`test_r01_F2_a_native_currency_pool_is_accepted_and_charges_its_quote`.
 
 ## Equivalent mutants (6)
 
@@ -78,7 +99,8 @@ renumbers a flag rather than quietly becoming false.
 
 ### 3 and 4. `fee | LPFeeLibrary.OVERRIDE_FEE_FLAG` -> `+`, and -> `^`
 
-Same argument, with a condition that is this hook's own doing: `fee` comes from `feeForSwapIndex`, which caps
+Same argument, with a condition that is this hook's own doing: `fee` comes from `feeForCongestion` (directly, or
+stored from it in `blockFee`), which caps
 it at `MAX_FEE` (5 000), and `OVERRIDE_FEE_FLAG` is bit 22 (4 194 304). No value the cap allows can touch that
 bit, so the three operators agree.
 

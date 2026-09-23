@@ -7,6 +7,7 @@ import {SimClock} from "../../src/sim/SimClock.sol";
 import {SimLedger} from "../../src/sim/SimLedger.sol";
 import {VENUE_UNDER_TEST, VENUE_MAIN} from "../../src/sim/ISimAgent.sol";
 import {HonestTrader} from "../../src/sim/agents/HonestTrader.sol";
+import {RandomTrader} from "../../src/sim/agents/RandomTrader.sol";
 import {Arbitrageur} from "../../src/sim/agents/Arbitrageur.sol";
 import {Sandwicher} from "../../src/sim/agents/Sandwicher.sol";
 
@@ -15,9 +16,14 @@ import {Sandwicher} from "../../src/sim/agents/Sandwicher.sol";
 ///
 /// The population: a main market (hookless pool) pushed by two world traders, a passive stream of honest swaps on
 /// the venue under test, an arbitrageur that reacts to the gap between the two, and a sandwicher.
+///
+/// The world is SEEDED (`SIM_SEED`, default 1): the two world traders draw their sizes and directions from it, so
+/// "run it over several seeds" (`doctrine/SIMULATE.md`) means several different runs here. It used to be two fixed
+/// traders, and a fresh reader ran it on seeds 1-3 and got three identical ledgers that `sim-report.sh` then called
+/// "3 runs". The victim, the arbitrageur and the sandwicher stay deterministic: they react to what the world did.
 abstract contract PopulationScenario is ExampleScenario {
-    HonestTrader world1;
-    HonestTrader world2;
+    RandomTrader world1;
+    RandomTrader world2;
     HonestTrader victim;
     Arbitrageur arb;
     Sandwicher sandwich;
@@ -26,8 +32,9 @@ abstract contract PopulationScenario is ExampleScenario {
         cadence = SimClock.ethereumL1();
         _setUpScenario(100e18);
         _addMainMarket(3000, 100e18);
-        world1 = new HonestTrader("world-a", 5e17, 2, 0, 10_000, VENUE_MAIN);
-        world2 = new HonestTrader("world-b", 3e17, 3, 1, 10_000, VENUE_MAIN);
+        uint256 seed = vm.envOr("SIM_SEED", uint256(1));
+        world1 = new RandomTrader("world-a", VENUE_MAIN, seed, 3e17, 7e17, 50, 5000, 0);
+        world2 = new RandomTrader("world-b", VENUE_MAIN, seed + 1, 1e17, 5e17, 33, 5000, 1);
         victim = new HonestTrader("victim", 2e17, 2, 1, 200, VENUE_UNDER_TEST); // 2 % slippage rule
         arb = new Arbitrageur("arb", 1e17, 40, 1, false); // reacts to a 0.4 % gap in price, one step behind, never closes
         sandwich = new Sandwicher("sandwich", 20_000, 1e16); // front-runs with 2x the victim's size
@@ -100,8 +107,9 @@ contract OrderingBUNDLE is PopulationScenario {
         // THE ORDER, asserted from the engine's own record: for every wrap, front-run, victim, back-run. Without
         // this a mutant that runs the back-run first would still show "two intents per wrap".
         _assertFrontVictimBack();
-        // whether it PROFITS on this hook is the measurement, not an assertion: the hook's fee rises with same-block
-        // volume, and a sandwich is three swaps in one block. Read the ledger line; run it several times.
+        // whether it PROFITS on this hook is the measurement, not an assertion: the hook's fee is set by the previous
+        // block's volume, so a sandwich (three swaps in one block) pays what the block before set and makes the next
+        // block dearer for everyone, itself included. Read the ledger line over several seeds (README, step 2).
         SimLedger.Books memory v = booksOf(address(victim));
         assertGt(v.executed + v.refused, 0);
     }

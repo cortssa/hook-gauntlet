@@ -47,8 +47,31 @@ contract CalibrationScenario is ExampleScenario {
         assertEq(b.amountInTotal - b.amountOutTotal, spent - gained, "the ledger and the wallet disagree");
     }
 
+    /// @notice THE SAME CALIBRATION, WITH GAS PRICED: the one example scenario whose ledger charges gas. Every other
+    /// example sets `setGasPrice(0)` (a local manager nobody pays for), so "a ledger that charges gas" was never shown by
+    /// the example. The price is an assumption stated here, not a measurement: 1 gwei of gas, and currency0 worth
+    /// 3 000 units of the quote currency per ETH-equivalent - raw quote per gas = 1e9 * 3000 = 3e12, times 1e18.
+    /// What is asserted is the arithmetic the ledger promises: the cost is the metered gas at that price, rounded up
+    /// against the payer, and the net P&L is the gross less it. The number is the example's, not a chain's.
+    function test_calibration_with_gas_priced_charges_every_fill() public {
+        label = "calibration-gas-priced";
+        uint256 quotePerGasE18 = 3e30;
+        ledger.setGasPrice(quotePerGasE18);
+        run(40);
+        _finish();
+        SimLedger.Books memory b = booksOf(address(trader));
+        assertEq(b.executed, 40, "every intent executed");
+        assertEq(b.shortfallTotal + b.windfallTotal, 0, "pricing gas changed an execution: it must only change the books");
+        assertGt(b.gasTotal, 40 * 21_000, "forty transactions cost at least forty intrinsic 21 000");
+        uint256 cost = ledger.gasCost(address(trader));
+        assertEq(cost, (b.gasTotal * quotePerGasE18 + 1e18 - 1) / 1e18, "gasCost is not the metered gas at the price set");
+        (uint256 a0, uint256 a1) = _balances(address(trader));
+        int256 gross = ledger.pnl(address(trader), a0, a1, _referencePriceX96());
+        assertEq(ledger.pnlNetOfGas(address(trader), a0, a1, _referencePriceX96()), gross - int256(cost), "net != gross - gas");
+    }
+
     /// @notice the same trader with latency 1 on the same hook: the quote is taken in one block and executed in the
-    /// next. On THIS hook the fee depends on how many swaps the block has already seen, so even alone in the world
+    /// next. On THIS hook the fee of a block is set by how many swaps the block before it saw, so even alone in the world
     /// the execution can differ from the quote - the mildest form of a stale quote. Not an assertion of a number
     /// (one draw is one draw): an assertion that the sandbox SEES the gap when there is one, and a printed line.
     function test_latency_one_shows_a_gap_the_calibration_cannot() public {

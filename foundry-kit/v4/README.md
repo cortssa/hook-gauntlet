@@ -20,6 +20,16 @@ cd foundry-kit/v4
 forge test
 ```
 
+**Offline**, from clones you already have (another checkout's `foundry-kit/v4/lib`, say):
+`V4_LOCAL_SRC=<dir holding v4-core/> scripts/install-v4.sh foundry-kit/v4`. Nothing is fetched. The clone is checked
+BEFORE anything is copied - at the pin, no local changes - and the copy is checked again by the same line that checks a
+fetched one (HEAD == pin, each submodule == what v4-core's tree pins); a clone at another commit is refused by name.
+`scripts/selftest.sh` holds it to the refusal; the success path was run by hand (2026-09-23, from a clone at the pin).
+
+`forge` is not on the `PATH` of a non-interactive shell on most machines (`foundryup` installs it into
+`~/.foundry/bin` and adds that to your shell's rc file, which a script or an agent's shell does not read): a script
+that says `forge: command not found` needs `export PATH="$HOME/.foundry/bin:$PATH"` first.
+
 Pins, printed on every install and recorded here so a reader does not have to run anything to see them:
 
 | what | commit |
@@ -46,17 +56,24 @@ mutation, measured".
 ### Running it on a bench
 
 ```sh
-BENCH_ROOT=$HOME BENCH_EXCLUDE="*.hex *.json" scripts/bench.sh mybench foundry-kit
-scripts/install-v4.sh ~/mybench/v4
+BENCH_ROOT=$HOME scripts/bench.sh mybench foundry-kit      # links foundry-kit/lib AND foundry-kit/v4/lib
 SRC_DIRS="src test ../src" scripts/battery.sh ~/mybench/v4
 ```
 
-Two details that are not obvious. The bench copies **`foundry-kit`**, not `foundry-kit/v4`, because the v4
-project remaps `gauntlet-kit/` to `../src` and a bench of the subdirectory alone has no parent to remap to.
-And `BENCH_EXCLUDE="*.hex *.json"` keeps `bench.sh --delete` from removing fixtures you fetched into the
-bench, which are the one thing in there that is expensive to get back. `SRC_DIRS` on the battery adds the
-root kit's sources to the freshness check, which otherwise only watches this project's own; `src` and `test`
-now cover the example too, since it lives inside them.
+Three details that are not obvious. The bench copies **`foundry-kit`**, not `foundry-kit/v4`, because the v4
+project remaps `gauntlet-kit/` to `../src` and a bench of the subdirectory alone has no parent to remap to
+(`scripts/fuzz-long.sh foundry-kit/v4` knows this and benches `foundry-kit` by itself). The dependency directories are
+`lib/` at the root and `lib/` beside every nested `foundry.toml`, found and linked one by one - and nothing else called
+`lib`: `scripts/lib/` is source and is copied (an rsync `--exclude=lib` used to drop both it and `v4/lib`, and every
+v4 bench then needed a network install). `SRC_DIRS` on the battery adds the root kit's sources to the freshness check,
+which otherwise only watches this project's own; `src` and `test` now cover the example too, since it lives inside
+them.
+
+A bench that must keep what was fetched INTO it (a manager fixture, a `v4/lib` installed there because the project
+has none): `BENCH_EXCLUDE="*.hex *.json"`. A matching path the project does not have is the bench's own and survives
+every refresh; one the project does have is withheld. The bench directory itself is never deleted - it used to be, on
+every refresh with `BENCH_EXCLUDE` set, and the fixtures this paragraph promised to keep went with it
+(`scripts/selftest.sh` plants `fixtures/PROBE.hex` and a bench-installed `v4/lib`, refreshes, and checks both).
 
 ---
 
@@ -80,13 +97,16 @@ behaviour, the upstream one is right.
 | `src/HostileHook.sol` | a hook that lies on demand, and declares nothing, so it can be mined to a WRONG address |
 | `src/SwapEventReader.sol` | reads the fee the manager's own `Swap` event reports |
 | `src/examples/CappedDynamicFeeHook.sol` | the worked toy: a congestion fee with a hard cap |
+| `src/examples/SPEC.md` | its spec: the rule, the hostile-actor table, and what a discovery round found on it (F1, fixed at the cause; F2, decided) |
 | `src/examples/MUTANTS.md` | its mutation survivors: four real gaps, six equivalents argued one by one |
 | `test/examples/CappedDynamicFeeHook.t.sol` | its unit tests, one per line of its threat model |
 | `test/examples/CappedDynamicFeeHook.invariants.t.sol` | its handler, its invariants, its non-vacuity smoke test |
+| `test/examples/CappedDynamicFeeHook.r01.t.sol` | what round r01 found, kept as tests: F1 (seen red on the old rule), its residual, F2 on a real native pool |
 | `test/ManagerSelection.t.sol` | tests of the harness's own decision about which manager |
 | `test/HookFlags.t.sol` | the mining, and the two different refusals of a wrong address |
 | `test/HostileHook.t.sol` | one test per switch on the hostile hook, plus all ten entry points driven once |
 | `test/Harness.t.sol` | the fixtures' own smoke test |
+| `STATIC-TRIAGE.md` | the example hook's `forge lint` warnings (5 `unsafe-typecast`), each answered with a verdict and a test |
 | `fixtures/` | where fetched bytecode lands. Empty in git, on purpose |
 
 ---
@@ -231,9 +251,12 @@ exists so that nobody reads the first two rows and concludes the manager is chec
 
 **What the search costs, as a number and not an adjective.** One address in 2¹⁴ carries a given exact flag
 set, so the expected number of tries is 16 384 and the chance that 200 000 consecutive tries all miss is
-`(1 − 2⁻¹⁴)²⁰⁰⁰⁰⁰ = e⁻¹²·²`, about **5 in a million**. Measured on the example hook's 5 322-byte initcode (the build the TESTS hash: they import the manager, so they get
-the `CappedDynamicFeeHook.manager` row of `forge build --sizes`; the default-profile row of the same table says 5 629):
-1 239 tries cost 1 752 012 gas, so ≈1 414 gas a try, and an average search is ≈23 M gas — under a second.
+`(1 − 2⁻¹⁴)²⁰⁰⁰⁰⁰ = e⁻¹²·²`, about **5 in a million**. Measured on the example hook's 5 360-byte initcode (the build the TESTS hash: they import the manager, so they get
+the `CappedDynamicFeeHook.manager` row of `forge build --sizes`; the default-profile row of the same table says 5 636),
+2026-09-23, with a `gasleft()` window around `HookMiner.find` in a test: 2 660 tries cost 1 101 991 gas, ≈414 gas a
+try, so an average search is ≈7 M gas — under a second. (The figure this line gave before, 1 239 tries for 1 752 012
+gas on the first rule's 5 322-byte initcode, ≈1 414 a try, was taken by a method nobody wrote down; the two are not
+comparable, and the new one says how it was taken.)
 (`MAX_TRIES` used to be justified with "astronomically unlikely". If you hit it, the explanation is a flag
 set no address can carry, not bad luck.)
 
@@ -265,16 +288,62 @@ that makes it move before you build an invariant on it.
 
 ## The worked example
 
-`CappedDynamicFeeHook` raises the pool's LP fee with congestion — base fee for the first swap of a block, one
-step more for each further swap, hard cap, reset next block — and takes no delta, holds no token, has no
-owner. It is small on purpose. Its value is the threat model written at the top of the file **before** any
-test: six things it claims to survive, two it declares it does not defend, and one named defence per line.
+`CappedDynamicFeeHook` raises the pool's LP fee with congestion, one block late — every swap of a block pays the
+base fee plus one step for each swap the PREVIOUS block saw, hard cap, back to the base after a quiet block — and takes
+no delta, holds no token, has no owner. It is small on purpose. Its value is the threat model written at the top of the
+file **before** any test: six things it claims to survive, two it declares it does not defend, and one named defence
+per line. Its spec is `src/examples/SPEC.md`.
+
+### What a discovery round found on this hook
+
+The rule used to be "the n-th swap of a block pays n steps". A fresh-context auditor (round r01, 2026-09-23, about five
+minutes of its own time) read the spec, the hook and the two test files, and wrote nine tests. One of them passed while
+asserting the harmful behaviour: **after a victim read `quoteNextFee` = 500, nine 1-wei swaps placed ahead of it in the
+same block pushed its fee to 5 000** - 0.372 % less output on a 10-token swap into 100e18 of liquidity, for 1 349 046
+gas of dust. The spec said "charged == quoted"; the invariant `invariant_every_quote_matched_the_execution` said so
+too, and it was green, because it compared every swap with the quote read immediately before it - the one comparison
+under which a within-block fee is always right. The campaign produced the harmful ordering all the time (`swapBurst` is
+up to fourteen swaps in one block); nothing compared a swap with a quote read EARLIER in its block, so nobody asked.
+Medium: a third party loses value in a case the spec claims to handle, bounded by the victim's own slippage limit.
+
+The triage was **fix it at the cause**, not document it. The cause is that swaps inside a block move that block's fee.
+So the fee of a block is now fixed by the block before it: whatever is placed ahead of a victim, the fee its block
+charges was set before the block began. The order it was done in, each step seen:
+
+1. the round's own test, reproduced unchanged: it passed (the bug is real) - `victim out ... 9086776671666893949` alone,
+   `9049567985447930877` after the dust;
+2. the same test with its last assertion turned the right way up (`test/examples/CappedDynamicFeeHook.r01.t.sol`):
+   **red** on the old rule, `5000 != 500`;
+3. **the growth rule** (`doctrine/FUZZ-ACTIONS.md`): the invariant that would have caught it -
+   `invariant_the_fee_never_moves_inside_a_block`, every quote and every charge of a block equal to the block's first
+   quote - **red** on the old rule (`the fee moved inside a block ... 1 != 0` in the campaign, `57 != 0` in the smoke
+   test), over the actions that were already there; and the action with F1's exact shape, `dustAheadOfVictim` (a
+   victim reads its quote, somebody else places 1-12 dust swaps, the victim swaps and is compared with the quote IT
+   read), so the victim's own check is in the census as a boundary ("victim traded after dust in its block");
+4. the hook changed (`_feeOfThisBlock`, `blockFee`); all three green, and the unit tests rewritten to the new rule;
+5. the old behaviour put back into the new hook as a one-line mutant (`return s.blockFee;` ->
+   `return feeForCongestion(s.swapsInBlock);`): KILLED by the round's test, by the campaign alone (`17 != 0`), and by
+   the unit suite; forge's own mutation pass on the new hook: 98 of 104 killed, the six survivors the same six
+   equivalents as before (`src/examples/MUTANTS.md`).
+
+What it does NOT fix, and the tests say so: the congestion signal can still be inflated - for the NEXT block, in the
+open (`test_r01_F1_residual_...`: nine dust swaps set the next block at the cap, and every swap of that block pays
+the quote it could read before trading). And the fix has a price, measured by the sandbox on the ordering population
+below: the fee now stays up after a busy block, so the honest victim pays more on FCFS too - same seeded world,
+seeds 1-3, first rule vs this one: victim P&L per run `+1.16e15` -> `-1.23e15` under FCFS, `-4.65e16` -> `-5.08e16`
+under BUNDLE; and the sandwicher, which earned `+8.9e15` a run on the first rule (its front-run paid the base and the
+victim paid the steps), loses `-2.5e16` a run on this one, on every seed. A different hook, not a free improvement: the
+spec says which trade was made (`SPEC.md`, section 6).
+
+F2 (low), from the same round: the hook accepts native-currency pools and the spec left it undecided. Decided in
+`SPEC.md`: accepted - the hook moves no value and reads no currency - and held to it by a real native swap each way
+through v4-core's own test routers (`test_r01_F2_...`); a mutant that refuses native pools is KILLED by it.
 
 Two things in its suite are worth stealing whatever your hook does.
 
 **Compare what the hook SAID with what the pool DID.** The hook exposes `quoteNextFee(key)`. Every swap in
 the campaign reads the quote first, swaps, and then reads the fee off the **manager's own `Swap` event**.
-Asserting on the hook's stored `lastQuotedFee` would be asking the hook whether the hook was right. A suite
+Asserting on the hook's stored `blockFee` would be asking the hook whether the hook was right. A suite
 that only follows the money passes while the quote lies, and the quote is the part other people's software
 trusts. (This holds because no protocol fee is ever set here, so the event's `fee` is the LP fee. Turn
 protocol fees on and the assertion has to be rewritten, not deleted.)
@@ -286,8 +355,9 @@ mutant that removed the cap entirely still went **green in the fuzz run**; only 
 caught it. That is the vacuous pass from `doctrine/INVARIANTS.md`, caught in the act.
 
 The fix was not a bigger campaign. It was an action that reaches the state: one call, many swaps, no block
-change in between. Ask of your own hook: **which of my rules only bites after N things happen in a row, and
-does my handler have an action that does N things in a row?**
+change in between - and, since the rule became one block late, one block step after them, where they are charged.
+Ask of your own hook: **which of my rules only bites after N things happen in a row, and does my handler have an
+action that does N things in a row - and reaches the place where they are paid for?**
 
 **And then check that it really does N.** This file used to say, flatly, that with `swapBurst` in the handler
 the same mutant makes the invariant go red. An independent audit ran the campaign against that mutant three
@@ -300,15 +370,20 @@ one draw and 3 of 65 on the next**, and a campaign that never reaches the cap ca
 an uncapped one. Two things came out of that, and both are in the handler now: the hostile switches are
 biased toward their honest values and there is a `calmDown()` action that clears them (a sticky switch that
 is on half the time parks the campaign in a world where nothing settles), and `swapBurst` makes half its
-bursts long enough to actually reach the cap — the rule needs ten swaps in a block, and a uniform 2..14
-burst is long enough about a third of the time. With both, the cap is reached in roughly **a third to a half of
-the 65 runs** (the measured draws are in `foundry-kit/README.md`, the one place they live), and the no-cap mutant
-died by the campaign alone in 10 campaigns out of 10 for an independent verifier.
+bursts long enough to actually reach the cap — the rule needs nine swaps in a block, and a uniform 2..14
+burst is long enough about a third of the time. With both, the cap was reached in roughly **a third to a half of
+the 65 runs** on the first rule, and in **about half to three quarters** on the one-block-late rule (the measured
+draws are in `foundry-kit/README.md`, the one place they live); the no-cap mutant died by the campaign alone in 10
+campaigns out of 10 for an independent verifier (on the first rule).
 
 Say "in most runs", or give a range over several campaigns. Fixing `--fuzz-seed` does not pin the draw when a
 corpus is on: a reviewer ran the same seed twice and got 19 and 17.
 
 ---
+
+The fix is not free, and the spec says so (T2): with the same constants the pool's mean fee rises about 60-70 % for
+everyone, because a busy block now raises the whole next block instead of resetting. A verifier measured it on the
+sandbox's ordering population; the honest trader's loss in that table is that higher fee level, not a targeted one.
 
 ## Measured on this machine
 
@@ -323,11 +398,12 @@ forge 1.8.1, solc 0.8.26, `evm_version = cancun`. Numbers, not adjectives:
 | clean build | about 25 s |
 | `PoolManager` from source | **24 050 B**, 526 under the EIP-170 limit |
 | `PoolManager` etched from mainnet | **24 009 B**, keccak `0x785f1014…c7ce1293`, chain id 1 |
-| `CappedDynamicFeeHook` | **4 874 B** in the default-profile build, **4 659 B** in the build the tests deploy - see below |
+| `CappedDynamicFeeHook` (one-block-late rule, 2026-09-23) | runtime **4 881 B** / initcode **5 636 B** in the default-profile build, **4 697 B** / **5 360 B** in the build the tests deploy (`address(hook).code.length` and `creationCode.length` in a test) - margins 19 695 / 43 516 and 19 879 / 43 792, `scripts/size.sh`. See below |
 
 Two notes on that last row, because it was wrong here for a whole revision and the reason is a trap.
 
-`forge build --sizes` prints TWO rows for this hook, 4 874 B and 4 659 B (`CappedDynamicFeeHook.manager`). The
+`forge build --sizes` prints TWO rows for this hook (on the first rule, 4 874 B and 4 659 B; now 4 881 B and 4 697 B,
+`CappedDynamicFeeHook.manager`). The
 `compilation_restrictions` that compile `PoolManager.sol` through the IR pipeline create a second compilation
 profile, and every contract compiled together with the manager is listed a second time under that profile's name.
 
@@ -371,7 +447,7 @@ is SUPPORTED (`doctrine/EVIDENCE.md`) and never more: it only measures the attac
 | `src/sim/ISimAgent.sol` | an agent is a contract with a wallet and three verbs: `observe`, `decide`, `settle`; an `Intent` is quoted when decided and executed `latency` steps later |
 | `src/sim/SimClock.sol` | the chain's cadence as parameters: L2 block time, and whether `block.number` is an L1 estimate (it is, on Arbitrum-style chains: one hook "block" spans ~120 sequencer blocks) |
 | `src/sim/SimLedger.sol` | per-agent books: decided / executed / refused, in / out / quoted, shortfall and windfall against the quote, gas, P&L in the quote currency - gross (`pnl`) and net of gas (`pnlNetOfGas`, at the price of gas the SCENARIO sets with `setGasPrice`, in raw quote per gas x 1e18; 0 is allowed but must be said, or the net P&L and the dump line refuse to run); one line per agent per run to `GAUNTLET_SIM`, ending `pnl  gasCost  pnlNet  atQuote`. `test/sim/LedgerGas.t.sol` holds it to that |
-| `src/sim/SimEngine.sol` | the engine, with no opinion about the hook: the loop, the clock, FCFS ordering, the queue, the books - and four verbs a project binds (`_quote`, `_execute`, `_sqrtPriceNow`, `_balances`). A swap whose own quote at decision time is 0 is NOT SENT: no `_execute`, no gas, settled at once with `executed == false` and `REFUSED_AT_QUOTE`, counted in `refusedAtQuote` (the dump line's last column), never in `refused`; other kinds untouched. The refused swap is kept in the queue for the record, marked done, never in the execution order, never shown to a searcher: `queueLength()` counts it, `executedOrderOf` is 0 for it (`test/sim/RefusedAtQuote.t.sol`, which proves the engine's policy on a stub market, not that a binding's quote of 0 is right) |
+| `src/sim/SimEngine.sol` | the engine, with no opinion about the hook: the loop, the clock, FCFS ordering, the queue, the books - and five verbs a project binds (`_quote`, `_execute`, `_sqrtPriceNow`, `_balances`, `_referencePriceX96`). A swap whose own quote at decision time is 0 is NOT SENT: no `_execute`, no gas, settled at once with `executed == false` and `REFUSED_AT_QUOTE`, counted in `refusedAtQuote` (the dump line's last column), never in `refused`; other kinds untouched. The refused swap is kept in the queue for the record, marked done, never in the execution order, never shown to a searcher: `queueLength()` counts it, `executedOrderOf` is 0 for it (`test/sim/RefusedAtQuote.t.sol`, which proves the engine's policy on a stub market, not that a binding's quote of 0 is right) |
 | `src/sim/ExampleScenario.sol` | the engine bound to the example hook: the quote is a snapshot-and-revert of the real swap (the same code path as the execution), `minOut` enforced as a router would, gas metered with `SimGasMeter`. A project with its own router or quoter copies this file and binds its own |
 | `src/sim/SimGasMeter.sol` | what one action would cost as its OWN transaction: 21 000 intrinsic + calldata (16 / 4 gas a byte) + the callee's own gas from forge's record of the last frame, less the refund capped at a fifth; several calls of one transaction are added into one `Tx`. Not a `gasleft()` window in the test frame: that charges the agent the test's own memory growth (a run never frees memory; measured +17 % on identical decisions in a downstream binding). A lower bound for the EVM costs it counts (warm slots), not a bound on any chain's total fee (no L1 data fee, no priority fee). forge's record is read only in the two layouts the meter was written against (160 or 192 bytes); any other length reverts `FrameGasLayoutUnknown(length)` - supported versions in `../README.md`. `test/sim/GasMeter.t.sol` |
 | `src/sim/agents/HonestTrader.sol` | the population's floor: fixed size every N steps, alternating, a slippage rule, a latency |
@@ -412,21 +488,47 @@ compiles (named fields and `Intent memory it; it.x = ...` are unaffected). Later
 16th column at the end (`atQuote`, swaps quoted 0 and never sent), and `refused` stopped counting them: a reading of
 `refused` taken before that change includes them. Nothing changes for a binding.
 
-Measured on the example hook, three runs each, fresh state (the numbers are one machine's draws, in wei of the
-quote currency, and they are here to show the SHAPE, not to be quoted):
+### Running the example scenarios, and reading the ledger
+
+Every number below comes from these commands, run from `foundry-kit/v4` on forge 1.8.1 (2026-09-23, the
+one-block-late example hook). The ledger file has to be under `census/`, the one directory `foundry.toml` lets a test
+write to:
+
+```sh
+cd foundry-kit/v4 && mkdir -p census && rm -f census/sim.tsv
+GAUNTLET_SIM=census/sim.tsv forge test --match-path test/sim/Calibration.t.sol                    # deterministic: 1 run
+for s in 1 2 3 4 5; do SIM_SEED=$s GAUNTLET_SIM=census/sim.tsv forge test --match-path test/sim/Ordering.t.sol; done
+GAUNTLET_SIM=census/sim.tsv forge test --match-path test/sim/Liquidity.t.sol --match-test over_seeds -vv  # seeds 1-5
+../../scripts/sim-report.sh census/sim.tsv
+```
+
+`sim-report.sh` adds the lines up per scenario and agent: `runs` is the number of lines, so it is the number of SEEDS
+only for a population that reads `SIM_SEED` (the ordering and the liquidity ones do; the calibration's single honest
+agent has nothing to seed, and running it five times gives five identical lines, which the report would call "5 runs").
+Amounts are raw units of the quote currency (18 decimals); `gas/run` is metered per action (`SimGasMeter`).
+
+Step 1, the calibration and the stale quote (deterministic, one run each):
 
 ```
-scenario       agent    runs  decided  executed  refused  shortfall/run  windfall/run  worst ever
-calibration    honest      3     40.0      40.0      0.0              0             0           0
-latency-one    honest      3     41.0      41.0      0.0              0   5.98e15               0
-latency-one    late        3     41.0      40.0      0.0   2.09e14         5.38e12       1.99e14
+scenario               agent    runs  decided  executed  shortfall/run  windfall/run  worst ever    gas/run      pnl/run   gasCost/run       net/run
+calibration            honest      1     40.0      40.0              0             0           0    8505526    -3.95e15             0      -3.95e15
+calibration-gas-priced honest      1     40.0      40.0              0             0           0    8505526    -3.95e15   2.552e19      -2.552e19
+latency-one            honest      1     41.0      41.0              0       7.97e15           0    8693265    -1.92e15             0      -1.92e15
+latency-one            late        1     41.0      40.0        3.11e14       3.48e12     2.49e14    8322417    -9.94e15             0      -9.94e15
 ```
+
+`calibration-gas-priced` is the one example whose ledger charges gas (`test_calibration_with_gas_priced_charges_every_fill`):
+the same forty swaps at a price the test states as an assumption - 1 gwei, and 3 000 quote units per ETH, so
+`setGasPrice(3e30)` - cost 2.55e19, about 25.5 quote tokens for 8.5 M gas, against a gross P&L of -3.95e15. Every other
+example says `setGasPrice(0)` out loud, because nobody pays for the gas of a local manager; a binding of a real chain
+prices it, and this line is what its report then looks like.
 
 Two things the first run taught, both now asserted in the test file:
 
-1. **On this hook a stale quote costs money even with nobody hostile around.** The fee depends on how many swaps the
-   block has already seen, so a quote taken in one block and executed in the next is a different fee. The `late`
-   agent (latency 1) pays about 2e14 per run for it; the same agent at latency 0, alone, pays nothing.
+1. **On this hook a stale quote costs money even with nobody hostile around.** The fee of a block is set by how many
+   swaps the block before it saw, so a quote taken in one block and executed in the next is a different fee (and the
+   price has moved). The `late` agent (latency 1) pays about 3.1e14 over the run for it; the same agent at latency 0,
+   alone, pays nothing.
 2. **"Zero latency" is not "nobody ahead of me".** Put the late agent in the world and the honest agent at latency 0
    starts showing a gap too: its quote is of the block's opening state, and an intent submitted a step earlier is
    ahead of it in the FCFS queue. The calibration therefore runs ALONE, and the test says why.
@@ -442,24 +544,27 @@ Two things the first run taught, both now asserted in the test file:
 | `agents/Sandwicher.sol` | the classic sandwich as a searcher: front-run at a multiple of the victim's size, back-run selling what the front-run bought. Only exists under BUNDLE |
 | `test/sim/Ordering.t.sol` | the SAME population (two world traders on the main market, a stream of honest swaps on the venue, an arbitrageur, a sandwicher) under both orderings; under BUNDLE the engine's own execution record is walked to assert front-run, victim, back-run, in that order, for every wrap |
 
-The same population, 60 steps, run under each ordering (three runs each; this population is deterministic, so the
-three agree - variation will come with a seeded price process and the fork of a real market):
+The same population, 60 steps, run under each ordering, seeds 1-5 (the two world traders draw from `SIM_SEED`; the
+victim, the arbitrageur and the sandwicher react to them). Means per run over the five, from the commands above:
 
 ```
-                        decided  executed  shortfall/run   pnl/run
-population-fcfs   victim     30        29              0   -2.3e15
-population-fcfs   arb        31        30        5.4e15   -2.5e15
-population-fcfs   sandwich    0         0              0         0
-population-bundle victim     30        29        4.3e16   -5.1e16
-population-bundle arb        31        30        1.7e16   -1.7e16
-population-bundle sandwich  118       118              0   +1.4e16
+                        decided  executed  shortfall/run    pnl/run
+population-fcfs   victim   30.0      29.0        3.36e15   -8.46e14
+population-fcfs   arb      50.0      49.2        1.42e16   +1.24e17
+population-fcfs   sandwich  0.0       0.0              0          0
+population-bundle victim   30.0      29.0        3.71e16   -5.03e16
+population-bundle arb      49.6      48.8        2.84e16   +9.84e16
+population-bundle sandwich 155.6    155.6              0   -2.52e16
 ```
 
-Read across the two blocks and the ordering model is the whole result: under FCFS the sandwicher is never asked and
-earns nothing; under BUNDLE it wraps 59 intents (the arbitrageur's too - a searcher does not care whose), earns
-1.4e16, and the victim's cost goes from 2.3e15 to 5.1e16 - inside its 2 % slippage rule every time, which is how a
-sandwich is sized. On THIS hook the fee that rises with same-block volume did not stop it at these sizes; the
-number a hook author wants is the front-run size at which it does, and that is a sweep, not an assertion.
+Read across the two blocks and the ordering model is still the first result: under FCFS the sandwicher is never asked;
+under BUNDLE it wraps about 78 intents a run (the arbitrageur's too - a searcher does not care whose) and the victim's
+cost goes from 8.5e14 to 5.0e16 - inside its 2 % slippage rule every time, which is how a sandwich is sized. The
+second result is the hook's: on the one-block-late rule the sandwicher LOSES, 2.5e16 a run, on every one of the five
+seeds; on the first rule, same seeded world, it earned 8.9e15 a run on seeds 1-3 (the rule is the only difference; the
+comparison was run once, by hand, on the previous commit). A block that holds a sandwich is a busy block, and the next
+one charges everybody for it, the sandwicher included. The number a hook author wants is the front-run size at which
+the sandwich stops paying, and that is a sweep, not an assertion.
 
 Mutants, by hand: the front-run never executed -> "one front-run and one back-run per wrap: 59 != 118" (no fill, so
 no unwind - the shape check behind it is the second line of defence); a searcher intent left
@@ -475,19 +580,35 @@ for the FCFS scan to execute again -> the bundle test dies (re-execution without
 | `agents/PassiveLP.sol` | the LP who is not watching: a position on at the start, off at `exitStep`. Its P&L is the number every other agent's profit is ultimately taken from |
 | `agents/JitLP.sol` | just-in-time liquidity as a searcher: a narrow position around the price in front of each swap, off behind it. Only exists under BUNDLE |
 | `agents/RandomTrader.sol` | the world, SEEDED: sizes and directions from a pseudo-random stream keyed by `SIM_SEED`. The same seed replays the same tape; a different seed gives a different one - both asserted |
-| `test/sim/Liquidity.t.sol` | the same population under both orderings inside ONE test, from one snapshot, so the two ledgers are directly comparable |
+| `test/sim/Liquidity.t.sol` | the same population under both orderings, from one snapshot per seed, so the two ledgers are directly comparable: one test on `SIM_SEED` that asserts only what holds on every seed, and one over seeds 1-5 that asserts the counts below |
 
-Measured (seed 1, 60 steps, wei of the quote currency): the passive LP earns **1.39e16 under FCFS and 4.0e15 under
-BUNDLE** - the JIT LP, asked 29 times, took the rest and ended at **+2.67e16**; the victim's execution improved
-(more liquidity in front of it) and its P&L barely moved. That is the whole JIT story in three numbers, and the
-test asserts only its shape: the passive LP is worse off with the JIT LP in the world than without, on the same
-tape. Mutants: liquidity changes that never execute, a JIT position of 1 wei, a world that ignores its seed - each
-seen red by these tests.
+Measured (60 steps, raw quote units, `--match-test over_seeds -vv`; the JIT LP wraps 29 swaps on every seed):
+
+```
+seed   passive LP, FCFS   passive LP, BUNDLE   JIT LP, BUNDLE
+1           +8.56e15            +2.44e15           +1.63e16
+2           -9.17e15            -2.81e15           -1.87e16
+3           -6.58e15            -2.04e15           -1.36e16
+4           -6.00e15            -1.87e15           -1.25e16
+5           -2.05e15            -7.04e14           -4.70e15
+```
+
+This section used to give seed 1 alone as "the whole JIT story" - the JIT LP takes the passive LP's fees - and the test
+asserted it. A fresh reader ran seed 2 and the test went red. Over five seeds the passive LP is worse off with the JIT
+LP in the world on **1 of 5**, and the JIT LP profits on **1 of 5**, the same one; what holds on **5 of 5** is that the
+two trade places: the JIT LP's P&L and the change in the passive LP's have opposite signs. On this population the JIT
+LP takes a share of the pool's fortune, whichever way the world moved it - fees on seed 1, losses to price moves on the
+other four. The test asserts those three counts (`1`, `1`, `5`), so a change that moves the distribution goes red and
+has to be re-measured; the `SIM_SEED` test asserts only what holds on every seed. Mutants: liquidity changes that
+never execute, a JIT position of 1 wei, a world that ignores its seed - each seen red by these tests (on the
+single-seed version; the count test was seen red by its own first run, which measured the counts).
 
 What is NOT here yet: a fork of the real target chain as the main market (needs the owner's `RPC_URL`), the LP's
 allowance as a parameter (it means something on a hook that pulls by allowance, not on a v4 position - the
-binding for such a hook adds it), latency drawn from a measured distribution, and the doctrine page that says when
-to run any of this. Listed so that nobody reads them as present.
+binding for such a hook adds it), latency drawn from a measured distribution, and an agent for the dust-ahead-of-a-
+victim ordering of round r01 (the invariant campaign has one, `dustAheadOfVictim`; the sandbox does not). Listed so
+that nobody reads them as present. When to run any of this, and the rules its numbers answer to, is
+`doctrine/SIMULATE.md`.
 
 Mutation, by hand (`scripts/mutate.sh`): a quote off by one wei kills the calibration ("the quoter is not the
 executor: 40 != 0"). `executeAtStep > s` -> `!= s` in the FCFS loop SURVIVES, and is equivalent by construction:
@@ -502,7 +623,9 @@ Written down because a list of gaps is the only honest end to a README.
 
 * **Native currency.** The router and the liquidity helper refuse a pool whose `currency0` is the zero
   address. ETH changes settlement, refunds and re-entrancy at once, and a hook tested only on two ERC-20s
-  has not been tested on the most common pair on the chain. This is the biggest gap.
+  has not been tested on the most common pair on the chain. This is the biggest gap. One test crosses it, for the
+  example only: `test_r01_F2_...` swaps both ways on a native pool through v4-core's own `PoolSwapTest`; no campaign,
+  no hostile currency, no harness support.
 * **Hooks that return deltas.** The example declares no delta permissions, so the harness has never had to
   settle a hook's own delta. `BeforeSwapDelta`, the specified and unspecified sides, exact-in against
   exact-out and the sign conventions are where most hook arithmetic bugs live, and there is no worked
@@ -520,7 +643,8 @@ Written down because a list of gaps is the only honest end to a README.
   pool it has never seen" gets interesting beyond the single `UnknownPool` check.
 * **Tick-spacing and price edges**, and unusual fees. The example is exercised at spacing 60 and 1:1.
 * **A block-pinned fixture.** `fetch-bytecode.sh` reads the latest block; it does not pin one.
-* **`v4-periphery` is installed but untested.** Nothing in this module compiles against it.
+* **`v4-periphery` is optional and untested.** `V4_WITH_PERIPHERY=1` installs it; nothing in this module compiles
+  against it.
 
 The attack list this module was written from — re-entrancy through `unlock`, hijacking `sync`, `hookData` as
 attacker input, read order, delta accounting, ERC-6909 claims, native currency, fee and tick edges,

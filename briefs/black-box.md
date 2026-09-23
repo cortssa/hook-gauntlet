@@ -11,9 +11,12 @@ bench then holds the **compiled artifact** (ABI and bytecode, which any integrat
 attacker deploys the target with `deployCode("artifacts/X.sol/X.json", args)`. Without the artifact a source-free
 bench cannot deploy the thing it is supposed to attack. Withhold more than `src`: earlier reports, the state files, the
 regression tests whose names give the answers (`BENCH_EXCLUDE="src script reports STATE.md DECISIONS.md LOG.md"` and the
-regression test files by name). With `BENCH_EXCLUDE` set the script rebuilds the bench from nothing, COPIES `lib/` instead
-of linking it (a link into the project leads straight back to its source), and refuses to hand over a bench in which an
-excluded path or any symlink remains. Still list the bench yourself before launching.
+regression test files by name). With `BENCH_EXCLUDE` set the script never copies an excluded path the project has and
+removes any stale copy of one from the bench (a bench of the same name made earlier without the exclude), COPIES the
+dependency directories instead of linking them (a link into the project leads straight back to its source), and
+refuses to hand over a bench in which an excluded path of the project or any symlink remains. A matching path that only
+the BENCH has (a fixture fetched into it) is its own and is kept, and the script says so. Still list the bench yourself
+before launching.
 
 Run it **earlier than feels natural** - as soon as the spec is stable and the battery is green, not as a final
 ceremony. Its findings are about the spec, and the spec aims every later round.

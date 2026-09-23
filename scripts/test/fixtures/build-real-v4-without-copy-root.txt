@@ -1,0 +1,58 @@
+[2m2026-09-23T12:00:02.733714Z[0m [31mERROR[0m [2mfoundry_compilers_artifacts_solc::sources[0m[2m:[0m [3merror[0m[2m=[0m"/tmp/tmp.fZtXknkBMJ/../src/HostileERC20.sol": No such file or directory (os error 2)
+[2m2026-09-23T12:00:02.737159Z[0m [31mERROR[0m [2mfoundry_compilers_artifacts_solc::sources[0m[2m:[0m [3merror[0m[2m=[0m"/tmp/tmp.fZtXknkBMJ/../src/HostileERC20.sol": No such file or directory (os error 2)
+[2m2026-09-23T12:00:02.737602Z[0m [31mERROR[0m [2mfoundry_compilers_artifacts_solc::sources[0m[2m:[0m [3merror[0m[2m=[0m"/tmp/tmp.fZtXknkBMJ/../src/InvariantBase.sol": No such file or directory (os error 2)
+[2m2026-09-23T12:00:02.790576Z[0m [31mERROR[0m [2mfoundry_compilers_artifacts_solc::sources[0m[2m:[0m [3merror[0m[2m=[0m"/tmp/tmp.fZtXknkBMJ/../src/HostileERC20.sol": No such file or directory (os error 2)
+[2m2026-09-23T12:00:02.791904Z[0m [31mERROR[0m [2mfoundry_compilers_artifacts_solc::sources[0m[2m:[0m [3merror[0m[2m=[0m"/tmp/tmp.fZtXknkBMJ/../src/HostileERC20.sol": No such file or directory (os error 2)
+[2m2026-09-23T12:00:02.792291Z[0m [31mERROR[0m [2mfoundry_compilers_artifacts_solc::sources[0m[2m:[0m [3merror[0m[2m=[0m"/tmp/tmp.fZtXknkBMJ/../src/InvariantBase.sol": No such file or directory (os error 2)
+Unable to resolve imports:
+      "gauntlet-kit/HostileERC20.sol" in "/tmp/tmp.fZtXknkBMJ/src/V4Harness.sol"
+      "gauntlet-kit/HostileERC20.sol" in "/tmp/tmp.fZtXknkBMJ/test/examples/CappedDynamicFeeHook.invariants.t.sol"
+      "gauntlet-kit/InvariantBase.sol" in "/tmp/tmp.fZtXknkBMJ/test/examples/CappedDynamicFeeHook.invariants.t.sol"
+with remappings:
+      forge-std/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/lib/forge-std/src/
+      ds-test/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/lib/forge-std/lib/ds-test/src/
+      solmate/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/lib/solmate/
+      @openzeppelin/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/lib/openzeppelin-contracts/
+      v4-core/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/
+      @uniswap/v4-core/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/
+      v4-periphery/=/tmp/tmp.fZtXknkBMJ/lib/v4-periphery/
+      gauntlet-kit/=/tmp/tmp.fZtXknkBMJ/../src/
+      @ensdomains/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/node_modules/@ensdomains/
+      hardhat/=/tmp/tmp.fZtXknkBMJ/lib/v4-core/node_modules/hardhat/
+Compiling 66 files with Solc 0.8.26
+Compiling 106 files with Solc 0.8.26
+Solc 0.8.26 finished in 104.08ms
+Solc 0.8.26 finished in 2.19s
+Error: Compiler run failed:
+Warning (2018): Function state mutability can be restricted to view
+  --> src/sim/agents/JitLP.sol:77:5:
+   |
+77 |     function unwind(Intent calldata victim, Fill calldata, SimView calldata) external returns (Intent[] memory after_) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Warning (2018): Function state mutability can be restricted to view
+  --> src/sim/agents/PassiveLP.sol:54:5:
+   |
+54 |     function decide() external returns (bool wants, Intent memory it) {
+   |     ^ (Relevant source part starts here and spans across multiple lines).
+
+Error (6275): Source "../src/HostileERC20.sol" not found: File not found. Searched the following locations: "/tmp/tmp.fZtXknkBMJ".
+ParserError: Source "../src/HostileERC20.sol" not found: File not found. Searched the following locations: "/tmp/tmp.fZtXknkBMJ".
+  --> src/V4Harness.sol:12:1:
+   |
+12 | import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Error (6275): Source "../src/HostileERC20.sol" not found: File not found. Searched the following locations: "/tmp/tmp.fZtXknkBMJ".
+ParserError: Source "../src/HostileERC20.sol" not found: File not found. Searched the following locations: "/tmp/tmp.fZtXknkBMJ".
+  --> test/examples/CappedDynamicFeeHook.invariants.t.sol:13:1:
+   |
+13 | import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Error (6275): Source "../src/InvariantBase.sol" not found: File not found. Searched the following locations: "/tmp/tmp.fZtXknkBMJ".
+ParserError: Source "../src/InvariantBase.sol" not found: File not found. Searched the following locations: "/tmp/tmp.fZtXknkBMJ".
+  --> test/examples/CappedDynamicFeeHook.invariants.t.sol:14:1:
+   |
+14 | import {HandlerBase, InvariantAsserts, IBalanceReader, YES, NO} from "gauntlet-kit/InvariantBase.sol";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -18,12 +18,15 @@
 #          RUNS       override FOUNDRY_INVARIANT_RUNS
 #          DEPTH      override FOUNDRY_INVARIANT_DEPTH
 #          SEED       replay a specific seed
-#          USE_BENCH  1 to run in a bench copy (default: 1)
+#          USE_BENCH  1 to run in a bench copy (default: 1). A project whose foundry.toml or remappings.txt reach
+#                     outside it (`../src`, as the v4 module does) is benched from the parent they reach - one or two
+#                     levels up - and run at its own place inside that bench; deeper than two levels is refused.
 #          OUT_DIR    where to write the log (default: <project>/.gauntlet/reports)
 #          FORGE_FLAGS  extra flags for forge test (e.g. --offline)
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
 # Exit:    forge's exit code; 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
-#          than the everyday one, no invariant campaign ran, or one skipped itself).
+#          than the everyday one, no invariant campaign ran - including a build or a setUp that failed before any could,
+#          which is never reported as a counterexample - or one skipped itself, or the bench cannot hold the project).
 
 set -uo pipefail
 
@@ -41,9 +44,23 @@ mkdir -p "$OUT_DIR"
 
 RUN_IN="$SRC"
 if [ "$USE_BENCH" = "1" ]; then
+  # A project that imports from outside itself (`gauntlet-kit/=../src/`, `allow_paths = ["../src"]`) cannot compile in a
+  # bench of itself alone: the bench has no parent to resolve `..` against. So the bench is made of the ancestor its
+  # configuration reaches, and the campaign runs at the project's own place inside it. Found by a fresh reader: on the
+  # v4 module this used to fail to compile, and the compile error was then reported as a counterexample.
+  ups="$(cat "$SRC/foundry.toml" "$SRC/remappings.txt" 2> /dev/null | grep -v '^[[:space:]]*#' | grep -oE '(\.\./)+|\.\.["/]?$' \
+    | awk '{ n = gsub(/\.\./, ""); if (n > m) m = n } END { print m + 0 }')"
+  if [ "$ups" -gt 2 ]; then
+    echo "fuzz-long: $SRC reaches $ups directories up (../ in foundry.toml or remappings.txt); a bench that deep is refused. Run with USE_BENCH=0, or bench it yourself (scripts/bench.sh). NOTHING PROVEN."
+    exit 2
+  fi
+  BENCH_FROM="$SRC"; REL_IN=""
+  for _ in $(seq 1 "$ups"); do REL_IN="$(basename "$BENCH_FROM")${REL_IN:+/$REL_IN}"; BENCH_FROM="$(dirname "$BENCH_FROM")"; done
   # one bench per PROJECT: two long campaigns sharing a bench delete each other's files
   bench_name="fuzz-long-$(basename "$SRC")-$(printf '%s' "$SRC" | sha256sum | cut -c1-8)"
-  RUN_IN="$("$HERE/bench.sh" "$bench_name" "$SRC" | tail -1)" || exit 1
+  bench_out="$("$HERE/bench.sh" "$bench_name" "$BENCH_FROM")" || { printf '%s\n' "$bench_out" | tail -3; echo "fuzz-long: the bench could not be made. NOTHING PROVEN."; exit 2; }
+  RUN_IN="$(printf '%s\n' "$bench_out" | tail -1)${REL_IN:+/$REL_IN}"
+  [ -n "$REL_IN" ] && echo "fuzz-long: the project reaches $ups level(s) up, so the bench is of $BENCH_FROM and the campaign runs in <bench>/$REL_IN"
 fi
 
 export FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-long}"
@@ -118,6 +135,14 @@ else
 fi
 if [ "$rc" -eq 0 ] && [ "$calls" = "0" ]; then
   echo "fuzz-long: NO INVARIANT CAMPAIGN RAN (MATCH='$MATCH' matched nothing?). NOTHING PROVEN."
+  exit 2
+fi
+# forge failed AND no campaign ran: the build or a setUp died before any sequence was tried. That is not a
+# counterexample, it is nothing - and it used to be printed as "LONG FUZZ FAILED. The counterexample and the seed are in".
+if [ "$rc" -ne 0 ] && [ "$campaigns" = "0" ]; then
+  echo "fuzz-long: forge exited $rc and NO invariant campaign ran: the build, a setUp, or a test that is not a campaign failed"
+  echo "           first. NOTHING PROVEN about a long fuzz."
+  echo "           first error: $(first_error_line "$OUT_DIR/05-fuzz-long.txt" || echo "(none recognised - read $OUT_DIR/05-fuzz-long.txt)")"
   exit 2
 fi
 # The budget was READ from the profile; this is what RAN. A test with its own inline configuration

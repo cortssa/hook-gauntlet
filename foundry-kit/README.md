@@ -23,6 +23,11 @@ forge build
 forge test
 ```
 
+**`forge: command not found` from a script, an agent or CI, with forge installed?** `foundryup` puts the binaries in
+`~/.foundry/bin` and adds that directory to the rc file of your interactive shell; a non-interactive shell (`bash -c`,
+`wsl -e`, a cron job, an agent's tool call) never reads that file. `export PATH="$HOME/.foundry/bin:$PATH"` first, or
+call `~/.foundry/bin/forge` by its path. Every script in `scripts/` calls plain `forge`.
+
 Solidity 0.8.26, `evm_version = cancun`, optimizer on at 200 runs. The root kit uses no cheatcode newer than
 `targetSelector`; the v4 module's sandbox reads forge's `lastFrameGas()` record, which is where a version shows first.
 
@@ -172,6 +177,15 @@ or green by luck. So the handler appends one line per run to a file (`HandlerBas
 CORE="deposit withdraw" REACH="withdrew the whole credit" ../scripts/census.sh .   # exit 1 below the floor
 ```
 
+**Why the census says 65 runs when the profile says 64.** Measured (forge 1.8.1, the vault campaign, depth 8): with
+`runs = 1, 2, 4, 64` the census file gets `2, 3, 5, 65` lines, and the last line always has one call more than the depth
+(`8 8 8 8 9` for four runs), and begins with the same actions as the line before it. So forge calls `afterInvariant()`
+once more after the campaign, on what looks like the last run replayed with one extra call (the purpose is inferred,
+not documented: probably the run whose logs it prints), and that call writes its census line like any other. The
+census counts N + 1 lines for N runs, and the last run about twice. The bias is one line in 65 and it is left in (a
+script that dropped "the last line" would drop a real run the day forge stops replaying); read every "of 65" in this
+file and in `v4/README.md` as "of the 65 lines of a 64-run campaign".
+
 `CORE` names the actions that must have SUCCEEDED, `REACH` (semicolon separated - the names have spaces) the
 boundaries that must have been REACHED, each in at least `MIN_PCT` per cent of the runs, judged per suite. `REACH`
 exists because of a mutant: a hook that answered with the wrong selector from its fifth swap in a block kept every
@@ -206,7 +220,9 @@ Three things were measured while wiring it up, and all three are now in the hand
 After all three, measured with `scripts/census.sh`, fresh corpus every time: vault runs with zero successful
 withdrawals **25, 24, 13, 19, 22, 29, 27, 27, 34 and 16 of 65** over ten campaigns, and **35, 27, 20, 37, 22 and
 38 of 65** over six more run by an independent reviewer; hook runs that reach the fee cap
-**28, 31, 32, 22 and 27 of 65** over five. This is the one place these figures live.
+**28, 31, 32, 22 and 27 of 65** over five on the hook's first rule, and **33, 42, 40, 49 and 30 of 65** over five on
+the one-block-late rule (2026-09-23, after round r01), where the F1 ordering - a victim trading after dust in its own
+block - was reached in **31, 26, 22, 42 and 30 of 65**. This is the one place these figures live.
 
 **They are a range, not a value, and `--fuzz-seed` does not make them one.** An earlier version of this file
 gave five numbers "across `--fuzz-seed 1..5`" and told you to write the seed down. A second review ran the

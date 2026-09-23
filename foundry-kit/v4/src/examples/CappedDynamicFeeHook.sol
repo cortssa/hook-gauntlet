@@ -15,9 +15,16 @@ import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation
 /// @notice A deliberately small hook that exists ONLY to show the v4 harness working. It is not a product
 /// and it has no planted bugs.
 ///
-/// What it does: the pool's LP fee rises with congestion. The first swap in a block pays `BASE_FEE`; every
-/// further swap in the same block pays `STEP` more, up to `MAX_FEE`. The next block starts again at the
-/// base. It takes no delta, holds no tokens and has no owner.
+/// What it does: the pool's LP fee rises with congestion, one block late. Every swap in a block pays the same
+/// fee: `BASE_FEE`, plus `STEP` for each swap the pool saw in the PREVIOUS block, capped at `MAX_FEE`. A block
+/// after a quiet one (or after an idle stretch) pays the base. It takes no delta, holds no tokens and has no owner.
+///
+/// Why one block late (round r01, 2026-09-23, finding F1, medium): the first version charged the n-th swap of a
+/// block `BASE_FEE + n * STEP`. Then a victim who read the quote could be charged ten times it by anyone who
+/// placed nine 1-wei swaps ahead of it in the same block - "charged == quoted" held only when the read and the
+/// swap were atomic. The fix is at the cause: nothing placed inside a block can move what that block charges,
+/// because that fee was fixed by the block before it. The congestion signal can still be inflated - for the NEXT
+/// block, in the open, readable by anyone before they trade. `SPEC.md` next to this file has the story.
 ///
 /// ADAPT: this is a WORKED TOY, not a template to fill in. What carries over to your hook is the shape - the
 /// threat model written before the tests, the permissions declared once and checked in the constructor, the
@@ -30,7 +37,8 @@ import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation
 ///  1. a swapper who chooses the `hookData`: empty, enormous, or crafted. Nothing here reads it, and that is
 ///     a decision, not an oversight - see defence (a);
 ///  2. a swapper who swaps many times in one block, including through a contract, to push the fee up or to
-///     roll it over: `swapsInBlock` must not wrap, and the fee must not exceed the cap;
+///     roll it over: `swapsInBlock` must not wrap, the fee must not exceed the cap, and no swap placed inside
+///     a block may change the fee of that block (a quote read in a block binds every swap after it in that block);
 ///  3. a currency that lies, charges a fee on transfer, delivers short or burns gas. The hook never moves a
 ///     token, so the failure must land on the router or the manager's settlement, never on a wrong fee;
 ///  4. a pool it has never seen. A hook serves many pools; one that assumes it was initialised is a hook
@@ -48,7 +56,8 @@ import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation
 /// The defences, one per line of the model:
 ///  * (a) `hookData` is never read or decoded: input that is never parsed cannot be parsed wrongly (1);
 ///  * (b) the fee is computed by one pure function with a hard cap, in `uint24`, and the counter saturates
-///        rather than wrapping (2);
+///        rather than wrapping; the fee of a block is fixed from the previous block's count at its first swap
+///        and stored, so swaps inside the block only count towards the NEXT one (2);
 ///  * (c) the hook has no delta permissions at all, so the manager will not let it move value (3);
 ///  * (d) a pool is recorded in `afterInitialize`, and `beforeSwap` refuses a pool it does not know (4);
 ///  * (e) `onlyManager` on every entry point (5);
@@ -65,11 +74,16 @@ contract CappedDynamicFeeHook is IHooks {
 
     IPoolManager public immutable manager;
 
+    /// @param blockNumber the block the two fields after it belong to (the last block this pool saw a swap in, or
+    ///        the block it was initialised in)
+    /// @param swapsInBlock the swaps seen in that block; they set the fee of the block AFTER it
+    /// @param blockFee the fee every swap in `blockNumber` paid. Once the chain has moved on it is history, not the
+    ///        next fee: read `quoteNextFee` for that (r01, F6)
     struct PoolState {
         bool known;
         uint64 blockNumber;
         uint32 swapsInBlock;
-        uint24 lastQuotedFee;
+        uint24 blockFee;
     }
 
     mapping(PoolId => PoolState) internal _pools;
@@ -80,7 +94,8 @@ contract CappedDynamicFeeHook is IHooks {
     error UnknownPool();
     error NotImplemented();
 
-    /// @param swapCountAfter swaps seen in this block INCLUDING this one. The fee was computed from the count BEFORE it.
+    /// @param swapCountAfter swaps seen in this block INCLUDING this one: they set the NEXT block's fee. `fee` is this
+    /// block's, fixed by the previous block's count, and the same in every FeeQuoted of one block and pool.
     event FeeQuoted(PoolId indexed id, uint32 swapCountAfter, uint24 fee);
 
     modifier onlyManager() {
@@ -124,20 +139,30 @@ contract CappedDynamicFeeHook is IHooks {
     }
 
     // ------------------------------------------------------------------ the rule, as a pure function
-    /// @notice what the `n`-th swap of a block pays. Pure, so the tests, the invariants and the hook itself
-    /// all agree on one definition instead of three.
-    function feeForSwapIndex(uint32 swapsSoFar) public pure returns (uint24) {
-        uint256 raw = uint256(BASE_FEE) + uint256(STEP) * uint256(swapsSoFar);
+    /// @notice what every swap of a block pays when the previous block saw `swapsInPreviousBlock` swaps. Pure, so
+    /// the tests, the invariants and the hook itself all agree on one definition instead of three.
+    function feeForCongestion(uint32 swapsInPreviousBlock) public pure returns (uint24) {
+        uint256 raw = uint256(BASE_FEE) + uint256(STEP) * uint256(swapsInPreviousBlock);
         return raw >= MAX_FEE ? MAX_FEE : uint24(raw);
     }
 
-    /// @notice THE QUOTE: what the next swap on this pool would be charged, right now. A view is an entry
-    /// point like any other, and it is the one other people's software will trust. The suite compares it
-    /// against what the pool actually charged.
+    /// @notice the fee of the current block: stored once the block has seen a swap, else derived from the block
+    /// before it. The stored state counts only if it is THIS block (an identity, not an ordering: a stored block
+    /// ahead of the current one is stale too), and its count only if it is the block right before this one.
+    function _feeOfThisBlock(PoolState storage s) internal view returns (uint24) {
+        if (s.blockNumber == uint64(block.number)) return s.blockFee;
+        return feeForCongestion(uint256(s.blockNumber) + 1 == block.number ? s.swapsInBlock : 0);
+    }
+
+    /// @notice THE QUOTE: what a swap on this pool is charged if it executes in THIS block - and, since the fee of a
+    /// block cannot move once the block has begun, what every swap after it in this block is charged too. A view is
+    /// an entry point like any other, and it is the one other people's software will trust. The suite compares it
+    /// against what the pool actually charged. Off-chain: evaluate it at the block you expect to land in (a call
+    /// against the latest block answers for THAT block, which may be the previous one).
     function quoteNextFee(PoolKey calldata key) external view returns (uint24) {
         PoolState storage s = _pools[key.toId()];
         if (!s.known) revert UnknownPool();
-        return feeForSwapIndex(s.blockNumber == uint64(block.number) ? s.swapsInBlock : 0);
+        return _feeOfThisBlock(s);
     }
 
     function poolState(PoolId id) external view returns (PoolState memory) {
@@ -157,7 +182,7 @@ contract CappedDynamicFeeHook is IHooks {
         s.known = true;
         s.blockNumber = uint64(block.number);
         s.swapsInBlock = 0;
-        s.lastQuotedFee = BASE_FEE;
+        s.blockFee = BASE_FEE;
         manager.updateDynamicLPFee(key, BASE_FEE);
         return IHooks.afterInitialize.selector;
     }
@@ -172,16 +197,18 @@ contract CappedDynamicFeeHook is IHooks {
         PoolState storage s = _pools[id];
         if (!s.known) revert UnknownPool();
 
+        // the fee is read BEFORE the state moves to this block: it is fixed by the previous block's count, and the
+        // swaps of this block (this one included) only count towards the next
+        uint24 fee = _feeOfThisBlock(s);
         if (s.blockNumber != uint64(block.number)) {
             s.blockNumber = uint64(block.number);
             s.swapsInBlock = 0;
+            s.blockFee = fee;
         }
 
-        uint24 fee = feeForSwapIndex(s.swapsInBlock);
         // saturating, not wrapping: once the fee is capped the counter has nothing left to say, and a
-        // uint32 that wraps would drop the fee back to the base in the middle of a block.
+        // uint32 that wraps would drop the next block's fee back to the base.
         if (s.swapsInBlock != type(uint32).max) s.swapsInBlock += 1;
-        s.lastQuotedFee = fee;
         emit FeeQuoted(id, s.swapsInBlock, fee);
 
         return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);

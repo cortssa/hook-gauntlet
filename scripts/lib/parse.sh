@@ -92,6 +92,48 @@ parse_sizes() {
     END { exit (col && rows && !bad_header) ? 0 : 2 }'
 }
 
+# parse_sizes_both <raw output of forge build --sizes>
+#   the same table, both sizes: prints "name runtime_bytes initcode_bytes" per contract. Both columns are found by their
+#   headers ("Runtime Size", "Initcode Size"); the phase-2 gate needs both margins (AGENTS.md), so a table that lacks
+#   either column is refused, never read as "initcode 0".
+#   exit 2: no header, a header without both columns, or not a single row read
+parse_sizes_both() {
+  [ -r "$1" ] || return 2
+  _parse_clean "$1" | awk -F'|' '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    !rc && NF >= 4 && trim($2) == "Contract" {
+      for (i = 3; i < NF; i++) { h = trim($i); if (h ~ /^Runtime Size/) rc = i; if (h ~ /^Initcode Size/) ic = i }
+      if (!rc || !ic) { bad_header = 1; exit }
+      next
+    }
+    rc && NF >= (rc > ic ? rc : ic) + 1 {
+      name = trim($2); r = $rc; c = $ic; gsub(/[ ,\t]/, "", r); gsub(/[ ,\t]/, "", c)
+      if (name == "" || name == "Contract" || r !~ /^[0-9]+$/ || c !~ /^[0-9]+$/) next
+      print name, r, c; rows++
+    }
+    END { exit (rc && ic && rows && !bad_header) ? 0 : 2 }'
+}
+
+# first_error_line <build or test log>
+#   the line that says WHY a build or a setUp failed, for a message that has one line to spend: solc's first
+#   `<Kind>Error (<code>): ...`, else a setUp failure (`[FAIL: setup failed: ...]` or `[FAIL: ...] setUp()`), else
+#   forge's own `Error: ...`. Searched for, never taken from the end: solc's errors and warnings arrive in one listing
+#   whose order depends on which compiler run finished first (the v4 module has two, because of the manager's IR
+#   profile), so the end of a failed build can be nothing but warnings - which is what a fresh reader was shown.
+#   Fixtures: scripts/test/fixtures/build-*.txt.
+#   exit 1: none of those in the log
+first_error_line() {
+  local txt l
+  [ -r "$1" ] || return 1
+  txt="$(_parse_clean "$1")"
+  l="$(grep -m 1 -E '^[A-Za-z]*Error \([0-9]+\):' <<< "$txt")"
+  [ -n "$l" ] || l="$(grep -m 1 -E '^\[FAIL: setup failed|^\[FAIL.*\] setUp\(\)' <<< "$txt")"
+  [ -n "$l" ] || l="$(grep -m 1 -E '^Error:|^error(\[|:)' <<< "$txt")"
+  [ -n "$l" ] || return 1
+  printf '%s
+' "${l:0:300}"
+}
+
 # The simulation ledger (SimLedger.line): tab separated, 13, 15 or 16 fields, label and agent then numbers.
 #   label agent decided executed refused in out quoted shortfall worst windfall gas pnl [gasCost pnlNet [atQuote]]
 # A well-formed line has at least 13 fields and every field from the 3rd to the 16th that is present is an integer

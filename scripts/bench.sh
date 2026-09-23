@@ -13,8 +13,15 @@
 #
 # Usage:   scripts/bench.sh <name> [project-dir]
 # Env:     BENCH_ROOT     where benches live (default: $HOME/.gauntlet/bench)
-#          BENCH_EXCLUDE  extra paths to leave out, space separated (e.g. "src script")
-#          LINK_LIB       1 to symlink the project's lib/ instead of copying it (default: 1)
+#          BENCH_EXCLUDE  extra paths to leave out, space separated (e.g. "src script", or "*.hex *.json"). Two meanings,
+#                         told apart per path on every refresh: a matching path that the PROJECT also has is withheld -
+#                         never copied, and a stale copy of it left in the bench is removed; a matching path only the
+#                         BENCH has (a fixture fetched into it) is the bench's own and is kept. The bench itself is never
+#                         deleted.
+#          LINK_LIB       1 to symlink the project's dependency directories instead of copying them (default: 1). They are
+#                         `lib/` at the root and `<dir>/lib/` beside every nested foundry.toml (a module such as v4/) -
+#                         and nothing else called lib: `scripts/lib/` is source and is copied like the rest. A dependency
+#                         directory the project does not have is left as the bench has it (installed into the bench?).
 #          BENCH_ARTIFACTS  contract names whose COMPILED artifact is copied into <bench>/artifacts/ (e.g. "MyHook").
 #                         A blackbox bench has no src/, so without this it could not deploy the thing it attacks.
 #                         The artifact is ABI + bytecode, which any integrator can get; it is refused if it embeds
@@ -74,79 +81,132 @@ if ! refuse_overlap "$(cd "$DEST" && pwd -P)"; then
   exit 1
 fi
 
-# A bench that EXCLUDES something (a black-box bench) is rebuilt from nothing: rsync --delete does not remove paths it
-# was told to exclude, so re-using a bench name used to leave the old src/ in place under a message saying it was gone.
-if [ -n "$BENCH_EXCLUDE" ]; then rm -rf "${DEST:?}"; mkdir -p "$DEST" || exit 1; fi
-
 # ... and it never gets a symlinked lib/: lib -> <project>/lib means lib/../src IS the source it was built to withhold.
 if [ -n "$BENCH_EXCLUDE" ] && [ "$LINK_LIB" = "1" ]; then
   echo "bench: BENCH_EXCLUDE is set, so lib/ is COPIED, not linked (a link into the project leads straight back to its source)"
   LINK_LIB=0
 fi
 
+# The project's DEPENDENCY directories: `lib` at the root, and `<dir>/lib` beside every nested foundry.toml. Found, not
+# guessed by name: an rsync `--exclude=lib` matches at ANY depth, and it used to drop `scripts/lib/` (the kit's own
+# parser, source) and `v4/lib/` (a module's dependencies) alike - the second then had no link either, so every bench of
+# a v4 project needed a network install again. Each is excluded ANCHORED from the copy below and handled on its own.
+LIBS="lib"
+while IFS= read -r t; do
+  d="${t#./}"; d="${d%/foundry.toml}"
+  [ "$d" = "foundry.toml" ] || [ -z "$d" ] || LIBS="$LIBS $d/lib"
+done < <(cd "$SRC" && find . \( -name lib -o -name .git -o -name out -o -name cache -o -name node_modules -o -name .gauntlet \) -prune \
+  -o -name foundry.toml -print 2> /dev/null | sort)
+
 # out/ and cache/ are never copied: a bench that starts with somebody else's artifacts is the problem this
 # script exists to avoid, and a stale artifact is worse than no artifact.
 EXCLUDES="out cache .git .gauntlet $BENCH_EXCLUDE"
-[ "$LINK_LIB" = "1" ] && EXCLUDES="$EXCLUDES lib"
+for l in $LIBS; do EXCLUDES="$EXCLUDES /$l"; done
 
 set -f   # the patterns below may be globs (*.hex): they must reach rsync as written, not expanded against the cwd
 if command -v rsync > /dev/null 2>&1; then
   args=()
   for e in $EXCLUDES; do args+=("--exclude=$e"); done
+  # --delete does not remove an EXCLUDED path from the bench: that is what keeps a fixture fetched into the bench, and a
+  # dependency directory installed into it, alive across a refresh. Withheld content is removed below, by name.
   rsync -a --delete ${args[@]+"${args[@]}"} "$SRC/" "$DEST/" || { echo "bench: rsync failed"; exit 1; }
 else
   echo "bench: rsync not found, falling back to a full copy (slower, and it does not prune deletions)"
-  for e in $EXCLUDES; do rm -rf "${DEST:?}/$e"; done
-  (cd "$SRC" && tar --exclude='./out' --exclude='./cache' --exclude='./.git' -cf - .) \
-    | (cd "$DEST" && tar -xf -) || { echo "bench: copy failed"; exit 1; }
-  for e in $EXCLUDES; do rm -rf "${DEST:?}/$e"; done
+  targs=()
+  for e in $EXCLUDES; do case "$e" in /*) targs+=("--exclude=.$e") ;; *) targs+=("--exclude=$e") ;; esac; done
+  (cd "$SRC" && tar ${targs[@]+"${targs[@]}"} -cf - .) | (cd "$DEST" && tar -xf -) || { echo "bench: copy failed"; exit 1; }
 fi
-
 set +f
 
-if [ "$LINK_LIB" = "1" ] && [ -e "$SRC/lib" ]; then
-  rm -rf "$DEST/lib"
-  ln -s "$SRC/lib" "$DEST/lib"
+# a path is under one of the dependency directories (they are checked and copied on their own terms)
+under_lib() { local l; for l in $LIBS; do case "$1/" in "$DEST/$l"/*) return 0 ;; esac; done; return 1; }
+
+# Withheld content: a path in the bench that matches an exclude pattern AND exists in the project is a copy of what the
+# bench must not hold (a bench of the same name made earlier without the exclude) - removed, by name. A match that exists
+# only in the bench is the bench's own (a fixture fetched into it) - kept. The bench directory itself is never removed:
+# it used to be (`rm -rf "$DEST"`), and that deleted the fetched fixtures the v4 README says this keeps, and lib/ with them.
+kept_own=""
+if [ -n "$BENCH_EXCLUDE" ]; then
+  set -f
+  for e in $BENCH_EXCLUDE; do
+    set +f
+    while IFS= read -r m; do
+      [ -n "$m" ] || continue
+      under_lib "$m" && continue
+      rel="${m#"$DEST"/}"
+      if [ -e "$SRC/$rel" ] || [ -L "$SRC/$rel" ]; then
+        rm -rf "${DEST:?}/$rel"
+      else
+        kept_own="$kept_own $rel"
+      fi
+    done < <(find "$DEST" -mindepth 1 \( -path "$DEST/$e" -o -name "$e" \) -prune -print 2> /dev/null)
+    set -f
+  done
+  set +f
 fi
 
-if [ -n "$BENCH_EXCLUDE" ]; then
-  # the project's lib/ may itself be a link to a shared directory: copy what it POINTS AT, so nothing in the bench
-  # leads outside the bench
-  if [ -e "$SRC/lib" ]; then
-    # ... but `cp -RL` follows EVERY link under lib/, and a monorepo's `lib/core -> ../src` would carry the withheld
-    # source into the bench under a directory the check below does not look inside (libraries have a src/ of their
-    # own). So: a link under lib/ that resolves into the project, and outside lib/, is refused before anything is copied.
-    # Only links physically under lib/ are examined; a chain that leaves lib/ and comes back by a second link is not.
-    LIB_REAL="$(cd "$SRC/lib" && pwd -P)"
-    while IFS= read -r l; do
-      [ -n "$l" ] || continue
-      if [ -d "$l" ]; then
-        t="$(cd "$l" && pwd -P)"
+# the dependency directories, one by one: linked (LINK_LIB=1), copied through their links (a bench that withholds), or
+# synced as they are (LINK_LIB=0); one the project does not have is the bench's own and is left alone
+outward=0
+for l in $LIBS; do
+  if [ ! -e "$SRC/$l" ]; then
+    [ -e "$DEST/$l" ] && echo "bench: $l/ is the bench's own (the project has none): kept as it is"
+    continue
+  fi
+  if [ "$LINK_LIB" = "1" ]; then
+    rm -rf "${DEST:?}/$l"; mkdir -p "$(dirname "$DEST/$l")"
+    ln -s "$SRC/$l" "$DEST/$l"
+  elif [ -n "$BENCH_EXCLUDE" ]; then
+    # the project's lib/ may itself be a link to a shared directory: copy what it POINTS AT, so nothing in the bench
+    # leads outside the bench ... but `cp -RL` follows EVERY link under it, and a monorepo's `lib/core -> ../src` would
+    # carry the withheld source into the bench under a directory the check below does not look inside (libraries have
+    # a src/ of their own). So: a link under it that resolves into the project, and outside it, is refused before
+    # anything is copied. Only links physically under it are examined; a chain that leaves it and comes back by a
+    # second link is not.
+    LIB_REAL="$(cd "$SRC/$l" && pwd -P)"
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      if [ -d "$k" ]; then
+        t="$(cd "$k" && pwd -P)"
       else
-        tgt="$(readlink "$l")"
-        case "$tgt" in /*) ;; *) tgt="$(dirname "$l")/$tgt" ;; esac
+        tgt="$(readlink "$k")"
+        case "$tgt" in /*) ;; *) tgt="$(dirname "$k")/$tgt" ;; esac
         t="$(cd "$(dirname "$tgt")" 2> /dev/null && pwd -P)/$(basename "$tgt")"
       fi
       case "$t/" in "$LIB_REAL"/*) continue ;; esac
       case "$t/" in "$SRC_REAL"/*)
-        echo "bench: lib/ holds a link into the project itself: $l -> $t"
+        echo "bench: $l/ holds a link into the project itself: $k -> $t"
         echo "       Copying it would bring withheld files into a bench that exists to withhold them. Refusing."
         exit 1 ;;
       esac
-    done < <(find "$SRC/lib/" -type l 2> /dev/null)
+    done < <(find "$SRC/$l/" -type l 2> /dev/null)
     # ... and that is a limit the person RECEIVING the bench has to be told about, not only the person reading this file
-    outward="$(find "$SRC/lib/" -type l 2> /dev/null | wc -l | tr -d ' ')"
-    [ -L "$SRC/lib" ] && outward=$((outward + 1))
-    rm -rf "$DEST/lib"; cp -RL "$SRC/lib" "$DEST/lib" || { echo "bench: cannot copy lib/"; exit 1; }
+    n="$(find "$SRC/$l/" -type l 2> /dev/null | wc -l | tr -d ' ')"
+    [ -L "$SRC/$l" ] && n=$((n + 1))
+    outward=$((outward + n))
+    rm -rf "${DEST:?}/$l"; mkdir -p "$(dirname "$DEST/$l")"
+    cp -RL "$SRC/$l" "$DEST/$l" || { echo "bench: cannot copy $l/"; exit 1; }
+  else
+    # a link left by an earlier LINK_LIB=1 bench leads into the project: syncing INTO it would write the project's lib/
+    [ -L "$DEST/$l" ] && rm -f "$DEST/$l"
+    mkdir -p "$DEST/$l"
+    rsync -a --delete "$SRC/$l/" "$DEST/$l/" 2> /dev/null || { rm -rf "${DEST:?}/$l"; cp -R "$SRC/$l" "$DEST/$l"; } \
+      || { echo "bench: cannot copy $l/"; exit 1; }
   fi
-  # verify, do not trust: every excluded path must be absent, and no symlink may remain
+done
+
+if [ -n "$BENCH_EXCLUDE" ]; then
+  # verify, do not trust: no excluded path the PROJECT has may be in the bench, and no symlink may remain
   bad=0
   set -f
   for e in $BENCH_EXCLUDE; do
     set +f
-    if [ -n "$(find "$DEST" -mindepth 1 \( -path "$DEST/$e" -o -name "$e" \) -not -path "$DEST/lib/*" -print -quit)" ]; then
-      echo "bench: EXCLUDED path '$e' is present in the bench"; bad=1
-    fi
+    while IFS= read -r m; do
+      [ -n "$m" ] || continue
+      under_lib "$m" && continue
+      rel="${m#"$DEST"/}"
+      if [ -e "$SRC/$rel" ] || [ -L "$SRC/$rel" ]; then echo "bench: EXCLUDED path '$rel' is present in the bench"; bad=1; fi
+    done < <(find "$DEST" -mindepth 1 \( -path "$DEST/$e" -o -name "$e" \) -prune -print 2> /dev/null)
     set -f
   done
   set +f
@@ -155,7 +215,8 @@ if [ -n "$BENCH_EXCLUDE" ]; then
   fi
   [ "$bad" -eq 0 ] || { echo "bench: the bench is NOT isolated. Refusing to hand it over."; exit 1; }
   echo "bench: isolation verified - excluded paths absent, no symlinks"
-  if [ "${outward:-0}" -gt 0 ]; then
+  [ -n "$kept_own" ] && echo "bench: kept, the bench's own (matching an exclude, absent from the project):$kept_own"
+  if [ "$outward" -gt 0 ]; then
     echo "bench: NOTE - lib/ was copied THROUGH $outward symbolic link(s). Each was checked not to point into the project; what"
     echo "       lies behind them (a second link that comes back?) was NOT examined. Look inside lib/ before trusting the isolation."
   fi

@@ -9,7 +9,7 @@ import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 ///
 /// Why this exists at all: a hook that returns a fee has made a claim, and the only place the claim is
 /// checkable from outside is the event the manager emits. A suite that asserts on the hook's own stored
-/// `lastQuotedFee` is asking the hook whether the hook was right. Reading the event asks the manager.
+/// fee (`blockFee`) is asking the hook whether the hook was right. Reading the event asks the manager.
 ///
 /// The `fee` in the event is the total swap fee. With no protocol fee set - which is the case in this
 /// module, because nothing here ever sets one - it is the LP fee, which is the number the hook returned. If

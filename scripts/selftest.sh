@@ -168,6 +168,23 @@ PATH="$IV/gitshim:$PATH" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o99" 2>&
 check "control: good pins and a real destination reach git (the shim fails it)" 1 $?
 if [ -s "$IV/git-calls" ]; then echo "  ok    and git WAS called: the refusals above are the guards, not a broken copy"; else
   echo "  FAIL  the control never reached git: the refusals above prove nothing"; fails=$((fails + 1)); fi
+# the OFFLINE path (V4_LOCAL_SRC): a fake local clone at a commit that is not the pin must be refused before anything is
+# copied, and nothing may be fetched. This one needs a real git (to make the clone); the shim is kept out of it.
+if command -v git > /dev/null 2>&1; then
+  LS="$TMP/localsrc"; mkdir -p "$LS/v4-core"; rm -rf "$IV/proj/lib"
+  (cd "$LS/v4-core" && git init -q && printf 'x\n' > f && git add f \
+    && git -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false commit -q -m fake) > /dev/null 2>&1
+  # GIT_ALLOW_PROTOCOL=file: whatever the script does, git itself refuses to reach the network from this case
+  GIT_ALLOW_PROTOCOL=file V4_LOCAL_SRC="$LS" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o114" 2>&1
+  check "offline install from a local clone at the WRONG pin is refused" 1 $?
+  if grep -q "is at $(git -C "$LS/v4-core" rev-parse HEAD), the pin is" "$TMP/o114" && [ ! -e "$IV/proj/lib/v4-core" ]; then
+    echo "  ok    and it names both commits, and nothing was copied into the project"; else
+    echo "  FAIL  the wrong-pin clone was not refused by name, or it was copied: $(grep install-v4 "$TMP/o114" | head -2)"; fails=$((fails + 1)); fi
+  GIT_ALLOW_PROTOCOL=file V4_LOCAL_SRC="$TMP/no-such-dir" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o115" 2>&1
+  check "offline install from a directory with no v4-core clone is refused" 1 $?
+else
+  echo "  SKIPPED - no git here: the offline install refusals are NOT proven on this machine"; skipped=1
+fi
 
 # ================================================================= parse.sh, on fixtures (real forge 1.8.1 output + near misses)
 # scripts/test/fixtures: `*-real-*` captured from forge 1.8.1 on the kit's own projects (2026-09-23); `*-nm-*` near
@@ -208,6 +225,16 @@ expect_out "address: 41 hex digits" "" 1 is_evm_address 0x0000000000000000000000
 expect_out "pin: a full lower-case sha" "" 0 is_git_sha 59d3ecf53afa9264a16bba0e38f4c5d2231f80bc
 expect_out "pin: a short sha" "" 1 is_git_sha 59d3ecf
 expect_out "pin: upper case (not what git prints)" "" 1 is_git_sha 59D3ECF53AFA9264A16BBA0E38F4C5D2231F80BC
+first_row_both() { parse_sizes_both "$1" | grep "^$2 "; }
+expect_out "sizes, both columns, real: ToyVault's runtime AND initcode" "ToyVault 1672 1811" 0 first_row_both "$FIX/sizes-real.txt" ToyVault
+expect_out "sizes, both columns, in another order: still read by header" "ToyVault 1672 1811" 0 first_row_both "$FIX/sizes-nm-columns-swapped.txt" ToyVault
+expect_out "sizes, a table without the Initcode column: refused (never initcode 0)" "" 2 parse_sizes_both "$FIX/sizes-nm-no-initcode.txt"
+first_err_is() { first_error_line "$1" | cut -c1-60; }
+expect_out "first error, real (v4 module copied without its parent): the unresolved import, not the warnings" \
+  'Error (6275): Source "../src/HostileERC20.sol" not found: Fi' 0 first_err_is "$FIX/build-real-v4-without-copy-root.txt"
+expect_out "first error, when the log ENDS in warnings" 'Error (6275): Source "../src/InvariantBase.sol" not found: F' 0 \
+  first_err_is "$FIX/build-nm-error-then-warnings.txt"
+expect_out "first error, in a log with none: refused" "" 1 first_error_line "$FIX/summary-real-one-suite.txt"
 
 # ---- the scripts that read those shapes, fed them through a forge SHIM (no compiler runs): the parser is only half of
 # the guard, the other half is the script acting on its refusal
@@ -227,17 +254,66 @@ SHIM_SIZES="$FIX/sizes-nm-columns-swapped.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs
 check "size.sh on a table with its columns in another order" 0 $?
 if grep -Eq '^ToyVault +1672 +22904' "$TMP/o103"; then echo "  ok    and it read the RUNTIME column by its header (1672, not the initcode 1811)"; else
   echo "  FAIL  size.sh read the wrong column: $(grep ToyVault "$TMP/o103")"; fails=$((fails + 1)); fi
+SHIM_SIZES="$FIX/sizes-real.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o110" 2>&1
+check "size.sh on the real table" 0 $?
+if grep -Eq '^ToyVault +1672 +22904 +1811 +47341 ' "$TMP/o110"; then echo "  ok    and it reports the INITCODE and its margin to 49 152 next to the runtime (1811, 47341)"; else
+  echo "  FAIL  size.sh does not report the initcode size and margin: $(grep ToyVault "$TMP/o110")"; fails=$((fails + 1)); fi
+SHIM_SIZES="$FIX/sizes-real.txt" MIN_INIT_MARGIN=48000 PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o111" 2>&1
+check "size.sh: an initcode margin below MIN_INIT_MARGIN fails" 1 $?
+SHIM_SIZES="$FIX/sizes-nm-no-initcode.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o112" 2>&1
+check "size.sh on a table with no Initcode column measures nothing (the phase-2 gate needs both)" 2 $?
 SHIM_SIZES="$FIX/sizes-nm-renamed-header.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o104" 2>&1
 check "size.sh on a table whose runtime column is not called Runtime Size measures nothing" 2 $?
 SHIM_SIZES="$FIX/sizes-nm-no-header.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o105" 2>&1
 check "size.sh on a table with no header measures nothing" 2 $?
 unset SHIM_SIZES SHIM_TEST
+# mutate.sh's baseline build fails; the shim prints a log whose END is warnings. The cause must be on the screen.
+FS2="$TMP/fshim2"; mkdir -p "$FS2"
+printf '#!/usr/bin/env bash\ncase " $* " in\n  *" build "*) cat "%s"; exit 1 ;;\nesac\necho "Compiler run successful!"; exit 0\n' "$FIX/build-nm-error-then-warnings.txt" > "$FS2/forge"; chmod +x "$FS2/forge"
+printf 'contract A { uint256 x; }\n' > "$FP/src/A.sol"
+PATH="$FS2:$PATH" LABEL=m17 OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o113" 2>&1
+check "mutate.sh on a copy that does not build: nothing proven" 2 $?
+if grep -q 'first error: Error (6275): Source "../src/InvariantBase.sol" not found' "$TMP/o113"; then
+  echo "  ok    and it names the FIRST error, though the log ends in warnings"; else
+  echo "  FAIL  mutate.sh did not show the error that stopped the build:"; sed "s/^/        | /" "$TMP/o113" | head -8; fails=$((fails + 1)); fi
 "$HERE/sim-report.sh" "$FIX/sim-nm-nonnumeric.tsv" > "$TMP/o106" 2>&1; check "sim-report over a ledger with three malformed lines" 0 $?
 if grep -Eq '^nm +honest +2 +40\.0 +39\.0 +1\.0 ' "$TMP/o106" && grep -q "3 line(s) ignored (malformed" "$TMP/o106"; then
   echo "  ok    and the malformed lines are counted out loud, not added up as numbers"; else
   echo "  FAIL  sim-report added up a field that is not a number:"; sed "s/^/        | /" "$TMP/o106"; fails=$((fails + 1)); fi
 printf 'x\ty\t1\t2\n' > "$TMP/allbad.tsv"; "$HERE/sim-report.sh" "$TMP/allbad.tsv" > "$TMP/o107" 2>&1
 check "sim-report over a ledger with no well-formed line measured nothing" 2 $?
+
+# ================================================================= bench.sh refreshes (no forge needed)
+echo "== bench.sh (refresh, dependency directories) =="
+BP="$TMP/bproj"; mkdir -p "$BP/src" "$BP/fixtures" "$BP/lib/dep" "$BP/v4/src" "$BP/v4/lib/dep2" "$BP/scripts/lib"
+printf '[profile.default]\n' > "$BP/foundry.toml"; printf '[profile.default]\n' > "$BP/v4/foundry.toml"
+printf 'contract S {}\n' > "$BP/src/S.sol"; printf 'contract V {}\n' > "$BP/v4/src/V.sol"
+printf 'contract D {}\n' > "$BP/lib/dep/D.sol"; printf 'contract D2 {}\n' > "$BP/v4/lib/dep2/D2.sol"
+printf 'echo parse\n' > "$BP/scripts/lib/parse.sh"; printf '# fixtures\n' > "$BP/fixtures/README.md"
+BENCH_ROOT="$TMP/bb2" "$HERE/bench.sh" two "$BP" > "$TMP/o116" 2>&1; check "a bench of a project with a nested foundry project" 0 $?
+if [ -L "$TMP/bb2/two/lib" ] && [ -L "$TMP/bb2/two/v4/lib" ] && [ "$(readlink "$TMP/bb2/two/v4/lib")" = "$BP/v4/lib" ] \
+  && [ -f "$TMP/bb2/two/scripts/lib/parse.sh" ] && [ ! -L "$TMP/bb2/two/scripts/lib" ]; then
+  echo "  ok    lib/ and v4/lib/ are LINKED, and scripts/lib/ (source, not a dependency) is copied"; else
+  echo "  FAIL  LINK_LIB: root lib $(readlink "$TMP/bb2/two/lib" 2> /dev/null || echo none), v4/lib $(readlink "$TMP/bb2/two/v4/lib" 2> /dev/null || echo none), scripts/lib/parse.sh $([ -f "$TMP/bb2/two/scripts/lib/parse.sh" ] && echo present || echo MISSING)"; fails=$((fails + 1)); fi
+# the v4 README's flow: a bench that keeps what was fetched INTO it. The project has no fixtures/*.hex and no v4/lib of
+# its own here, so the bench's are its own; a refresh must keep both, and the bench itself must never be deleted.
+rm -rf "$BP/v4/lib"
+BENCH_ROOT="$TMP/bb2" BENCH_EXCLUDE="*.hex *.json" "$HERE/bench.sh" keep "$BP" > "$TMP/o117" 2>&1; check "a bench that excludes the fetched fixtures" 0 $?
+printf '0x6080\n' > "$TMP/bb2/keep/fixtures/PROBE.hex"; printf '{}\n' > "$TMP/bb2/keep/fixtures/PROBE.json"
+mkdir -p "$TMP/bb2/keep/v4/lib/v4-core"; printf 'installed into the bench\n' > "$TMP/bb2/keep/v4/lib/v4-core/INSTALLED"
+printf 'contract S { uint256 x; }\n' > "$BP/src/S.sol"
+BENCH_ROOT="$TMP/bb2" BENCH_EXCLUDE="*.hex *.json" "$HERE/bench.sh" keep "$BP" > "$TMP/o118" 2>&1; check "the same bench, refreshed" 0 $?
+if [ -f "$TMP/bb2/keep/fixtures/PROBE.hex" ] && [ -f "$TMP/bb2/keep/fixtures/PROBE.json" ] && [ -f "$TMP/bb2/keep/v4/lib/v4-core/INSTALLED" ] \
+  && grep -q "uint256 x" "$TMP/bb2/keep/src/S.sol"; then
+  echo "  ok    the fetched fixtures and the bench's own v4/lib survived the refresh, and the source was refreshed"; else
+  echo "  FAIL  the refresh deleted what it was asked to keep: PROBE.hex $([ -f "$TMP/bb2/keep/fixtures/PROBE.hex" ] && echo kept || echo GONE), v4/lib $([ -f "$TMP/bb2/keep/v4/lib/v4-core/INSTALLED" ] && echo kept || echo GONE)"; fails=$((fails + 1)); fi
+# ... and a path the PROJECT has that matches the exclude is still withheld: a stale copy of it is removed, by name
+printf '0xdead\n' > "$BP/fixtures/Project.hex"; printf '0xdead\n' > "$TMP/bb2/keep/fixtures/Project.hex"
+BENCH_ROOT="$TMP/bb2" BENCH_EXCLUDE="*.hex *.json" "$HERE/bench.sh" keep "$BP" > "$TMP/o119" 2>&1; check "a refresh over a stale copy of a withheld file" 0 $?
+if [ ! -e "$TMP/bb2/keep/fixtures/Project.hex" ] && [ -f "$TMP/bb2/keep/fixtures/PROBE.hex" ]; then
+  echo "  ok    the project's own .hex is withheld (the stale copy is gone), the bench's own PROBE.hex is kept"; else
+  echo "  FAIL  withheld and kept are mixed up: Project.hex $([ -e "$TMP/bb2/keep/fixtures/Project.hex" ] && echo PRESENT || echo gone)"; fails=$((fails + 1)); fi
+rm -f "$BP/fixtures/Project.hex"
 
 # ================================================================= mutate.sh and size.sh (need forge and a project)
 echo "== mutate.sh / size.sh =="
@@ -329,6 +405,30 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   check "a profile that does not exist proves nothing" 2 $?
   USE_BENCH=0 MATCH="--match-contract NoSuchContractAnywhere" "$HERE/fuzz-long.sh" "$M" > "$TMP/o32" 2>&1
   check "a long fuzz in which no campaign ran proves nothing" 2 $?
+  # forge FAILS and no campaign ran: a build error is not a counterexample
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../nowhere/Missing.sol";\ncontract Broken is Test { function test_b() public {} }\n' > "$M/test/Broken.t.sol"
+  USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o120" 2>&1
+  check "a long fuzz whose build fails proves nothing (never a counterexample)" 2 $?
+  if grep -q "NOTHING PROVEN" "$TMP/o120" && grep -q 'first error: .*nowhere/Missing.sol' "$TMP/o120" && ! grep -q "counterexample and the seed" "$TMP/o120"; then
+    echo "  ok    and it names the compile error, and says nothing about a counterexample"; else
+    echo "  FAIL  fuzz-long.sh reported a build failure as something else:"; grep -E "fuzz-long|LONG FUZZ|first error" "$TMP/o120" | head -4 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -f "$M/test/Broken.t.sol"
+  # USE_BENCH=1 on a project that imports from its PARENT (the v4 module's shape): the bench must hold the parent
+  TL="$TMP/twolevel"; mkdir -p "$TL/src" "$TL/child/src" "$TL/child/test"
+  ln -s "$(cd "$KIT/lib" && pwd -P)" "$TL/lib"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$TL/child/lib"
+  printf '[profile.default]\n' > "$TL/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract Base { uint256 public x; function inc() external { x++; } }\n' > "$TL/src/Base.sol"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\nallow_paths = ["../src"]\nremappings = ["parent/=../src/"]\n[invariant]\nruns = 4\ndepth = 4\nfail_on_revert = true\n[profile.long.invariant]\nruns = 8\ndepth = 8\nfail_on_revert = true\n' > "$TL/child/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "parent/Base.sol";\ncontract ChildInvariant is Test { Base b; function setUp() public { b = new Base(); targetContract(address(b)); } function invariant_x() public view { assertGe(b.x(), 0); } }\n' > "$TL/child/test/C.t.sol"
+  BENCH_ROOT="$TMP/fzb" "$HERE/fuzz-long.sh" "$TL/child" > "$TMP/o121" 2>&1
+  check "USE_BENCH=1 on a project that imports from its parent: the bench holds the parent, and the campaign runs" 0 $?
+  if grep -q "the bench is of $TL" "$TMP/o121"; then echo "  ok    and it says which directory it benched"; else
+    echo "  FAIL  fuzz-long.sh did not bench the parent: $(grep -E 'fuzz-long|in /' "$TMP/o121" | head -2)"; fails=$((fails + 1)); fi
+  mkdir -p "$TMP/deep/a/b/c"; printf '[profile.default]\nallow_paths = ["../../../x"]\n' > "$TMP/deep/a/b/c/foundry.toml"
+  BENCH_ROOT="$TMP/fzb" "$HERE/fuzz-long.sh" "$TMP/deep/a/b/c" > "$TMP/o122" 2>&1
+  check "USE_BENCH=1 on a project that reaches three levels up is refused, in one line" 2 $?
+  if [ "$(grep -c "refused" "$TMP/o122")" = "1" ] && [ -z "$(find "$TMP/fzb" -maxdepth 1 -name 'fuzz-long-c-*' -print -quit 2> /dev/null)" ]; then
+    echo "  ok    and no bench was made for it"; else echo "  FAIL  the deep project was benched, or refused unclearly"; fails=$((fails + 1)); fi
 
   BENCH_ROOT="$TMP/benches" "$HERE/bench.sh" bb "$M" > "$TMP/o33" 2>&1; check "an ordinary bench" 0 $?
   BENCH_ROOT="$TMP/benches" BENCH_EXCLUDE="src" "$HERE/bench.sh" bb "$M" > "$TMP/o34" 2>&1
