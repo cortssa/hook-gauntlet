@@ -27,10 +27,17 @@ import {JitLP} from "../../src/sim/agents/JitLP.sol";
 ///
 /// Measured on seeds 1-5 (2026-09-23): the passive LP is worse off with the JIT LP in the world on ONE seed of five
 /// (seed 1, the one the old assertion was written from), and better off on the other four; the JIT LP profits on the
-/// same one seed and loses on the other four. What held on all five is the pairing: the JIT LP's P&L and the change in
-/// the passive LP's P&L have OPPOSITE signs - what one gains the other gives, whichever way it goes. On this
-/// population what the JIT LP takes is a share of the pool's fortunes - the passive LP's fees on seed 1, its losses to
-/// price moves on the other four - and "JIT liquidity takes the passive LP's fees" is one seed of five.
+/// same one seed and loses on the other four. On this population what the JIT LP takes is a share of the pool's
+/// fortunes - the passive LP's fees on seed 1, its losses to price moves on the other four - and "JIT liquidity takes
+/// the passive LP's fees" is one seed of five.
+///
+/// WHICH COUNTS ARE EVIDENCE. The first two (passive worse off 1/5, JIT profitable 1/5) carry the claim: two mutants
+/// moved them and turned the test red on the first (a JIT range above the price: counts 4/4/5, `4 != 1`; every seed run
+/// as seed 1: `5 != 1`; measured by a verifier, 2026-09-23). The third - the JIT LP's P&L and the change in the
+/// passive LP's have opposite signs, 5/5 - is a SANITY CHECK, not evidence: it sits next to an accounting identity
+/// (with near-identical trader flow, what one LP gains the other gives), and it stayed 5/5 under both of those mutants.
+/// It is kept, and asserted under that name, as a check that the two orderings' ledgers still pair up; no mutant has
+/// been seen to turn it red, and nothing in the README rests on it.
 contract LiquidityScenario is ExampleScenario {
     RandomTrader worldA;
     RandomTrader worldB;
@@ -43,7 +50,8 @@ contract LiquidityScenario is ExampleScenario {
     uint256 internal constant SEEDS = 5;
     uint256 internal constant PASSIVE_WORSE_MEASURED = 1;
     uint256 internal constant JIT_PROFITABLE_MEASURED = 1;
-    uint256 internal constant OPPOSITE_SIGNS_MEASURED = 5;
+    /// @dev a sanity check, not evidence: survives both mutants that kill the two counts above (see the contract note)
+    uint256 internal constant OPPOSITE_SIGNS_SANITY = 5;
 
     struct Outcome {
         int256 passiveFcfs;
@@ -147,7 +155,9 @@ contract LiquidityScenario is ExampleScenario {
         console2.log("seeds 1-5: JIT P&L and passive change opposite  ", opposite);
         assertEq(passiveWorse, PASSIVE_WORSE_MEASURED, "the passive-LP count moved: re-measure, then re-state it");
         assertEq(jitProfitable, JIT_PROFITABLE_MEASURED, "the JIT-profit count moved: re-measure, then re-state it");
-        assertEq(opposite, OPPOSITE_SIGNS_MEASURED, "the JIT LP and the passive LP no longer trade places on every seed");
+        // sanity, not evidence (it survives the mutants the two counts above kill): a red here points at the ledger or
+        // the snapshot, not at a new fact about JIT liquidity
+        assertEq(opposite, OPPOSITE_SIGNS_SANITY, "sanity: the JIT LP and the passive LP no longer trade places on every seed");
     }
 
     /// @notice the world is seeded: the same seed reproduces the same run, a different seed gives a different one.

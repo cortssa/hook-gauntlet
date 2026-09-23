@@ -38,12 +38,19 @@ What the kit's own gates (`.github/workflows/gates.yml`) run on. Outside this ta
 | component | version | where it is pinned | what breaks outside it |
 | --- | --- | --- | --- |
 | forge | **1.8.1** | `FOUNDRY_VERSION` in `gates.yml` (battery + selftest jobs) | flags renamed by a nightly (`doctrine/JUDGES.md` was checked flag by flag against 1.8.1); the shape of the test summary and of the `--sizes` table, which `scripts/lib/parse.sh` refuses rather than guesses; the length of the `lastFrameGas()` record (below) |
-| forge | 1.8.3 | `FOUNDRY_VERSION_2` in `gates.yml` (job `battery-forge-1-8-3`) | **not yet seen green: unsupported until that job passes.** Added 2026-09-23 without a run (only 1.8.1 is on the machine that wrote it). If it goes red, the job is removed and this row says "unsupported" |
+| forge | 1.8.3 | `FOUNDRY_VERSION_2` in `gates.yml` (job `battery-forge-1-8-3`) | **supported: CI run 35867090813 of 2026-09-23 green on both batteries** (root kit and v4 module, source manager). What is proven on it is the batteries only: the selftest, the flag-by-flag check of `doctrine/JUDGES.md` and every number quoted in these READMEs are 1.8.1's. 1.8.1 stays the pinned default |
 | forge-std | **1.16.2** (root kit) | `FORGE_STD_TAG` in `gates.yml` | its `Vm.Gas` declares six words (a trailing `gasStateUsed`) and forge 1.8.1 returns five, so code compiled against it that calls the typed `vm.lastCallGas()` fails in the decoder; `SimGasMeter` reads the raw record and accepts either length |
 | forge-std | as pinned by v4-core (v4 module) | `V4_CORE_PIN` in `scripts/install-v4.sh` (the module remaps `forge-std/` into `lib/v4-core/lib/forge-std`; 1.9.3 on the bench that wrote this table) | the v4 tests compile against v4-core's own forge-std, not the root kit's: a cheatcode newer than that copy does not exist for them |
 | solc | **0.8.26** | `solc_version` in both `foundry.toml` | the sizes (and the EIP-170 margins every hook note quotes) are for this compiler; another one changes every byte count |
 | EVM | **cancun** | `evm_version` in both `foundry.toml` | transient storage (v4-core's `unlock` uses it) needs cancun or later; gas numbers are cancun's |
 | `lastFrameGas()` record | 160 bytes (five words) or 192 bytes (six) | `SimGasMeter.decodeFrameGas` | any other length reverts `FrameGasLayoutUnknown(length)` and stops the run: a forge that changes the record is refused, never read at the wrong offsets |
+
+**How a version gets a row.** A CI job first, then a row - never the other way round, and never a row written from a
+local run. Add a job to `gates.yml` pinned to the new version (as `battery-forge-1-8-3` is: its own
+`FOUNDRY_VERSION_<n>`, both batteries); when that job has passed on the runner, add the row, saying "supported" and
+naming the run and its date. A job that goes red is removed and the version gets no row (or, if it had one, the row
+says "unsupported") - never a job left red, never one marked allowed-to-fail. The pinned default (`FOUNDRY_VERSION`,
+the one the selftest and every measured number use) changes only on purpose, in its own commit.
 
 **Keep your own examples inside `src/` and `test/`.** The worked example is at `src/examples/ToyVault.sol`
 and `test/examples/ToyVault.invariants.t.sol`, not in an `examples/` tree of its own. `forge` compiles `src`,

@@ -10,8 +10,9 @@
 #                 purpose (it runs mutation cases; 72 s on a warm local bench, 2026-09-23, longer on a cold runner);
 #       shellcheck  over scripts/*.sh and scripts/lib/*.sh, at severity "warning" (style and info notes are not gated);
 #       battery-forge-1.8.3  the same battery on a SECOND pinned forge, the second row of the supported-versions table
-#                 in foundry-kit/README.md. Until it has been seen green that row says "unsupported"; if it goes red, the
-#                 job is removed and the row stays "unsupported" - never a job left red, never one marked allowed-to-fail;
+#                 in foundry-kit/README.md. First seen green in run 35867090813 (2026-09-23), so that row says "supported";
+#                 if it goes red, the job is removed and the row goes back to "unsupported" - never a job left red, never
+#                 one marked allowed-to-fail. A third version is added the same way: a job first, then a row;
 #   - NOT here: the battery against the REAL pool manager's bytecode. It needs an RPC endpoint, and no endpoint or
 #     key goes into this repository or its CI. That leg is run locally (foundry-kit/v4/README.md) and reported in
 #     the dossier.
@@ -108,8 +109,21 @@ jobs:
           version: ${{ env.FOUNDRY_VERSION }}
       - name: forge-std for the root kit, pinned
         run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
+      # the log is kept, and uploaded when the job fails: a red on the daily schedule is read days later, and the job's
+      # own console is the only other copy of what went wrong
       - name: selftest
-        run: scripts/selftest.sh
+        shell: bash
+        run: |
+          set -o pipefail   # without it the step's exit code would be tee's, and a red selftest would pass
+          mkdir -p selftest-logs
+          scripts/selftest.sh 2>&1 | tee selftest-logs/selftest.txt
+      - name: keep the selftest log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selftest-log
+          path: selftest-logs/selftest.txt
+          if-no-files-found: warn
 
   shellcheck:
     name: shellcheck (scripts/*.sh, scripts/lib/*.sh)

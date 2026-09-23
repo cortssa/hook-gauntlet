@@ -595,11 +595,13 @@ seed   passive LP, FCFS   passive LP, BUNDLE   JIT LP, BUNDLE
 
 This section used to give seed 1 alone as "the whole JIT story" - the JIT LP takes the passive LP's fees - and the test
 asserted it. A fresh reader ran seed 2 and the test went red. Over five seeds the passive LP is worse off with the JIT
-LP in the world on **1 of 5**, and the JIT LP profits on **1 of 5**, the same one; what holds on **5 of 5** is that the
-two trade places: the JIT LP's P&L and the change in the passive LP's have opposite signs. On this population the JIT
-LP takes a share of the pool's fortune, whichever way the world moved it - fees on seed 1, losses to price moves on the
-other four. The test asserts those three counts (`1`, `1`, `5`), so a change that moves the distribution goes red and
-has to be re-measured; the `SIM_SEED` test asserts only what holds on every seed. Mutants: liquidity changes that
+LP in the world on **1 of 5**, and the JIT LP profits on **1 of 5**, the same one. On this population the JIT LP takes
+a share of the pool's fortune, whichever way the world moved it - fees on seed 1, losses to price moves on the other
+four. The test asserts those two counts (`1`, `1`), so a change that moves the distribution goes red and has to be
+re-measured; the `SIM_SEED` test asserts only what holds on every seed. A third count - the JIT LP's P&L and the change
+in the passive LP's have opposite signs, 5 of 5 - is asserted too, but as a **sanity check, not evidence**: it sits
+next to an accounting identity (what one LP gains the other gives) and it stayed 5/5 under both mutants that turn the
+first two red (a verifier's measurement, 2026-09-23); nothing here rests on it. Mutants: liquidity changes that
 never execute, a JIT position of 1 wei, a world that ignores its seed - each seen red by these tests (on the
 single-seed version; the count test was seen red by its own first run, which measured the counts).
 

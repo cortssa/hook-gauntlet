@@ -17,7 +17,11 @@
 #                         told apart per path on every refresh: a matching path that the PROJECT also has is withheld -
 #                         never copied, and a stale copy of it left in the bench is removed; a matching path only the
 #                         BENCH has (a fixture fetched into it) is the bench's own and is kept. The bench itself is never
-#                         deleted.
+#                         deleted. The unit is the MATCHING PATH: a pattern that names a DIRECTORY the project also has
+#                         (BENCH_EXCLUDE="fixtures") withholds the whole directory, so a file that only the bench has
+#                         INSIDE it (fixtures/Fetched.hex) is deleted with it on every refresh. To keep fetched files, name
+#                         them by a file pattern ("*.hex"), not by their directory. Every run that withholds such a
+#                         directory says so in one line: "bench: WARNING - ...: <dir> <dir>".
 #          LINK_LIB       1 to symlink the project's dependency directories instead of copying them (default: 1). They are
 #                         `lib/` at the root and `<dir>/lib/` beside every nested foundry.toml (a module such as v4/) -
 #                         and nothing else called lib: `scripts/lib/` is source and is copied like the rest. A dependency
@@ -97,6 +101,26 @@ while IFS= read -r t; do
   [ "$d" = "foundry.toml" ] || [ -z "$d" ] || LIBS="$LIBS $d/lib"
 done < <(cd "$SRC" && find . \( -name lib -o -name .git -o -name out -o -name cache -o -name node_modules -o -name .gauntlet \) -prune \
   -o -name foundry.toml -print 2> /dev/null | sort)
+
+# An exclude that matches a DIRECTORY the project has withholds all of it: whatever the bench later puts inside it is
+# removed with it on the next refresh (below, by name). Said out loud on every run, so it is read before it costs a file.
+if [ -n "$BENCH_EXCLUDE" ]; then
+  wdirs=""
+  set -f
+  for e in $BENCH_EXCLUDE; do
+    set +f
+    while IFS= read -r m; do
+      [ -n "$m" ] || continue
+      rel="${m#"$SRC"/}"; skip=0
+      for l in $LIBS; do case "$rel/" in "$l"/*) skip=1 ;; esac; done
+      [ "$skip" -eq 0 ] && wdirs="$wdirs $rel"
+    done < <(find "$SRC" -mindepth 1 \( -name .git -o -name out -o -name cache -o -name .gauntlet \) -prune \
+      -o \( -path "$SRC/$e" -o -name "$e" \) -type d -prune -print 2> /dev/null)
+    set -f
+  done
+  set +f
+  [ -n "$wdirs" ] && echo "bench: WARNING - BENCH_EXCLUDE withholds whole directories the project has; a file only the bench has inside one is DELETED on every refresh:$wdirs"
+fi
 
 # out/ and cache/ are never copied: a bench that starts with somebody else's artifacts is the problem this
 # script exists to avoid, and a stale artifact is worse than no artifact.

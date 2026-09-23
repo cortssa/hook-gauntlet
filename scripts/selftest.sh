@@ -182,6 +182,66 @@ if command -v git > /dev/null 2>&1; then
     echo "  FAIL  the wrong-pin clone was not refused by name, or it was copied: $(grep install-v4 "$TMP/o114" | head -2)"; fails=$((fails + 1)); fi
   GIT_ALLOW_PROTOCOL=file V4_LOCAL_SRC="$TMP/no-such-dir" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o115" 2>&1
   check "offline install from a directory with no v4-core clone is refused" 1 $?
+
+  # A GOOD local clone, made here: a fake v4-core with the two submodules (lib/forge-std, lib/solmate) as real gitlinks,
+  # and a copy of install-v4.sh whose V4_CORE_PIN is that fake's HEAD. Nothing about Uniswap is needed to test the copy.
+  gc() { git -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false -c advice.addEmbeddedRepo=false "$@"; }
+  G="$TMP/goodsrc"; GV="$G/v4-core"; mkdir -p "$GV/src" "$GV/lib/forge-std/src" "$GV/lib/solmate/src"
+  printf 'contract PoolManager {}\n' > "$GV/src/PoolManager.sol"
+  printf 'contract Test {}\n' > "$GV/lib/forge-std/src/Test.sol"; printf 'contract Owned {}\n' > "$GV/lib/solmate/src/Owned.sol"
+  for sm in forge-std solmate; do (cd "$GV/lib/$sm" && git init -q && git add -A && gc commit -q -m "$sm") > /dev/null 2>&1; done
+  printf '[submodule "lib/forge-std"]\n\tpath = lib/forge-std\n\turl = https://example.invalid/forge-std\n[submodule "lib/solmate"]\n\tpath = lib/solmate\n\turl = https://example.invalid/solmate\n' > "$GV/.gitmodules"
+  (cd "$GV" && git init -q && gc add .gitmodules src lib/forge-std lib/solmate && gc commit -q -m fake-v4-core) > /dev/null 2>&1
+  PINNED="$TMP/ivpinned"; mkdir -p "$PINNED/scripts/lib"; cp "$HERE/lib/parse.sh" "$PINNED/scripts/lib/"
+  sed "s/^V4_CORE_PIN=\"[0-9a-f]*\"/V4_CORE_PIN=\"$(git -C "$GV" rev-parse HEAD)\"/" "$HERE/install-v4.sh" > "$PINNED/scripts/install-v4.sh"
+  chmod +x "$PINNED/scripts/install-v4.sh"
+  inst() { GIT_ALLOW_PROTOCOL=file "$PINNED/scripts/install-v4.sh" "$@"; }
+  if [ "$(git -C "$GV" ls-tree HEAD lib/solmate | awk '{print $2}')" = "commit" ] && grep -q "^V4_CORE_PIN=\"$(git -C "$GV" rev-parse HEAD)\"" "$PINNED/scripts/install-v4.sh"; then
+    mkdir -p "$IV/p1" "$IV/p2" "$IV/p3" "$IV/p4"
+    V4_LOCAL_SRC="$G" inst "$IV/p1" > "$TMP/o120" 2>&1; check "control: offline install from a GOOD local clone" 0 $?
+    V4_FORCE=1 V4_LOCAL_SRC="$G" inst "$IV/p1" > "$TMP/o121" 2>&1; check "the same, again, with V4_FORCE=1 (it used to fail with a false 'forge-std missing')" 0 $?
+    # a clone whose solmate submodule is not checked out: refused, and it must leave nothing behind
+    B="$TMP/badsrc"; mkdir -p "$B"; cp -a "$GV" "$B/v4-core"; rm -rf "$B/v4-core/lib/solmate"; mkdir "$B/v4-core/lib/solmate"
+    V4_LOCAL_SRC="$B" inst "$IV/p2" > "$TMP/o122" 2>&1; check "offline install from a clone with a submodule missing is refused" 1 $?
+    if [ ! -e "$IV/p2/lib" ]; then echo "  ok    and the refusal left no lib/ in a project that had none"; else
+      echo "  FAIL  the refused install left a partial lib/: $(cd "$IV/p2" && find lib -maxdepth 2 | head -4 | tr '\n' ' ')"; fails=$((fails + 1)); fi
+    V4_LOCAL_SRC="$G" inst "$IV/p2" > "$TMP/o123" 2>&1; check "the next attempt with a GOOD clone, no V4_FORCE, installs (the refusal did not poison it)" 0 $?
+    # a refused V4_FORCE over a good install leaves that install as it was
+    V4_FORCE=1 V4_LOCAL_SRC="$B" inst "$IV/p1" > "$TMP/o124" 2>&1; check "V4_FORCE=1 from the broken clone over a good install is refused" 1 $?
+    if [ -f "$IV/p1/lib/v4-core/lib/solmate/src/Owned.sol" ] && [ -z "$(find "$IV/p1/lib" -maxdepth 1 -name '.install-v4-*')" ]; then
+      echo "  ok    and the good install is intact, with no staging directory left behind"; else
+      echo "  FAIL  a refused V4_FORCE damaged the install it was refused over"; fails=$((fails + 1)); fi
+    # a lib/v4-core that is ALREADY broken (as a refused run of an older install-v4.sh left it): refused without FORCE, and
+    # the message says FORCE is the way out; with FORCE it is replaced
+    mkdir -p "$IV/p3/lib"; cp -a "$B/v4-core" "$IV/p3/lib/v4-core"
+    V4_LOCAL_SRC="$G" inst "$IV/p3" > "$TMP/o125" 2>&1; check "an installed lib/v4-core with a submodule missing is refused without V4_FORCE" 1 $?
+    if grep -q "V4_FORCE=1" "$TMP/o125"; then echo "  ok    and the refusal names V4_FORCE=1 as the way out"; else
+      echo "  FAIL  the refusal does not say how to recover"; fails=$((fails + 1)); fi
+    V4_FORCE=1 V4_LOCAL_SRC="$G" inst "$IV/p3" > "$TMP/o126" 2>&1; check "V4_FORCE=1 with a good clone recovers it" 0 $?
+    [ -f "$IV/p3/lib/v4-core/lib/solmate/src/Owned.sol" ] || { echo "  FAIL  V4_FORCE said OK but solmate is not there"; fails=$((fails + 1)); }
+    # untracked files in the clone: an untracked .sol under src/ (of the clone or of a submodule) is refused; anything
+    # else untracked is copied, as the header says
+    U="$TMP/untrsrc"; mkdir -p "$U"; cp -a "$GV" "$U/v4-core"; printf 'contract Extra {}\n' > "$U/v4-core/src/Extra.sol"
+    V4_LOCAL_SRC="$U" inst "$IV/p4" > "$TMP/o127" 2>&1; check "a clone with an UNTRACKED .sol under src/ is refused" 1 $?
+    if grep -q "src/Extra.sol" "$TMP/o127" && [ ! -e "$IV/p4/lib" ]; then echo "  ok    and it names the file, and nothing was copied"; else
+      echo "  FAIL  the untracked .sol was not named, or something was copied"; fails=$((fails + 1)); fi
+    V4_ALLOW_UNTRACKED=1 V4_LOCAL_SRC="$U" inst "$IV/p4" > "$TMP/o128" 2>&1; check "the same clone with V4_ALLOW_UNTRACKED=1" 0 $?
+    if [ -f "$IV/p4/lib/v4-core/src/Extra.sol" ] && grep -q "src/Extra.sol" "$TMP/o128"; then echo "  ok    and the file was copied AND listed"; else
+      echo "  FAIL  V4_ALLOW_UNTRACKED=1 did not copy and list the file"; fails=$((fails + 1)); fi
+    rm -f "$U/v4-core/src/Extra.sol"; printf 'contract Evil {}\n' > "$U/v4-core/lib/forge-std/src/Evil.sol"; rm -rf "$IV/p4/lib"
+    V4_LOCAL_SRC="$U" inst "$IV/p4" > "$TMP/o129" 2>&1; check "an untracked .sol under a SUBMODULE's src/ is refused too" 1 $?
+    if grep -q "lib/forge-std/src/Evil.sol" "$TMP/o129"; then echo "  ok    and it is refused BY NAME (not as some other local change)"; else
+      echo "  FAIL  the submodule's untracked .sol was not named"; fails=$((fails + 1)); fi
+    rm -f "$U/v4-core/lib/forge-std/src/Evil.sol"; printf 'contract Test { uint256 x; }\n' > "$U/v4-core/lib/forge-std/src/Test.sol"
+    V4_LOCAL_SRC="$U" inst "$IV/p4" > "$TMP/o134" 2>&1; check "a changed TRACKED file in a submodule is still a local change, refused" 1 $?
+    grep -q "LOCAL CHANGES" "$TMP/o134" || { echo "  FAIL  the changed submodule file was not refused as a local change"; fails=$((fails + 1)); }
+    (cd "$U/v4-core/lib/forge-std" && git checkout -q -- src/Test.sol)
+    # a submodule holding only untracked files is treated like the clone itself: a .txt in it is copied, not refused
+    printf 'notes\n' > "$U/v4-core/src/NOTES.txt"; printf 'notes\n' > "$U/v4-core/lib/forge-std/NOTES.txt"
+    V4_LOCAL_SRC="$U" inst "$IV/p4" > "$TMP/o130" 2>&1; check "an untracked file that is not a .sol is copied (the documented limit)" 0 $?
+  else
+    echo "  FAIL  could not build the fake good clone, or plant its pin (git or the pin line changed shape?)"; fails=$((fails + 1))
+  fi
 else
   echo "  SKIPPED - no git here: the offline install refusals are NOT proven on this machine"; skipped=1
 fi
@@ -314,6 +374,17 @@ if [ ! -e "$TMP/bb2/keep/fixtures/Project.hex" ] && [ -f "$TMP/bb2/keep/fixtures
   echo "  ok    the project's own .hex is withheld (the stale copy is gone), the bench's own PROBE.hex is kept"; else
   echo "  FAIL  withheld and kept are mixed up: Project.hex $([ -e "$TMP/bb2/keep/fixtures/Project.hex" ] && echo PRESENT || echo gone)"; fails=$((fails + 1)); fi
 rm -f "$BP/fixtures/Project.hex"
+# an exclude that names a DIRECTORY the project also has: the whole directory is withheld, so a file only the bench has
+# inside it goes too on the next refresh. That is documented, and it is announced on every run, by name.
+BENCH_ROOT="$TMP/bb2" BENCH_EXCLUDE="fixtures" "$HERE/bench.sh" wdir "$BP" > "$TMP/o131" 2>&1; check "a bench that excludes a directory the project has" 0 $?
+if grep -Eq '^bench: WARNING .*: fixtures$' "$TMP/o131"; then echo "  ok    and it warns, in one line, naming the directory"; else
+  echo "  FAIL  no one-line warning naming the withheld directory:"; grep -i warn "$TMP/o131" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+mkdir -p "$TMP/bb2/wdir/fixtures"; printf '0x6080\n' > "$TMP/bb2/wdir/fixtures/BENCHONLY.hex"
+BENCH_ROOT="$TMP/bb2" BENCH_EXCLUDE="fixtures" "$HERE/bench.sh" wdir "$BP" > "$TMP/o132" 2>&1; check "the same bench, refreshed" 0 $?
+if [ ! -e "$TMP/bb2/wdir/fixtures" ]; then echo "  ok    and the bench-only file inside it went with the directory, as the warning says"; else
+  echo "  FAIL  the behaviour the warning describes did not happen (the header is now wrong)"; fails=$((fails + 1)); fi
+if grep -q "WARNING" "$TMP/o117"; then echo "  FAIL  an exclude of file patterns only (*.hex *.json) warned about a directory"; fails=$((fails + 1)); else
+  echo "  ok    an exclude of file patterns only does not warn"; fi
 
 # ================================================================= mutate.sh and size.sh (need forge and a project)
 echo "== mutate.sh / size.sh =="
@@ -659,6 +730,17 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   if [ "$rc62" -ne 0 ]; then grep -E "^==|^deposit|^withdraw|floor|FAILED|measured" "$TMP/o62" | head -12 | sed "s/^/        | /"; fi
   if grep -Eq '^== campaign census: ToyVault - [0-9]+ runs ==$' "$TMP/o62"; then echo "  ok    one line per run reached the file"; else
     echo "  FAIL  no census table came out of the kit's own campaign"; tail -5 "$TMP/o62" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # ... and a SECOND draw, with a different pinned seed, over the same floor: one seed that clears the floor could be the
+  # lucky one; two different draws that both clear it are the guard against that. The two tables must differ, or the
+  # seed was not what chose the draw.
+  MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=10 FOUNDRY_FUZZ_SEED=0x4b33 "$HERE/census.sh" "$K" > "$TMP/o133" 2>&1; rc133=$?
+  check "end to end, a second draw (another pinned seed): the core actions are above the floor too" 0 $rc133
+  if [ "$rc133" -ne 0 ]; then grep -E "^==|^deposit|^withdraw|floor|FAILED|measured" "$TMP/o133" | head -12 | sed "s/^/        | /"; fi
+  w62="$(grep -E '^withdraw ' "$TMP/o62")"; w133="$(grep -E '^withdraw ' "$TMP/o133")"
+  echo "          withdraw, seed 0x6b6974: ${w62:-none}"; echo "          withdraw, seed 0x4b33  : ${w133:-none}"
+  if [ -n "$w62" ] && [ -n "$w133" ] && ! cmp -s <(grep -E '^(deposit|withdraw) ' "$TMP/o62") <(grep -E '^(deposit|withdraw) ' "$TMP/o133"); then
+    echo "  ok    and the two draws are different draws (their tables differ)"; else
+    echo "  FAIL  the two seeds gave the same table, or no table: the second run is not a second draw"; fails=$((fails + 1)); fi
   # the long fuzz starts from an empty census too (65 x 64 is just above the everyday 64 x 64, so it counts as "long")
   USE_BENCH=0 RUNS=65 DEPTH=64 MATCH="--match-contract ToyVaultInvariants" "$HERE/fuzz-long.sh" "$K" > "$TMP/o86" 2>&1
   check "long fuzz on the kit's vault, over a stale census file" 0 $?
