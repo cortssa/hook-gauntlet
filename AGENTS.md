@@ -93,13 +93,22 @@ with no bytecode gets a verifier and not a round, that a change after promotion 
 
 ## 4. State on disk
 
-Before phase 0, install the state convention in the owner's project (copy `state/` and empty the examples):
+Before phase 0, install the state convention in the owner's project: copy the three files from `state/` into
+`.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which
+describe a fictional hook:
 
 ```
+mkdir -p .gauntlet/briefs .gauntlet/reports
+cp hook-gauntlet/state/STATE.md hook-gauntlet/state/DECISIONS.md hook-gauntlet/state/LOG.md .gauntlet/
+
 STATE.md        current phase, what is open, what blocks it
 DECISIONS.md    one entry per owner decision, dated, with the reason
 LOG.md          one entry per change, never for reads
 ```
+
+Everything the route produces for the hook lives beside them: `.gauntlet/SPEC.md` (phase 1), the filled briefs in
+`.gauntlet/briefs/` (`00-interview.md`, `r01.md`, …), the round reports in `.gauntlet/reports/`. The commands for every
+judge, with what "done" looks like, are in `QUICKSTART.md` step 8.
 
 Any agent that arrives with no context reads those three files and continues. If they disagree with the repository,
 the repository wins and you fix the files. Write to them **incrementally**: an agent that dies mid-round loses

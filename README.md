@@ -33,6 +33,8 @@ scripts/selftest.sh              # every guard in scripts/ is made to go RED on 
 scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on the worked example: one exit code
 ```
 
+The ten-step version, with every command and what "done" looks like at each step, is [`QUICKSTART.md`](QUICKSTART.md).
+
 Then, in your own project, to your agent: *"Read `AGENTS.md` in hook-gauntlet, all of it. My idea is: ... Start at
 phase 0 and interview me."* From there the agent's next step comes from one decision table,
 [`doctrine/NEXT.md`](doctrine/NEXT.md), and everything it decides is written in three files in YOUR repository
