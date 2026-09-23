@@ -96,6 +96,13 @@ may be initialised, native currency included (section 3, F2).
 | F7: no measured numbers in the spec | info | section 8 | - |
 | F8: several swaps of one pool inside one unlock step the fee each time | info (REASONED) | closed by the F1 fix: every swap of a block pays the same fee, one unlock or many | REASONED (the kit's router does one swap per unlock) |
 
+**Long fuzz after r01** (2026-09-23, forge 1.8.1, `scripts/fuzz-long.sh foundry-kit/v4`, profile `long`, a fresh bench and
+so an empty corpus, forge's own seed): **1 000 runs × 128 depth, 128 000 calls, 0 unexplained reverts** (in all 1 001
+census lines), every invariant green, 134 s wall-clock. REACH "fee at the cap" met in **50 %** of the runs (500 of 1 001
+census lines), "victim traded after dust in its block" in **40 %** (402); CORE actions with at least one success: `swap`
+in 864 runs, `swapBurst` in 922, `dustAheadOfVictim` in 527. Nothing found. The block forge printed at `-vv` said
+`capReached 0` - one run's sample, not the campaign's (the census above is the campaign).
+
 ## 8. Measured numbers (forge 1.8.1, solc 0.8.26, cancun, 2026-09-23)
 
 - Sizes (`scripts/size.sh foundry-kit/v4 CappedDynamicFeeHook CappedDynamicFeeHook.manager`): runtime 4 881 B / initcode

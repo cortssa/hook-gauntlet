@@ -75,6 +75,26 @@ every refresh; one the project does have is withheld. The bench directory itself
 every refresh with `BENCH_EXCLUDE` set, and the fixtures this paragraph promised to keep went with it
 (`scripts/selftest.sh` plants `fixtures/PROBE.hex` and a bench-installed `v4/lib`, refreshes, and checks both).
 
+### The long fuzz on the example
+
+```sh
+BENCH_ROOT=$HOME/mybenches scripts/fuzz-long.sh foundry-kit/v4        # the `long` profile: 1000 runs x 128 depth
+CORE="swap swapBurst dustAheadOfVictim" REACH="fee at the cap;victim traded after dust in its block" \
+  scripts/census.sh --aggregate $HOME/mybenches/fuzz-long-v4-*/v4/census/long.tsv   # the gate; fuzz-long only prints
+```
+
+What a stranger hits, measured on 2026-09-23 (forge 1.8.1, `src/examples/SPEC.md` section 7 has the numbers). It
+takes about **two and a half minutes** here (134 s, one worker at about 900 calls a second), not a night. It benches
+`foundry-kit`, not `foundry-kit/v4` (the parent it remaps to), into `$BENCH_ROOT/fuzz-long-v4-<hash>`; `BENCH_ROOT`
+defaults to `~/.gauntlet/bench`, so set it if your benches live elsewhere. The log and the census table land in YOUR
+tree, `foundry-kit/v4/.gauntlet/reports/05-fuzz-long.txt` and `06-census.txt`; the census file and the corpus stay in the
+BENCH (`<bench>/v4/census/long.tsv`, `<bench>/v4/corpus/invariant`). **The next run of `fuzz-long.sh` deletes both**:
+it refreshes the bench from the project with `rsync --delete`, and the project has no `corpus/` or `census/` of its own
+(measured: 34 corpus files and 1 001 census lines before a refresh, none after) - so each long run starts from an
+empty corpus, and a census you want to keep has to be copied out first. The table it prints is not a gate (`CORE` is
+empty inside the script); the second command above is. The census has 1 001 lines for 1 000 runs (the root README says
+why), and the block forge prints at `-vv` is one run of them.
+
 ---
 
 ## What is in here

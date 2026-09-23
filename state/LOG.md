@@ -18,7 +18,7 @@ not verified**.
 
 ## 2026-03-13 (executor) - r05 findings applied
 
-ROUND r05 | phase 4 | regression | vendor-a/large | bench ~/hg-a05 | 2026-03-09..03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens 95 min | reports/r05.md
+ROUND r05 | phase 4 | regression | vendor-a/large | bench ~/hg-a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min | reports/r05.md
 
 - **`F-21` (medium) fixed at the cause.** The per-block budget was reset by comparing a stored block number, and
   the comparison was done in two places that could disagree. Replaced with a single read. This also closed `F-09`

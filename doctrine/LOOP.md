@@ -62,6 +62,14 @@ Write the section *after* you have made the fixes, not before, and aim it at:
   as "nobody has looked at X", and checking the earlier reports before you aim takes five minutes and stops you
   sending a round after something that already has an owner.
 
+## The record of rounds
+
+Every round leaves one ROUND line in `LOG.md` (`state/README.md`; `scripts/round.sh` writes it validated, and
+`scripts/round.sh --json` reads the history back as JSON, computed on demand, never stored). The record exists so that
+"which round next" can one day be chosen from the history - which type of round found the most per token, at which
+phase, on which model, and how often a verdict's own `conf` was borne out - instead of by eye. Today it is a record, not
+a policy: nothing reads it to decide anything; the next round comes from `NEXT.md` and is aimed by the section above.
+
 ## Exit
 
 The loop ends when a **discovery** round closes with zero high and zero medium findings, and no REASONED high or medium is left open (`EVIDENCE.md` 3). Regression rounds verify
