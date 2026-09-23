@@ -60,9 +60,9 @@ for d in $SRC_DIRS; do
 done
 
 if [ -n "$present_dirs" ]; then
+  # shellcheck disable=SC2086   # $present_dirs is a space-separated list on purpose
   while IFS= read -r f; do
     if [ -z "$newest_source" ] || [ "$f" -nt "$newest_source" ]; then newest_source="$f"; fi
-    # shellcheck disable=SC2086
   done < <(find $present_dirs -type f -name '*.sol' 2>/dev/null)
 fi
 

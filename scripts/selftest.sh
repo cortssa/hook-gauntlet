@@ -331,7 +331,7 @@ if command -v forge > /dev/null 2>&1 && [ -e "$KIT/lib" ]; then
   LABEL=m3 "$HERE/mutate.sh" "$KIT" "$V" "nonReentrant" "nonReentrantX" > "$TMP/o14" 2>&1
   check "a string that matches more than once proves nothing" 2 $?
 
-  LABEL=m4 "$HERE/mutate.sh" "$KIT" "$V" "credited = post - pre;" "credited = post - ;" > "$TMP/o15" 2>&1
+  LABEL="m4" "$HERE/mutate.sh" "$KIT" "$V" "credited = post - pre;" "credited = post - ;" > "$TMP/o15" 2>&1   # quoted: shellcheck reads a bare m4 as the m4 command (SC2209)
   check "a mutant that does not compile proves nothing" 2 $?
 
   LABEL=m5 EXPECT=green "$HERE/mutate.sh" "$KIT" "$V" "the sum of every credit." "the SUM of every credit." > "$TMP/o16" 2>&1
@@ -650,9 +650,13 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   K="$TMP/kitcopy"; mkdir -p "$K"; cp -R "$KIT/src" "$KIT/test" "$KIT/foundry.toml" "$K/"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$K/lib"
   # a census file left over from an EARLIER campaign, with a surprise in it: the script has to start from an empty file
   mkdir -p "$K/census"; printf 'ToyVault\tU=5\tA:deposit=1/1\n' > "$K/census/runs.tsv"; cp "$K/census/runs.tsv" "$K/census/long.tsv"
-  # the floor is set low on purpose: this case proves the PLUMBING, and a fuzz draw must not be able to make it flaky
-  MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=25 "$HERE/census.sh" "$K" > "$TMP/o62" 2>&1
-  check "end to end: the kit's own vault campaign writes a census, and its core actions are above the floor" 0 $?
+  # This case proves the PLUMBING, not the vault, so a fuzz draw must not be able to fail it: the seed is pinned, and the
+  # floor sits far below the measured range (withdraw succeeded in 35 % of runs on 2026-09-23 with forge 1.8.1; a floor
+  # of 25 failed on the CI runner by luck - the very gate census.sh's own header warns against). On failure the table is
+  # pasted, so the next red is readable without the file.
+  MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=10 FOUNDRY_FUZZ_SEED=0x6b6974 "$HERE/census.sh" "$K" > "$TMP/o62" 2>&1; rc62=$?
+  check "end to end: the kit's own vault campaign writes a census, and its core actions are above the floor" 0 $rc62
+  if [ "$rc62" -ne 0 ]; then grep -E "^==|^deposit|^withdraw|floor|FAILED|measured" "$TMP/o62" | head -12 | sed "s/^/        | /"; fi
   if grep -Eq '^== campaign census: ToyVault - [0-9]+ runs ==$' "$TMP/o62"; then echo "  ok    one line per run reached the file"; else
     echo "  FAIL  no census table came out of the kit's own campaign"; tail -5 "$TMP/o62" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   # the long fuzz starts from an empty census too (65 x 64 is just above the everyday 64 x 64, so it counts as "long")
