@@ -16,6 +16,9 @@ import {SwapEventReader} from "../SwapEventReader.sol";
 import {CappedDynamicFeeHook} from "../examples/CappedDynamicFeeHook.sol";
 import {ISimAgent, ISimSearcher, Intent, Fill, VENUE_MAIN, KIND_SWAP} from "./ISimAgent.sol";
 import {SimEngine} from "./SimEngine.sol";
+import {SimGasMeter} from "./SimGasMeter.sol";
+import {MinimalRouter} from "../MinimalRouter.sol";
+import {LiquidityHelper} from "../LiquidityHelper.sol";
 
 /// @title ExampleScenario - SimEngine bound to the kit's example hook
 /// @notice The binding a project copies and adapts: which pool, which router, how a quote is obtained, how an
@@ -99,9 +102,11 @@ abstract contract ExampleScenario is V4Harness, SimEngine {
     function _execute(Intent memory it) internal override returns (Fill memory f) {
         if (it.kind != KIND_SWAP) return _modifyLiquidity(it);
         uint256 snap = vm.snapshotState();
-        uint256 g = gasleft();
         (bool ok, uint256 got, uint256 used, bytes4 sel) = _swap(it);
-        f.gasUsed = g - gasleft();
+        // the router call was the last call made: meter it as its own transaction (`SimGasMeter`), never as a
+        // `gasleft()` window in this frame, which would charge the agent the test's own memory growth
+        (PoolKey memory k, SwapParams memory p) = _swapCall(it);
+        f.gasUsed = SimGasMeter.lastCall(abi.encodeCall(MinimalRouter.swap, (k, p, bytes(""))));
         if (ok && got < it.minOut) {
             // a router with a slippage check would have reverted; this one is minimal, so the check is here
             vm.revertToState(snap);
@@ -125,24 +130,20 @@ abstract contract ExampleScenario is V4Harness, SimEngine {
     /// agents on the same range never share one). No quote, no slippage rule: what it costs is what it costs.
     function _modifyLiquidity(Intent memory it) internal returns (Fill memory f) {
         PoolKey memory k = it.venue == VENUE_MAIN ? mainKey : key;
-        uint256 g = gasleft();
+        ModifyLiquidityParams memory p = ModifyLiquidityParams({
+            tickLower: it.tickLower,
+            tickUpper: it.tickUpper,
+            liquidityDelta: it.liquidityDelta,
+            salt: bytes32(uint256(uint160(it.agent)))
+        });
         vm.prank(it.agent);
-        try liquidity.modifyLiquidity{gas: CALL_GAS}(
-            k,
-            ModifyLiquidityParams({
-                tickLower: it.tickLower,
-                tickUpper: it.tickUpper,
-                liquidityDelta: it.liquidityDelta,
-                salt: bytes32(uint256(uint160(it.agent)))
-            }),
-            ""
-        ) {
+        try liquidity.modifyLiquidity{gas: CALL_GAS}(k, p, "") {
             f.executed = true;
         } catch (bytes memory err) {
             f.executed = false;
             f.revertSelector = err.length >= 4 ? bytes4(err) : bytes4(0);
         }
-        f.gasUsed = g - gasleft();
+        f.gasUsed = SimGasMeter.lastCall(abi.encodeCall(LiquidityHelper.modifyLiquidity, (k, p, bytes(""))));
     }
 
     function _sqrtPriceNow(uint8 venue) internal view override returns (uint160 sqrtP) {
@@ -176,22 +177,25 @@ abstract contract ExampleScenario is V4Harness, SimEngine {
         // sell as if its amount were currency0 is the silent wrong answer the flag exists to prevent
         if (it.amountInQuote && it.zeroForOne) revert QuoteSizedIntentUnsupported();
         vm.recordLogs();
-        PoolKey memory k = it.venue == VENUE_MAIN ? mainKey : key;
+        (PoolKey memory k, SwapParams memory p) = _swapCall(it);
         vm.prank(it.agent);
-        try router.swap{gas: CALL_GAS}(
-            k,
-            SwapParams({
-                zeroForOne: it.zeroForOne,
-                amountSpecified: -int256(it.amountIn),
-                sqrtPriceLimitX96: it.zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
-            }),
-            ""
-        ) returns (BalanceDelta d) {
+        try router.swap{gas: CALL_GAS}(k, p, "") returns (BalanceDelta d) {
             int128 got = it.zeroForOne ? d.amount1() : d.amount0();
             int128 paid = it.zeroForOne ? d.amount0() : d.amount1();
             return (true, got > 0 ? uint256(uint128(got)) : 0, paid < 0 ? uint256(uint128(-paid)) : 0, bytes4(0));
         } catch (bytes memory err) {
             return (false, 0, 0, err.length >= 4 ? bytes4(err) : bytes4(0));
         }
+    }
+
+    /// @notice the pool and the parameters of the swap an intent sends: one place, so that the call executed and the
+    /// calldata metered are the same bytes
+    function _swapCall(Intent memory it) internal view returns (PoolKey memory k, SwapParams memory p) {
+        k = it.venue == VENUE_MAIN ? mainKey : key;
+        p = SwapParams({
+            zeroForOne: it.zeroForOne,
+            amountSpecified: -int256(it.amountIn),
+            sqrtPriceLimitX96: it.zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+        });
     }
 }
