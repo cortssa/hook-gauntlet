@@ -1,0 +1,5 @@
+Ran 1 test for test/A.t.sol:AUnit
+[PASS] test_inc() (gas: 50251)
+Suite result: ok. 1 passed; 0 failed; finished in 284.33µs (108.96µs CPU time)
+
+Ran 3 test suites in 2.61ms (877.66µs CPU time): 3 tests passed, 0 failed (3 total tests)

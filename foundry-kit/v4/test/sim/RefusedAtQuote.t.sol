@@ -84,7 +84,11 @@ contract ScriptedAgent is ISimAgent, ISimSearcher {
 /// @notice A swap whose own quote at decision time was 0 is NOT SENT. A bot that reads its quote does not pay gas to
 /// buy nothing: the engine does not execute it, charges no gas, settles it at once with `executed == false` and the
 /// `REFUSED_AT_QUOTE` marker, and the ledger counts it in `refusedAtQuote`, never in `refused`. Every other kind is
-/// untouched (it carries no quote: its `quotedOut` is always 0).
+/// untouched (it carries no quote: its `quotedOut` is always 0). The refused swap is KEPT IN THE QUEUE FOR THE RECORD,
+/// marked done, never in the execution order, never shown to a searcher.
+///
+/// What this file proves is the engine's POLICY for a quote of 0, on a stub market whose quote is 0 by construction. It
+/// does not prove that any real quote of 0 is right: that is the binding's `_quote`, tested where the binding is.
 ///
 /// Written after a binding's agents ignored their own quote on a fork: 841 swaps quoted 0 were sent, all 841 came back
 /// empty at ~250 000 gas each, and the ledger showed them as a market that refused (2026-09-22). The engine here is a
@@ -206,6 +210,26 @@ contract EngineRefusesAtQuote is SimEngine {
         assertEq(searcher.wrapCalls(), 0, "a swap that was never sent was shown to a searcher");
         assertEq(executeCalls, 0);
         assertEq(booksOf(address(victim)).refusedAtQuote, 1);
+    }
+
+    /// @notice "not sent" is not "forgotten": the refused swap stays in the queue FOR THE RECORD - `queueLength()` counts
+    /// it, `intentAt` returns it with its quote of 0 - and it is marked done, so it is NEVER in the execution order
+    /// (`executedOrderOf` stays 0 and the swap sent after it is number 1, not 2). A reader who counts the queue must know
+    /// the refused ones are in it; a reader who walks the execution order must know they are not.
+    function test_a_swap_refused_at_quote_is_kept_for_the_record_and_never_in_the_execution_order() public {
+        ScriptedAgent dry = _agent(0, KIND_SWAP, DRY, 1, 0);
+        ScriptedAgent wet = _agent(0, KIND_SWAP, 100, 1, 0);
+        run(3);
+        assertEq(queueLength(), 2, "the refused swap is not in the queue: the record lost it");
+        assertEq(intentAt(0).agent, address(dry));
+        assertEq(intentAt(0).amountIn, DRY);
+        assertEq(intentAt(0).quotedOut, 0, "the record does not carry the quote that refused it");
+        assertEq(executedOrderOf(0), 0, "a swap that was never sent has a place in the execution order");
+        assertEq(intentAt(1).agent, address(wet));
+        assertEq(executedOrderOf(1), 1, "the swap sent after a refused one is not first in the execution order");
+        assertEq(executedCount, 1, "the execution order counts a swap that was never sent");
+        assertEq(executeCalls, 1);
+        assertEq(dry.settles(), 1, "the refused swap was settled again by a later scan");
     }
 
     function _endsWith(string memory s, string memory suffix) internal pure returns (bool) {

@@ -41,12 +41,13 @@ case "$ADDR" in
   *://*|*http*) echo "fetch-bytecode: that is an endpoint, not an address. The endpoint goes in RPC_URL."; exit 1 ;;
 esac
 
-case "$ADDR" in
-  0x[0-9a-fA-F][0-9a-fA-F]*) ;;
-  *) echo "fetch-bytecode: '$ADDR' is not an 0x address"; exit 1 ;;
-esac
-if [ "${#ADDR}" -ne 42 ]; then
-  echo "fetch-bytecode: '$ADDR' is ${#ADDR} characters, an address is 42"
+# exactly "0x" and 40 hex digits. The glob that stood here, 0x[0-9a-fA-F][0-9a-fA-F]*, checked the first hex digit
+# only (a glob's `*` is any text), so "0x12..zz" of the right length went on to the network (an outside review, 2026-09-23).
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "fetch-bytecode: $HERE/lib/parse.sh is missing"; exit 1; }
+if ! is_evm_address "$ADDR"; then
+  echo "fetch-bytecode: '$ADDR' is not an 0x address: an address is 0x and exactly 40 hex digits (this is ${#ADDR} characters)"
   exit 1
 fi
 

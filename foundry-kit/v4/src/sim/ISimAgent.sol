@@ -41,6 +41,19 @@ struct Intent {
     /// arbitrageur's closing leg sells exactly what its opening leg bought - currency0, not quote - and a binding that
     /// guessed "every sell is quote-sized" converted that amount a second time (measured on a binding, 2026-09-22:
     /// every closing leg asked for ~10^12 times the wallet and was refused).
+    ///
+    /// NORMATIVE - what a binding does with `amountIn`, per case (currency1 is the quote):
+    ///
+    ///   amountInQuote | zeroForOne | input currency | amountIn is in | the binding
+    ///   --------------+------------+----------------+----------------+-----------------------------------------------
+    ///   false         | true       | currency0      | currency0      | uses it as is
+    ///   false         | false      | currency1      | currency1      | uses it as is
+    ///   true          | false      | currency1      | currency1      | uses it as is (quote-sized AND quote-input)
+    ///   true          | true       | currency0      | currency1      | converts at its reference price, or REFUSES the
+    ///                 |            |                |                | intent loudly - never uses it as is
+    ///
+    /// Only the last row differs, and it is the one a binding gets wrong in silence. `ExampleScenario` refuses it
+    /// (`QuoteSizedIntentUnsupported`); `test/sim/BindingContract.t.sol` holds it to all four rows.
     bool amountInQuote; // swaps only
     int24 tickLower; // liquidity only
     int24 tickUpper; // liquidity only

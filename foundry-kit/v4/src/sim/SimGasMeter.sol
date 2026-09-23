@@ -21,7 +21,13 @@ pragma solidity ^0.8.26;
 /// `vm.cool` would be the tool; on forge 1.8.1 it is not usable for this (it made a called contract's code read as empty
 /// and changed a swap's outcome, measured downstream). (2) No L1 data fee, which is the chain's and not measurable here.
 /// (3) A storage write is priced against the slot's value at the start of the TEST, not of the transaction, which can
-/// only make it cheaper. The number never over-states what a sender pays.
+/// only make it cheaper. So the number is a lower bound for the EVM costs it counts; it is not a bound on any chain's
+/// total fee (an L2's data fee, a priority fee, a base fee are not in it, and nothing here says how large they are).
+///
+/// THE RECORD'S LAYOUT IS A VERSION FACT, and it is checked, not assumed: `decodeFrameGas` accepts exactly the two
+/// layouts it was written against (160 bytes: five words, forge 1.8.1; 192 bytes: six words, forge-std 1.16.2's `Gas`)
+/// and reverts `FrameGasLayoutUnknown(length)` on anything else. A forge that returns a third shape stops the run
+/// instead of being read with the wrong offsets. The supported versions are in `foundry-kit/README.md`.
 library SimGasMeter {
     /// @dev forge's cheatcode address (`address(uint160(uint256(keccak256("hevm cheat code"))))`)
     address internal constant VM = 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D;
@@ -35,19 +41,31 @@ library SimGasMeter {
         uint256 data;
     }
 
-    /// @notice forge did not return a frame record this library can read
+    /// @notice forge did not answer `lastFrameGas()` (no such cheatcode in this forge, or it reverted)
     error FrameGasUnreadable();
+    /// @notice forge answered with a record of a length this library was not written against
+    error FrameGasLayoutUnknown(uint256 length);
+
+    /// @notice the two words this library reads from forge's frame record: the frame's own gas and its refund.
+    /// ONLY two layouts are accepted, both read at the same offsets: 160 bytes (five words - limit, used, memory,
+    /// refunded, remaining: what forge 1.8.1 returns) and 192 bytes (six words - the same five and a trailing
+    /// `gasStateUsed`: forge-std 1.16.2's declared `Gas`). Anything else reverts `FrameGasLayoutUnknown(length)`: a
+    /// shorter answer cannot hold the words, and a longer one is a layout nobody here has read, whose second and fourth
+    /// words need not mean "used" and "refunded". Pure, so that the check is tested on hand-built records.
+    function decodeFrameGas(bytes memory r) internal pure returns (uint64 used, int64 refunded) {
+        if (r.length != 160 && r.length != 192) revert FrameGasLayoutUnknown(r.length);
+        (, used,, refunded) = abi.decode(r, (uint64, uint64, uint64, int64));
+    }
 
     /// @notice add the call that JUST returned or reverted - the last frame forge recorded - to `t`, with the calldata it
     /// was sent with. Call it before any other external call (a cheatcode call does not replace the record).
     /// Read by a raw staticcall and decoded by hand ON PURPOSE: forge 1.8.1 returns FIVE words for `lastFrameGas()` /
-    /// `lastCallGas()` (limit, used, memory, refunded, remaining) while forge-std 1.16.2 declares its `Gas` struct with SIX
-    /// (a trailing `gasStateUsed`), so the typed `vm.lastCallGas()` reverts in the decoder. Only the first four words are
-    /// read here, which both layouts share.
+    /// `lastCallGas()` while forge-std 1.16.2 declares its `Gas` struct with SIX, so the typed `vm.lastCallGas()` reverts
+    /// in the decoder. `decodeFrameGas` accepts both and nothing else.
     function addLastFrame(Tx memory t, bytes memory data) internal view {
         (bool ok, bytes memory r) = VM.staticcall(abi.encodeWithSignature("lastFrameGas()"));
-        if (!ok || r.length < 128) revert FrameGasUnreadable();
-        (, uint64 used,, int64 refunded) = abi.decode(r, (uint64, uint64, uint64, int64));
+        if (!ok) revert FrameGasUnreadable();
+        (uint64 used, int64 refunded) = decodeFrameGas(r);
         t.spent += used;
         t.refunded += refunded;
         t.data += calldataGas(data);

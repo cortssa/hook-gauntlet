@@ -35,11 +35,15 @@ import {SimLedger} from "./SimLedger.sol";
 /// under both: the difference is what the ordering model is worth to an attacker, and it is often the whole result.
 ///
 /// A SWAP QUOTED 0 IS NOT SENT. The quote is taken when the intent is decided; if it says 0 - nothing fillable at that
-/// size, in that direction, now - the engine does what a bot that reads its quote does: it does not send. No `_execute`,
-/// no gas, no place in the queue's execution order, nothing shown to a searcher; the agent's `settle` is called at once
+/// size, in that direction, now - the engine does what a bot that reads its quote does: it does not send. No `_execute`
+/// and no gas. The intent is KEPT IN THE QUEUE FOR THE RECORD, MARKED DONE, NEVER IN THE EXECUTION ORDER, NEVER SHOWN TO
+/// A SEARCHER: `queueLength()` counts it and `intentAt(i)` returns it (its quote included), `executedOrderOf(i)` is 0
+/// for it forever, and neither the FCFS scan nor a searcher's `wrap` ever sees it. The agent's `settle` is called at once
 /// with `executed == false` and `revertSelector == REFUSED_AT_QUOTE`, and the ledger counts it in `refusedAtQuote`, apart
 /// from `refused` (sent, and came back empty). Other kinds carry no quote and are untouched. Written after a binding's
 /// agents sent 841 swaps quoted 0 on a fork: every one came back empty at ~250 000 gas and read as a market refusing.
+/// (`test/sim/RefusedAtQuote.t.sol` proves the POLICY - what the engine does with a quote of 0 - on a stub market. Whether
+/// a given binding's quote of 0 is right is that binding's question, not this test's.)
 abstract contract SimEngine is Test {
     enum Ordering {
         FCFS,
@@ -54,7 +58,8 @@ abstract contract SimEngine is Test {
     ISimSearcher[] internal searchers;
     Intent[] internal queue;
     bool[] internal done;
-    /// @notice the order in which intents were EXECUTED (1 = first), 0 = not yet (or never: a swap refused at its quote). The one record that lets a test
+    /// @notice the order in which intents were EXECUTED (1 = first), 0 = not yet (or never: a swap refused at its quote,
+    /// which stays in `queue` for the record but never gets a number here). The one record that lets a test
     /// assert that a bundle ran front-run, victim, back-run in that order - and not merely that three swaps happened.
     uint256[] internal executedOrder;
     uint256 internal executedCount;
@@ -141,8 +146,8 @@ abstract contract SimEngine is Test {
         return it.kind == KIND_SWAP && it.quotedOut == 0;
     }
 
-    /// @dev settled at decision time: marked done (the FCFS scan and the searchers never see it), no execution order, no
-    /// gas, counted apart from the refusals of the market
+    /// @dev settled at decision time: kept in the queue for the record, marked done (the FCFS scan and the searchers
+    /// never see it), never in the execution order, no gas, counted apart from the refusals of the market
     function _refuseAtQuote(uint256 i) internal {
         done[i] = true;
         Fill memory f;

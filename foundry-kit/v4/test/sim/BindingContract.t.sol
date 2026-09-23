@@ -67,6 +67,39 @@ contract ExampleRefusesQuoteSized is ExampleScenario {
         this.run(1);
     }
 
+    /// @dev an external door to the binding, so that a refusal can be expected
+    function executeExt(Intent memory it) external returns (Fill memory) {
+        return _execute(it);
+    }
+
+    function _intent(address agent, bool quoteSized, bool zeroForOne) internal pure returns (Intent memory it) {
+        it.agent = agent;
+        it.zeroForOne = zeroForOne;
+        it.amountIn = 1e17;
+        it.amountInQuote = quoteSized;
+    }
+
+    /// @notice the four rows of the normative table next to `Intent.amountInQuote` (`ISimAgent.sol`), on the example
+    /// binding, which has no conversion: three rows use `amountIn` as is (the pool takes exactly it), and only
+    /// quote-sized with a currency0 input is refused. A binding that refused every quote-sized intent would be safe and
+    /// wrong (row 3 IS in the input currency); one that refused none would sell the wrong amount in silence (row 4).
+    function test_the_four_rows_of_the_unit_table() public {
+        HonestTrader t = new HonestTrader("rows", 1e17, 1_000_000, 0, 100, 0); // never decides on its own here
+        _addAgent(t, 100e18);
+        address a = address(t);
+        Fill memory f = this.executeExt(_intent(a, false, true));
+        assertTrue(f.executed, "row 1 (input-sized sell) did not execute");
+        assertEq(f.amountInUsed, 1e17, "row 1: amountIn was not used as is");
+        f = this.executeExt(_intent(a, false, false));
+        assertTrue(f.executed, "row 2 (input-sized buy) did not execute");
+        assertEq(f.amountInUsed, 1e17, "row 2: amountIn was not used as is");
+        f = this.executeExt(_intent(a, true, false));
+        assertTrue(f.executed, "row 3 (quote-sized buy: the input IS the quote) was refused or not executed");
+        assertEq(f.amountInUsed, 1e17, "row 3: amountIn was not used as is");
+        vm.expectRevert(QuoteSizedIntentUnsupported.selector);
+        this.executeExt(_intent(a, true, true));
+    }
+
     function test_the_same_trader_in_its_input_unit_runs() public {
         HonestTrader t = new HonestTrader("input-sized", 1e17, 1, 0, 100, 0);
         _addAgent(t, 100e18);

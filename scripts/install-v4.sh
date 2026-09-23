@@ -40,6 +40,18 @@ V4_PERIPHERY_PIN="9969eec44cfdf07e24b41de47f40276a58401976"
 V4_CORE_SUBMODULES="${V4_CORE_SUBMODULES:-lib/forge-std lib/solmate}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "install-v4: $HERE/lib/parse.sh is missing"; exit 1; }
+
+# Checked before anything is created or fetched: a pin that is not a full commit hash (a branch, a tag, a short sha, a
+# typo) is a moving target under a pinned name, and the fetch below would happily follow it.
+for pin_name in V4_CORE_PIN V4_PERIPHERY_PIN; do
+  if ! is_git_sha "${!pin_name}"; then
+    echo "install-v4: $pin_name='${!pin_name}' is not a full commit hash (40 lower-case hex digits). Nothing fetched."
+    exit 1
+  fi
+done
+
 PROJECT="${1:-$HERE/../foundry-kit/v4}"
 [ -d "$PROJECT" ] || { echo "install-v4: no such project directory: $PROJECT"; exit 1; }
 PROJECT="$(cd "$PROJECT" && pwd)"

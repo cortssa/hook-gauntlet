@@ -1,0 +1,9 @@
+Compiling 21 files with Solc 0.8.26
+Solc 0.8.26 finished in 307.60ms
+Compiler run successful!
+
+Ran 1 test for test/A.t.sol:AUnit
+[PASS] test_inc() (gas: 50251)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 339.10µs (138.18µs CPU time)
+
+Ran 1 test suite in 2.32ms (339.10µs CPU time): 1 tests passed, 0 failed, 0 skipped (1 total tests)

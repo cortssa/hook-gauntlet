@@ -1,0 +1,10 @@
+Compiling 1 files with Solc 0.8.26
+Solc 0.8.26 finished in 353.05ms
+Compiler run successful!
+
+Ran 1 test for test/A.t.sol:Chatty
+[PASS] test_prints() (gas: 5210)
+Logs:
+  Ran 9 test suites in 1.00s (1.00s CPU time): 9 tests passed, 0 failed, 0 skipped (9 total tests)
+
+thread 'main' panicked: forge died here, before its own summary line

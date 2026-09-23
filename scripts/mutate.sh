@@ -47,6 +47,8 @@ FORGE_FLAGS="${FORGE_FLAGS:-}"
 LABEL="${LABEL:-mutant}"
 OUT_DIR="${OUT_DIR:-$PROJECT/.gauntlet/reports/mutants}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "mutate: $HERE/lib/parse.sh is missing"; exit 2; }
 
 case "$EXPECT" in red | green) ;; *) echo "mutate: EXPECT must be red or green"; exit 2 ;; esac
 [ -f "$PROJECT/$FILE" ] || { echo "mutate: no such file $PROJECT/$FILE"; exit 2; }
@@ -73,6 +75,27 @@ else
 fi
 WORK="$COPY/$REL"
 
+# The file must be a file OF THE COPY. `cp -a` keeps a symlink as a symlink, so `lib/X.sol` in the copy can be the
+# ORIGINAL `lib/X.sol` of whatever the link points at (a shared lib/, a monorepo's package): the mutation below would be
+# written through the link into the original, and "the original is never touched" would be false. Found by an outside
+# static review (2026-09-23): `mv` replaced the original through a symlinked lib/. Checked before anything is built.
+real_path() {
+  if command -v realpath > /dev/null 2>&1; then realpath "$1"; return; fi
+  # no realpath (an old macOS): resolve the directory, and refuse a leaf that is itself a link rather than guess
+  [ -L "$1" ] && { echo "$1 (a symlink, not resolved: no realpath on this machine)"; return; }
+  printf '%s/%s\n' "$(cd -P "$(dirname "$1")" 2> /dev/null && pwd -P)" "$(basename "$1")"
+}
+work_real="$(cd -P "$WORK" && pwd -P)"
+file_real="$(real_path "$WORK/$FILE")"
+case "$file_real" in
+  "$work_real"/*) ;;
+  *)
+    echo "mutate: $FILE resolves to $file_real, which is OUTSIDE the throwaway copy $work_real (a symlinked lib/?)."
+    echo "        Mutating it would change the ORIGINAL. NOTHING PROVEN. Mutate a file that lives in the project, or copy"
+    echo "        the dependency into it first."
+    exit 2 ;;
+esac
+
 # The UNCHANGED copy must build, or a failure further down would be blamed on the change.
 # It is built with --force, from nothing. A build cache copied from another path is NOT trustworthy: forge has been
 # measured reusing artifacts of the ORIGINAL source after the copy was mutated, which reported a broken contract as
@@ -91,7 +114,8 @@ fi
 # The UNCHANGED copy must also pass the SAME tests, and some must actually run. Otherwise "the tests went red" means
 # nothing: a typo in TEST_FLAGS, a fork test with no RPC, a flaky test - each would make every mutant look KILLED, and a
 # filter that matches nothing would make every broken variant look PASSED. This costs one extra run of the suite.
-passed_in() { grep -E 'Ran [0-9]+ test suites? .*: [0-9]+ tests? passed' "$1" | tail -1 | sed -E 's/.*: ([0-9]+) tests? passed.*/\1/'; }
+# the number of tests that passed, read by scripts/lib/parse.sh: empty when forge printed no summary or one it cannot read
+passed_in() { local s; s="$(parse_test_summary "$1")" || return 0; printf '%s\n' "${s%% *}"; }
 # shellcheck disable=SC2086
 (cd "$WORK" && forge test $FORGE_FLAGS $TEST_FLAGS > "$OUT_DIR/$LABEL.baseline-test.txt" 2>&1)
 rc_base=$?

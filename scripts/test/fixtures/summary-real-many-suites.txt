@@ -1,0 +1,267 @@
+Compiling 27 files with Solc 0.8.26
+Solc 0.8.26 finished in 2.24s
+Compiler run successful!
+
+Ran 17 tests for test/InvariantBase.t.sol:InvariantAssertsTest
+[PASS] test_assertConserved_fails_when_a_holder_is_missing_from_the_list() (gas: 193891)
+[PASS] test_assertConserved_fails_when_tokens_appear() (gas: 178954)
+[PASS] test_assertConserved_passes_on_a_closed_book() (gas: 64544)
+[PASS] test_assertGainBackedByLoss_accepts_the_declared_slack() (gas: 351687)
+[PASS] test_assertGainBackedByLoss_fails_when_the_token_invents_tokens() (gas: 430957)
+[PASS] test_assertGainBackedByLoss_is_exact_at_the_boundary() (gas: 579658)
+[PASS] test_assertGainBackedByLoss_measures_the_winner_from_where_it_started() (gas: 283073)
+[PASS] test_assertGainBackedByLoss_passes_when_the_gain_is_backed() (gas: 242078)
+[PASS] test_assertGainBackedByLoss_reports_no_gain_when_the_winner_ended_poorer() (gas: 282803)
+[PASS] test_assertHoldsNoMoreThan() (gas: 210866)
+[PASS] test_assertHoldsOnlyDonations() (gas: 308390)
+[PASS] test_assertPaidForLoss_does_not_excuse_a_wallet_merely_because_it_sorts_below_the_exempt_one() (gas: 438534)
+[PASS] test_assertPaidForLoss_fails_when_the_loser_was_not_paid() (gas: 377981)
+[PASS] test_assertPaidForLoss_lets_the_exempt_wallet_spend() (gas: 292910)
+[PASS] test_assertPaidForLoss_passes_when_the_loser_was_paid() (gas: 399681)
+[PASS] test_assertSolvent() (gas: 181322)
+[PASS] test_the_referee_must_choose_which_reading_it_judges() (gas: 384451)
+Suite result: ok. 17 passed; 0 failed; 0 skipped; finished in 5.06ms (5.44ms CPU time)
+
+Ran 18 tests for test/examples/ToyVault.boundaries.t.sol:ToyVaultBoundariesTest
+[PASS] test_a_balance_read_that_reverts_with_no_data_is_refused_with_the_declared_error() (gas: 565623)
+[PASS] test_a_balance_read_that_succeeds_with_no_data_is_refused_with_the_declared_error() (gas: 565659)
+[PASS] test_a_balance_read_with_extra_data_after_the_word_is_accepted() (gas: 626560)
+[PASS] test_a_deposit_that_delivers_nothing_is_refused_not_credited_as_zero() (gas: 145727)
+[PASS] test_a_payout_that_costs_exactly_the_amount_is_allowed() (gas: 290019)
+[PASS] test_a_payout_that_costs_the_vault_far_more_than_the_amount_is_refused() (gas: 414181)
+[PASS] test_a_payout_that_costs_the_vault_less_than_the_amount_is_refused_too() (gas: 400358)
+[PASS] test_a_payout_that_delivers_half_is_refused_and_the_credit_survives() (gas: 368321)
+[PASS] test_a_payout_that_leaves_the_vault_richer_is_refused_without_underflowing() (gas: 400239)
+[PASS] test_a_payout_that_moves_nothing_is_refused_and_the_credit_survives() (gas: 330372)
+[PASS] test_a_payout_whose_token_eats_the_frame_leaves_the_credit_alone() (gas: 242094)
+[PASS] test_a_transfer_that_returns_false_is_refused_even_though_the_tokens_moved() (gas: 617198)
+[PASS] test_a_transfer_that_returns_no_data_at_all_is_accepted() (gas: 302091)
+[PASS] test_a_vault_balance_that_reads_smaller_after_the_transfer_is_refused_with_the_declared_error() (gas: 649005)
+[PASS] test_outOfScope_short_delivery_hidden_by_a_sender_side_burn() (gas: 384531)
+[PASS] test_withdrawing_exactly_the_whole_credit_is_allowed() (gas: 273259)
+[PASS] test_withdrawing_more_than_the_credit_is_refused_with_the_declared_error() (gas: 253151)
+[PASS] test_withdrawing_part_of_the_credit_is_allowed() (gas: 344996)
+Suite result: ok. 18 passed; 0 failed; 0 skipped; finished in 5.42ms (4.39ms CPU time)
+
+Ran 5 tests for test/DirtyCalldata.t.sol:DirtyCalldataTest
+[PASS] testFuzz_a_full_word_is_always_accepted(uint256) (runs: 256, μ: 27188, ~: 27127)
+[PASS] test_a_clean_bool_is_accepted() (gas: 27234)
+[PASS] test_a_dirty_address_makes_the_decoder_revert() (gas: 26882)
+[PASS] test_a_dirty_bool_makes_the_decoder_revert_with_no_data() (gas: 27231)
+[PASS] test_a_dirty_uint8_makes_the_decoder_revert() (gas: 26908)
+Suite result: ok. 5 passed; 0 failed; 0 skipped; finished in 9.28ms (9.78ms CPU time)
+
+Ran 22 tests for test/InvariantBase.t.sol:HandlerBaseTest
+[PASS] test_a_census_of_calls_is_not_a_census_of_successes() (gas: 307339)
+[PASS] test_a_handler_with_no_actors_says_so_instead_of_dividing_by_zero() (gas: 2026861)
+[PASS] test_actors_are_a_fixed_cast() (gas: 17688)
+[PASS] test_after_a_surprise_the_next_counted_call_is_refused_and_the_record_survives() (gas: 399535)
+Logs:
+  UNEXPECTED REVERT: the vault paid twice
+
+[PASS] test_an_unexplained_failure_is_recorded_where_an_invariant_can_read_it() (gas: 224846)
+Logs:
+  UNEXPECTED REVERT: the vault paid twice
+
+[PASS] test_asActor_pranks_the_chosen_actor() (gas: 360028)
+[PASS] test_assertExercised_fails_by_name_when_an_action_never_worked() (gas: 262594)
+[PASS] test_assertExercised_passes_at_exactly_the_minimum_and_above_it() (gas: 279154)
+[PASS] test_assertReached_passes_when_the_boundary_was_reached_more_often_than_asked() (gas: 442054)
+[PASS] test_bitOneIn_is_biased_and_still_agrees_with_YES_and_NO() (gas: 4540920)
+[PASS] test_bit_reads_the_lowest_bit_of_the_word_and_nothing_else() (gas: 72406)
+[PASS] test_censusLine_is_the_run_in_one_line() (gas: 806058)
+Logs:
+  UNEXPECTED REVERT: the vault paid twice
+
+[PASS] test_census_counts_every_call_by_name() (gas: 409882)
+[PASS] test_countedSetter_counts_the_call_and_the_success() (gas: 249865)
+[PASS] test_each_action_is_named_once_however_often_it_is_called() (gas: 502416)
+[PASS] test_each_boundary_is_named_once_however_often_it_is_reached() (gas: 442771)
+[PASS] test_each_unexplained_failure_counts_once() (gas: 203862)
+Logs:
+  UNEXPECTED REVERT: the vault paid twice
+  UNEXPECTED REVERT: and then it paid a third time
+
+[PASS] test_expected_reverts_are_counted_and_surprises_are_not_swallowed() (gas: 285525)
+[PASS] test_ghosts_track_minting_donations_and_deltas() (gas: 597206)
+[PASS] test_the_ghost_ledgers_accumulate_rather_than_merge() (gas: 411647)
+[PASS] test_the_reach_census_counts_boundaries_not_calls() (gas: 430772)
+[PASS] test_writeCensus_is_silent_when_nobody_asked_for_a_census() (gas: 221800)
+Suite result: ok. 22 passed; 0 failed; 0 skipped; finished in 9.43ms (4.06ms CPU time)
+
+Ran 38 tests for test/HostileERC20.t.sol:HostileERC20Test
+[PASS] test_a_callback_with_no_target_is_skipped_and_not_called() (gas: 154179)
+[PASS] test_a_finite_allowance_is_spent_by_exactly_what_was_moved() (gas: 295247)
+[PASS] test_an_infinite_allowance_is_not_spent() (gas: 94915)
+[PASS] test_baseline_is_an_honest_erc20() (gas: 174905)
+[PASS] test_callbacks_are_bounded_by_their_fire_count() (gas: 755854)
+[PASS] test_gas_threshold_is_configurable() (gas: 92118)
+[PASS] test_nothing_is_ever_destroyed() (gas: 412570)
+[PASS] test_switch_balanceGasBurn() (gas: 181100)
+Logs:
+  balanceOf gas, plain 21208
+  balanceOf gas, burning 400 rounds 101736
+
+[PASS] test_switch_balanceLieToCaller() (gas: 161064)
+[PASS] test_switch_balanceMax() (gas: 69756)
+[PASS] test_switch_balanceRevert() (gas: 90313)
+[PASS] test_switch_balanceRevertAfterMove() (gas: 188949)
+[PASS] test_switch_balanceRevertWhenRich() (gas: 84464)
+[PASS] test_switch_balanceUnderstateWhenRich() (gas: 90183)
+[PASS] test_switch_blockIncoming() (gas: 195004)
+[PASS] test_switch_bonusTo() (gas: 219534)
+[PASS] test_switch_bonusTo_stops_at_an_empty_reserve() (gas: 141818)
+[PASS] test_switch_extraBurnFrom() (gas: 184791)
+[PASS] test_switch_feeBps() (gas: 182643)
+[PASS] test_switch_gasHogTransfer() (gas: 920847)
+[PASS] test_switch_gasHogTransfer_returns_true_when_the_caller_needs_nothing_more() (gas: 68478)
+[PASS] test_switch_omitReturnValue() (gas: 214276)
+[PASS] test_switch_paused() (gas: 187829)
+[PASS] test_switch_rebateFrom() (gas: 219670)
+[PASS] test_switch_receiveCallback_runs_after_the_move() (gas: 607159)
+[PASS] test_switch_sendCallback_is_a_reentrancy_window() (gas: 824076)
+[PASS] test_switch_sendCallback_runs_before_the_move() (gas: 619331)
+[PASS] test_switch_shortDeliver() (gas: 185963)
+[PASS] test_switch_trueNoMove() (gas: 109474)
+[PASS] test_switch_viewOverstateAfterMove() (gas: 184779)
+[PASS] test_switch_viewUnderstateAfterMove() (gas: 186727)
+[PASS] test_switches_are_per_wallet_and_can_be_turned_off() (gas: 313740)
+[PASS] test_the_balance_check_covers_the_delivery_and_the_extra_burn_together() (gas: 343151)
+[PASS] test_the_caller_lie_is_told_to_one_address_and_not_to_everyone_below_it() (gas: 454710)
+[PASS] test_the_constructor_records_what_it_was_given() (gas: 1567430)
+[PASS] test_the_fee_cannot_be_set_above_one_hundred_per_cent() (gas: 84912)
+[PASS] test_the_fire_count_is_decremented_and_not_halved() (gas: 842952)
+[PASS] test_understating_more_than_the_wallet_holds_reads_zero_and_does_not_panic() (gas: 165240)
+Suite result: ok. 38 passed; 0 failed; 0 skipped; finished in 9.49ms (7.48ms CPU time)
+
+Ran 3 tests for test/examples/ToyVault.invariants.t.sol:ToyVaultInvariants
+[PASS]
+ToyVaultInvariants invariants:
+[PASS] invariant_credits_sum_to_total
+[PASS] invariant_global_conservation
+[PASS] invariant_no_unexplained_reverts
+[PASS] invariant_reentrancy_never_succeeded
+[PASS] invariant_vault_holds_only_credit_and_donations
+[PASS] invariant_vault_is_solvent
+ ToyVaultInvariants invariants (runs: 64, calls: 4096, reverts: 0)
+
+╭-----------------+-----------------------+-------+---------+----------╮
+| Contract        | Selector              | Calls | Reverts | Discards |
++======================================================================+
+| ToyVaultHandler | armAttacker           | 152   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | calmDown              | 191   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | deposit               | 255   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | donate                | 146   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | fundReserve           | 149   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setActorUnreadable    | 187   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setBonusToVault       | 139   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setExtraBurnActor     | 168   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setExtraBurnVault     | 246   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setFee                | 176   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setGasHog             | 155   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setOmitReturn         | 209   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setPaused             | 152   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setRebate             | 101   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setShortDeliver       | 151   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setTrueNoMove         | 153   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setVaultBlocked       | 127   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setVaultGasHog        | 167   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setVaultReadExpensive | 181   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setVaultRebate        | 140   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setVaultShortDeliver  | 233   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setVaultTrueNoMove    | 149   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | setVaultUnreadable    | 146   | 0       | 0        |
+|-----------------+-----------------------+-------+---------+----------|
+| ToyVaultHandler | withdraw              | 223   | 0       | 0        |
+╰-----------------+-----------------------+-------+---------+----------╯
+
+Logs:
+  handler calls 65
+    completed 65
+    reverts expected 3
+    reverts unexpected 0
+  deposit 4 calls / successes 2
+  setTrueNoMove 6 calls / successes 6
+  withdraw 3 calls / successes 2
+  setGasHog 6 calls / successes 6
+  setOmitReturn 2 calls / successes 2
+  setPaused 2 calls / successes 2
+  setVaultUnreadable 6 calls / successes 6
+  setExtraBurnVault 4 calls / successes 4
+  setBonusToVault 1 calls / successes 1
+  setShortDeliver 4 calls / successes 4
+  setVaultRebate 1 calls / successes 1
+  setVaultBlocked 5 calls / successes 5
+  donate 2 calls / successes 2
+  setVaultReadExpensive 3 calls / successes 3
+  setVaultShortDeliver 3 calls / successes 3
+  setVaultGasHog 1 calls / successes 1
+  setFee 1 calls / successes 1
+  setActorUnreadable 2 calls / successes 2
+  fundReserve 3 calls / successes 3
+  armAttacker 1 calls / successes 1
+  calmDown 2 calls / successes 2
+  setVaultTrueNoMove 2 calls / successes 2
+  setExtraBurnActor 1 calls / successes 1
+  boundaries reached 2
+    deposit refused with a declared error 2
+    withdraw refused with a declared error 1
+  CAMPAIGN depositsOk 2
+  CAMPAIGN withdrawsOk 2
+
+[PASS] test_handler_files_the_out_of_scope_payout_instead_of_failing_on_it() (gas: 1358058)
+[PASS] test_handler_smoke() (gas: 8278496)
+Logs:
+  handler calls 34
+    completed 34
+    reverts expected 6
+    reverts unexpected 0
+  fundReserve 1 calls / successes 1
+  deposit 9 calls / successes 7
+  withdraw 7 calls / successes 3
+  setFee 1 calls / successes 1
+  setShortDeliver 1 calls / successes 1
+  setBonusToVault 1 calls / successes 1
+  armAttacker 1 calls / successes 1
+  donate 1 calls / successes 1
+  setVaultBlocked 2 calls / successes 2
+  setGasHog 2 calls / successes 2
+  setExtraBurnVault 1 calls / successes 1
+  calmDown 1 calls / successes 1
+  setVaultTrueNoMove 2 calls / successes 2
+  setVaultShortDeliver 2 calls / successes 2
+  setVaultGasHog 2 calls / successes 2
+  boundaries reached 5
+    deposit credited less than was asked 4
+    deposit refused with a declared error 2
+    withdraw refused with a declared error 4
+    deposit credited more than was asked 1
+    withdrew the whole credit 1
+  vault true balance 15200000000000000000
+  vault total credit 14200000000000000000
+
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.20s (1.20s CPU time)
+
+Ran 6 test suites in 1.20s (1.24s CPU time): 103 tests passed, 0 failed, 0 skipped (103 total tests)

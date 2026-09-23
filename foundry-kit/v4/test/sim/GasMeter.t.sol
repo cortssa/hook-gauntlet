@@ -75,7 +75,9 @@ contract GasMeterScenario is ExampleScenario {
         Fill memory f = _execute(it);
         // nothing after the router call in `_execute` calls out (a cheatcode does not count): the last frame is the swap's
         (bool ok, bytes memory r) = address(vm).staticcall(abi.encodeWithSignature("lastFrameGas()"));
-        assertTrue(ok && r.length >= 128, "lastFrameGas unreadable");
+        assertTrue(ok, "lastFrameGas unreadable");
+        // the answer this forge gave is one of the two layouts the meter reads (else the meter itself reverts)
+        assertTrue(r.length == 160 || r.length == 192, "lastFrameGas answered a layout the meter does not read");
         (, uint64 used,, int64 refunded) = abi.decode(r, (uint64, uint64, uint64, int64));
         assertTrue(f.executed, "the swap did not execute: nothing measured");
         bytes memory data = abi.encodeCall(
@@ -101,5 +103,42 @@ contract GasMeterScenario is ExampleScenario {
         t.refunded = -5_000;
         assertEq(SimGasMeter.total(t), 121_500, "a negative refund is charged as no refund");
         assertEq(SimGasMeter.calldataGas(hex"00ff0000ab"), 4 + 16 + 4 + 4 + 16, "16 a non-zero byte, 4 a zero one");
+    }
+
+    /// @dev an external door to the library's pure decoder, so that its revert can be expected
+    function decodeFrameGasExt(bytes memory r) external pure returns (uint64 used, int64 refunded) {
+        return SimGasMeter.decodeFrameGas(r);
+    }
+
+    /// @notice the record's layout is checked, not assumed: the two layouts it was written against are read at the
+    /// same offsets (hand-built here: forge 1.8.1's five words, forge-std 1.16.2's six), and every other length is
+    /// refused with the length in the error. Written after an outside review read the old decoder, which accepted ANY
+    /// answer of 128 bytes or more and would have read a third layout at the wrong offsets without a word.
+    function test_e_the_frame_record_is_read_only_in_the_two_layouts_it_was_written_against() public {
+        // limit, used, memory, refunded, remaining                                    (forge 1.8.1)
+        bytes memory five = abi.encode(uint64(1_000_000), uint64(123_456), uint64(77), int64(4_800), uint64(876_544));
+        // the same five, and gasStateUsed                                              (forge-std 1.16.2's `Gas`)
+        bytes memory six =
+            abi.encode(uint64(2_000_000), uint64(654_321), uint64(88), int64(-2_000), uint64(1_345_679), int64(9_999));
+        assertEq(five.length, 160);
+        assertEq(six.length, 192);
+        (uint64 u5, int64 r5) = this.decodeFrameGasExt(five);
+        assertEq(u5, 123_456, "five words: `used` is not the second word");
+        assertEq(r5, 4_800, "five words: `refunded` is not the fourth word");
+        (uint64 u6, int64 r6) = this.decodeFrameGasExt(six);
+        assertEq(u6, 654_321, "six words: `used` is not the second word");
+        assertEq(r6, -2_000, "six words: `refunded` is not the fourth word (or lost its sign)");
+
+        // four words: the old decoder's minimum, and a layout nobody here has read
+        bytes memory four = abi.encode(uint64(1), uint64(2), uint64(3), int64(4));
+        assertEq(four.length, 128);
+        vm.expectRevert(abi.encodeWithSelector(SimGasMeter.FrameGasLayoutUnknown.selector, uint256(128)));
+        this.decodeFrameGasExt(four);
+        // seven words: longer is not "more of the same"
+        bytes memory seven = bytes.concat(six, abi.encode(uint256(5)));
+        vm.expectRevert(abi.encodeWithSelector(SimGasMeter.FrameGasLayoutUnknown.selector, uint256(224)));
+        this.decodeFrameGasExt(seven);
+        vm.expectRevert(abi.encodeWithSelector(SimGasMeter.FrameGasLayoutUnknown.selector, uint256(0)));
+        this.decodeFrameGasExt("");
     }
 }

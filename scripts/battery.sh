@@ -20,6 +20,8 @@ set -uo pipefail
 # resolved BEFORE the cd below: with a relative $0 it would otherwise point at nothing, and the freshness check
 # would be reported as missing
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "battery: $HERE/lib/parse.sh is missing"; exit 1; }
 
 PROJECT="${1:-.}"
 cd "$PROJECT" || { echo "battery: cannot enter $PROJECT"; exit 1; }
@@ -52,15 +54,19 @@ forge test $FORGE_FLAGS $TEST_FLAGS 2>&1 | tee "$OUT_DIR/02-test.txt"
 rc_test=${PIPESTATUS[0]}
 
 # forge exits 0 when a filter matches nothing, and when every suite skipped itself. Neither is a pass: read the numbers.
+# Read by scripts/lib/parse.sh, which REFUSES a summary line it does not recognise instead of reading it as a number.
 tests_passed="?"; tests_failed="?"; tests_skipped="?"
-summary="$(grep -E 'Ran [0-9]+ test suites? .*: [0-9]+ tests? passed' "$OUT_DIR/02-test.txt" | tail -1)"
-if [ -z "$summary" ]; then
+summary="$(parse_test_summary "$OUT_DIR/02-test.txt")"
+rc_parse=$?
+if [ "$rc_parse" -eq 1 ]; then
   echo "battery: forge printed no test summary - NO TESTS RAN (a filter that matches nothing?)"
   rc_test=1
+elif [ "$rc_parse" -ne 0 ]; then
+  echo "battery: forge's summary line is not of a shape this kit can read (another forge version?) - REFUSED, not guessed:"
+  grep -E '^Ran [0-9]+ test suites? ' "$OUT_DIR/02-test.txt" | tail -1 | sed 's/^/    | /'
+  rc_test=1
 else
-  tests_passed="$(printf '%s' "$summary" | sed -E 's/.*: ([0-9]+) tests? passed.*/\1/')"
-  tests_failed="$(printf '%s' "$summary" | sed -E 's/.* ([0-9]+) failed.*/\1/')"
-  tests_skipped="$(printf '%s' "$summary" | sed -E 's/.* ([0-9]+) skipped.*/\1/')"
+  read -r tests_passed tests_failed tests_skipped _ <<< "$summary"
   if [ "$tests_passed" = "0" ]; then echo "battery: 0 tests passed - NO TESTS RAN"; rc_test=1; fi
   if [ "$tests_skipped" != "0" ] && [ "${ALLOW_SKIPS:-0}" != "1" ]; then
     echo "battery: $tests_skipped test(s) SKIPPED. A skipped suite has tested nothing (a missing fixture?). ALLOW_SKIPS=1 to accept."
@@ -87,6 +93,8 @@ echo
 echo "== battery summary =="
 echo "build     rc=$rc_build"
 echo "test      rc=$rc_test   (passed $tests_passed, failed $tests_failed, skipped $tests_skipped)"
+# by NAME, per test directory, so a log shows which parts of the suite ran (e.g. the v4 sandbox's test/sim)
+echo "suites    $(parse_suites_by_dir "$OUT_DIR/02-test.txt")"
 echo "sizes     rc=$rc_sizes"
 echo "freshness rc=$rc_fresh"
 echo "logs in   $OUT_DIR"

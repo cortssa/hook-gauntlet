@@ -1,0 +1,36 @@
+Compiling 21 files with Solc 0.8.26
+Solc 0.8.26 finished in 480.37ms
+Compiler run successful with warnings:
+Warning (2018): Function state mutability can be restricted to view
+ --> test/A.t.sol:5:214:
+  |
+5 |  ... ))); targetContract(address(a)); } function invariant_logs() public { console.log("(runs: 1, calls: 5, reverts: 0)"); assertGe(a.x(), 0); } }
+  |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Ran 1 test for test/A.t.sol:OneInvariant
+[PASS] invariant_never_decreases() (runs: 4, calls: 16, reverts: 0)
+
+╭----------+----------+-------+---------+----------╮
+| Contract | Selector | Calls | Reverts | Discards |
++==================================================+
+| A        | inc      | 16    | 0       | 0        |
+╰----------+----------+-------+---------+----------╯
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 4.15ms (2.13ms CPU time)
+
+Ran 1 test for test/A.t.sol:LogsInvariant
+[PASS] invariant_logs() (runs: 4, calls: 16, reverts: 0)
+
+╭----------+----------+-------+---------+----------╮
+| Contract | Selector | Calls | Reverts | Discards |
++==================================================+
+| A        | inc      | 16    | 0       | 0        |
+╰----------+----------+-------+---------+----------╯
+
+Logs:
+  (runs: 1, calls: 5, reverts: 0)
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 4.27ms (2.36ms CPU time)
+
+Ran 2 test suites in 6.66ms (8.41ms CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)

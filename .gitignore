@@ -8,6 +8,8 @@ census/
 
 # dependencies are fetched, not vendored (Uniswap's PoolManager is BUSL-1.1): scripts/install-v4.sh
 lib/
+# ... except the kit's own shell library, which is source, not a dependency (scripts/lib/parse.sh)
+!scripts/lib/
 
 # secrets and fetched fixtures
 .env

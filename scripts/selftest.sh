@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 #
-# selftest.sh - prove that the guards fail when they should.
+# selftest.sh - prove that every guard that can be exercised offline fails when it should.
 #
 # The problem it solves: a guard that has never been seen to go red is not a guard, it is a decoration. Both
 # of the checks in this kit are the kind that sit silently green for months, which is exactly the kind that
 # rots. Each case below is run twice: once where it must pass, and once where it must fail, with the exit
 # code printed either way.
+#
+# What it does NOT exercise, because it needs the network: a SUCCESSFUL fetch-bytecode.sh (an RPC endpoint) and a
+# successful install-v4.sh (GitHub). Their refusals are here; their success is the CI's `battery` job, which runs
+# install-v4.sh on every push, and the fetch is run by hand (foundry-kit/v4/README.md).
 #
 # Usage:   scripts/selftest.sh
 # Exit:    0 every case behaved as declared; 1 a case did not; 3 INCOMPLETE - a section was skipped (no forge, or no
@@ -14,6 +18,10 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "selftest: $HERE/lib/parse.sh is missing"; exit 1; }
+FIX="$HERE/test/fixtures"
+started=$SECONDS
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -122,6 +130,115 @@ check "a short address is refused" 1 $?
 if [ -e "$TMP/x.hex" ]; then echo "  FAIL  a fixture was written by a refused call"; fails=$((fails + 1)); else
   echo "  ok    no fixture is written by a refused call"; fi
 
+RPC_URL="http://127.0.0.1:9" "$HERE/fetch-bytecode.sh" "0x12345678901234567890123456789012345678zz" "$TMP/x.hex" > "$TMP/o95" 2>&1
+check "an address of the right LENGTH with non-hex digits is refused" 1 $?
+if grep -q "not an 0x address" "$TMP/o95"; then echo "  ok    and it is refused as an address, before any endpoint is tried"; else
+  echo "  FAIL  the non-hex address got past the address check: $(tail -1 "$TMP/o95")"; fails=$((fails + 1)); fi
+if [ -e "$TMP/x.hex" ]; then echo "  FAIL  a fixture was written by a refused call"; fails=$((fails + 1)); fi
+
+# ================================================================= install-v4.sh (the refusals; no network is used)
+# git is replaced by a shim that records every call and fails: a refusal must come BEFORE git is touched and before
+# anything is created, so the log of git calls must stay empty and the project must stay as it was.
+echo "== install-v4.sh =="
+IV="$TMP/iv"; mkdir -p "$IV/scripts/lib" "$IV/proj" "$IV/gitshim"
+cp "$HERE/install-v4.sh" "$IV/scripts/"; cp "$HERE/lib/parse.sh" "$IV/scripts/lib/"
+printf '#!/usr/bin/env bash\necho "git $*" >> "%s/git-calls"\nexit 1\n' "$IV" > "$IV/gitshim/git"; chmod +x "$IV/gitshim/git"
+sed -i.bak 's/^V4_CORE_PIN="[0-9a-f]*"/V4_CORE_PIN="main"/' "$IV/scripts/install-v4.sh"
+if grep -q '^V4_CORE_PIN="main"' "$IV/scripts/install-v4.sh"; then
+  PATH="$IV/gitshim:$PATH" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o96" 2>&1
+  check "a pin that is a branch name, not a commit hash, is refused" 1 $?
+  if [ ! -e "$IV/git-calls" ] && [ ! -e "$IV/proj/lib" ] && grep -q "not a full commit hash" "$TMP/o96"; then
+    echo "  ok    and it was refused before git was called or lib/ was created"; else
+    echo "  FAIL  install-v4.sh went on with a bad pin: $(head -2 "$IV/git-calls" 2> /dev/null)"; fails=$((fails + 1)); fi
+else
+  echo "  FAIL  could not plant a bad pin in a copy of install-v4.sh (the pin line changed shape?)"; fails=$((fails + 1))
+fi
+cp "$HERE/install-v4.sh" "$IV/scripts/"; rm -rf "$IV/git-calls" "$IV/proj/lib"
+sed -i.bak 's/^V4_CORE_PIN="\([0-9a-f]*\)"/V4_CORE_PIN="\1a"/' "$IV/scripts/install-v4.sh"
+PATH="$IV/gitshim:$PATH" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o97" 2>&1
+check "a pin one hex digit too long is refused" 1 $?
+if [ ! -e "$IV/git-calls" ]; then echo "  ok    and git was never called for it"; else
+  echo "  FAIL  install-v4.sh called git with a 41-digit pin"; fails=$((fails + 1)); fi
+cp "$HERE/install-v4.sh" "$IV/scripts/"; rm -rf "$IV/git-calls" "$IV/proj/lib"
+PATH="$IV/gitshim:$PATH" "$IV/scripts/install-v4.sh" "$IV/no-such-project" > "$TMP/o98" 2>&1
+check "a destination that does not exist is refused" 1 $?
+if [ ! -e "$IV/git-calls" ] && [ ! -e "$IV/no-such-project" ]; then echo "  ok    and nothing was created for it, and git was never called"; else
+  echo "  FAIL  install-v4.sh created the missing destination or called git"; fails=$((fails + 1)); fi
+PATH="$IV/gitshim:$PATH" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o99" 2>&1
+check "control: good pins and a real destination reach git (the shim fails it)" 1 $?
+if [ -s "$IV/git-calls" ]; then echo "  ok    and git WAS called: the refusals above are the guards, not a broken copy"; else
+  echo "  FAIL  the control never reached git: the refusals above prove nothing"; fails=$((fails + 1)); fi
+
+# ================================================================= parse.sh, on fixtures (real forge 1.8.1 output + near misses)
+# scripts/test/fixtures: `*-real-*` captured from forge 1.8.1 on the kit's own projects (2026-09-23); `*-nm-*` near
+# misses written by hand - the shapes an inline `grep | sed` misread in silence. A CRLF copy is made here, not stored:
+# .gitattributes normalises line ends, and a stored CRLF fixture would silently become an LF one.
+echo "== parse.sh =="
+expect_out() { # expect_out <label> <expected stdout> <expected rc> <command...>
+  local label="$1" want="$2" want_rc="$3" got rc; shift 3
+  got="$("$@" 2> /dev/null)"; rc=$?
+  if [ "$got" = "$want" ] && [ "$rc" = "$want_rc" ]; then echo "  ok    $label (rc=$rc)"; else
+    echo "  FAIL  $label: got \"$got\" rc=$rc, expected \"$want\" rc=$want_rc"; fails=$((fails + 1)); fi
+}
+first_row() { parse_sizes "$1" | grep "^$2 "; }
+count_kept() { sim_ledger_filter "$1" | wc -l | tr -d ' '; }
+expect_out "summary, real, 6 suites" "103 0 0 103" 0 parse_test_summary "$FIX/summary-real-many-suites.txt"
+expect_out "summary, real, 1 suite ('test suite', singular)" "1 0 0 1" 0 parse_test_summary "$FIX/summary-real-one-suite.txt"
+expect_out "summary, real, a failure and a skip" "1 1 1 3" 0 parse_test_summary "$FIX/summary-real-failed-and-skipped.txt"
+sed 's/$/\r/' "$FIX/summary-real-one-suite.txt" > "$TMP/summary-crlf.txt"
+expect_out "summary, the same with CRLF line ends" "1 0 0 1" 0 parse_test_summary "$TMP/summary-crlf.txt"
+expect_out "summary, real, no test matched: there is none" "" 1 parse_test_summary "$FIX/summary-real-no-tests.txt"
+expect_out "summary printed only by a test's console: there is none" "" 1 parse_test_summary "$FIX/summary-nm-console-only.txt"
+expect_out "summary with no 'skipped' field: refused" "" 2 parse_test_summary "$FIX/summary-nm-no-skipped-field.txt"
+expect_out "summary whose numbers do not add up: refused" "" 2 parse_test_summary "$FIX/summary-nm-total-mismatch.txt"
+expect_out "campaigns, real, grouped (one line for 6 invariants)" "1 4096 4096" 0 parse_invariant_runs "$FIX/summary-real-many-suites.txt"
+expect_out "campaigns, real, two, one printing a fake campaign line in its logs" "2 32 16" 0 parse_invariant_runs "$FIX/invariant-real-pass-with-logs.txt"
+expect_out "campaigns, real, a failing one (forge prints it twice)" "1 1 1" 0 parse_invariant_runs "$FIX/invariant-real-fail.txt"
+expect_out "campaign lines only inside a test's logs: none ran" "0 0 0" 0 parse_invariant_runs "$FIX/invariant-nm-console-only.txt"
+expect_out "suites by directory, real" "test=4 test/examples=2" 0 parse_suites_by_dir "$FIX/summary-real-many-suites.txt"
+expect_out "sizes, real: ToyVault's runtime" "ToyVault 1672" 0 first_row "$FIX/sizes-real.txt" ToyVault
+expect_out "sizes, columns in another order: still the RUNTIME column" "ToyVault 1672" 0 first_row "$FIX/sizes-nm-columns-swapped.txt" ToyVault
+expect_out "sizes, no header: refused" "" 2 parse_sizes "$FIX/sizes-nm-no-header.txt"
+expect_out "sizes, the runtime column renamed: refused" "" 2 parse_sizes "$FIX/sizes-nm-renamed-header.txt"
+expect_out "ledger: the 2 well-formed lines are kept" "2" 0 count_kept "$FIX/sim-nm-nonnumeric.tsv"
+expect_out "ledger: '12a', '-' and an empty field make 3 malformed lines" "3" 0 sim_ledger_malformed "$FIX/sim-nm-nonnumeric.tsv"
+expect_out "address: 0x and 40 hex digits" "" 0 is_evm_address 0x000000000000000000000000000000000000dEaD
+expect_out "address: 39 hex digits and a z" "" 1 is_evm_address 0x000000000000000000000000000000000000dEaz
+expect_out "address: 41 hex digits" "" 1 is_evm_address 0x000000000000000000000000000000000000dEaD0
+expect_out "pin: a full lower-case sha" "" 0 is_git_sha 59d3ecf53afa9264a16bba0e38f4c5d2231f80bc
+expect_out "pin: a short sha" "" 1 is_git_sha 59d3ecf
+expect_out "pin: upper case (not what git prints)" "" 1 is_git_sha 59D3ECF53AFA9264A16BBA0E38F4C5D2231F80BC
+
+# ---- the scripts that read those shapes, fed them through a forge SHIM (no compiler runs): the parser is only half of
+# the guard, the other half is the script acting on its refusal
+FS="$TMP/fshim"; FP="$TMP/fproj"; mkdir -p "$FS" "$FP/src" "$FP/out/A.sol" "$FP/cache"
+printf 'contract A {}\n' > "$FP/src/A.sol"; printf '[profile.default]\n' > "$FP/foundry.toml"
+printf '{}\n' > "$FP/out/A.sol/A.json"; printf '{}\n' > "$FP/cache/solidity-files-cache.json"
+touch -d "@1700000000" "$FP/src/A.sol" "$FP/foundry.toml"; touch -d "@1700000100" "$FP/out/A.sol/A.json" "$FP/cache/solidity-files-cache.json"
+# the shim answers `forge build --sizes` with $SHIM_SIZES and `forge test` with $SHIM_TEST, and any other build with success
+printf '#!/usr/bin/env bash\ncase " $* " in\n  *" --sizes "*) cat "$SHIM_SIZES" ;;\n  " test "*) cat "$SHIM_TEST" ;;\n  *) echo "Compiler run successful!" ;;\nesac\nexit 0\n' > "$FS/forge"; chmod +x "$FS/forge"
+export SHIM_SIZES="$FIX/sizes-real.txt" SHIM_TEST="$FIX/summary-real-one-suite.txt"
+PATH="$FS:$PATH" OUT_DIR="$TMP/fb" "$HERE/battery.sh" "$FP" > "$TMP/o100" 2>&1; check "battery through the shim on a real green summary (the control)" 0 $?
+SHIM_TEST="$FIX/summary-nm-console-only.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fb" "$HERE/battery.sh" "$FP" > "$TMP/o101" 2>&1
+check "battery: a summary printed only by a test's console is NO summary" 1 $?
+SHIM_TEST="$FIX/summary-nm-no-skipped-field.txt" ALLOW_SKIPS=1 PATH="$FS:$PATH" OUT_DIR="$TMP/fb" "$HERE/battery.sh" "$FP" > "$TMP/o102" 2>&1
+check "battery: a summary of another shape is refused, even with ALLOW_SKIPS=1" 1 $?
+SHIM_SIZES="$FIX/sizes-nm-columns-swapped.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o103" 2>&1
+check "size.sh on a table with its columns in another order" 0 $?
+if grep -Eq '^ToyVault +1672 +22904' "$TMP/o103"; then echo "  ok    and it read the RUNTIME column by its header (1672, not the initcode 1811)"; else
+  echo "  FAIL  size.sh read the wrong column: $(grep ToyVault "$TMP/o103")"; fails=$((fails + 1)); fi
+SHIM_SIZES="$FIX/sizes-nm-renamed-header.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o104" 2>&1
+check "size.sh on a table whose runtime column is not called Runtime Size measures nothing" 2 $?
+SHIM_SIZES="$FIX/sizes-nm-no-header.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o105" 2>&1
+check "size.sh on a table with no header measures nothing" 2 $?
+unset SHIM_SIZES SHIM_TEST
+"$HERE/sim-report.sh" "$FIX/sim-nm-nonnumeric.tsv" > "$TMP/o106" 2>&1; check "sim-report over a ledger with three malformed lines" 0 $?
+if grep -Eq '^nm +honest +2 +40\.0 +39\.0 +1\.0 ' "$TMP/o106" && grep -q "3 line(s) ignored (malformed" "$TMP/o106"; then
+  echo "  ok    and the malformed lines are counted out loud, not added up as numbers"; else
+  echo "  FAIL  sim-report added up a field that is not a number:"; sed "s/^/        | /" "$TMP/o106"; fails=$((fails + 1)); fi
+printf 'x\ty\t1\t2\n' > "$TMP/allbad.tsv"; "$HERE/sim-report.sh" "$TMP/allbad.tsv" > "$TMP/o107" 2>&1
+check "sim-report over a ledger with no well-formed line measured nothing" 2 $?
+
 # ================================================================= mutate.sh and size.sh (need forge and a project)
 echo "== mutate.sh / size.sh =="
 KIT="${KIT_PROJECT:-$HERE/../foundry-kit}"
@@ -182,6 +299,22 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   check "a mutant that bricks setUp() proves nothing, and is never KILLED" 2 $?
   if grep -q "setUp()" "$TMP/o35"; then echo "  ok    the refusal names setUp()"; else echo "  FAIL  the refusal does not name setUp()"; fails=$((fails + 1)); fi
   rm -f "$M/test/SetUpDep.t.sol"
+
+  # ---- a FILE reached through a symlinked lib/ is the ORIGINAL, not the copy's: mutate.sh must refuse it, and the
+  # original must be byte-for-byte what it was. (`cp -a` keeps the link; the mutation used to be written through it.)
+  SH="$TMP/shared"; SL="$TMP/symlib"; mkdir -p "$SH" "$SL/src" "$SL/test"
+  ln -s "$(cd "$KIT/lib/forge-std" && pwd -P)" "$SH/forge-std"
+  printf 'pragma solidity ^0.8.26;\ncontract X { uint256 public x; function inc() external { x++; } }\n' > "$SH/X.sol"
+  ln -s "$SH" "$SL/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n' > "$SL/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../lib/X.sol";\ncontract XUnit is Test { function test_inc() public { X a = new X(); a.inc(); assertEq(a.x(), 1); } }\n' > "$SL/test/X.t.sol"
+  sh_before="$(hash_of "$SH/X.sol")"
+  LABEL=m16 OUT_DIR="$TMP/mut" "$HERE/mutate.sh" "$SL" lib/X.sol "x++;" "x += 2;" > "$TMP/o94" 2>&1
+  check "a FILE whose real path leaves the copy (symlinked lib/) is refused: nothing proven" 2 $?
+  if [ "$(hash_of "$SH/X.sol")" = "$sh_before" ] && [ ! -e "$SH/X.sol.mutated" ]; then echo "  ok    and the original behind the link is unchanged (sha256 before = after)"; else
+    echo "  FAIL  mutate.sh WROTE THROUGH the symlink into the original"; fails=$((fails + 1)); fi
+  if grep -q "NOTHING PROVEN" "$TMP/o94" && grep -qF "$(cd -P "$SH" && pwd -P)/X.sol" "$TMP/o94"; then echo "  ok    and the refusal names the resolved path"; else
+    echo "  FAIL  the refusal does not name the resolved path"; fails=$((fails + 1)); fi
 
   "$HERE/battery.sh" "$M" > "$TMP/o26" 2>&1; check "battery on a small green project" 0 $?
   TEST_FLAGS="--match-contract NoSuchContractAnywhere" "$HERE/battery.sh" "$M" > "$TMP/o27" 2>&1
@@ -439,6 +572,7 @@ else
 fi
 
 echo
+echo "selftest ran in $((SECONDS - started)) s"
 if [ "$fails" -eq 0 ] && [ "$skipped" -eq 1 ]; then
   echo "SELFTEST INCOMPLETE: what ran behaved, but a section was SKIPPED. Install forge and the kit's lib/, and run it again."
   exit 3

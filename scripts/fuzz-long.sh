@@ -32,6 +32,8 @@ MATCH="${MATCH:---match-contract Invariant}"
 USE_BENCH="${USE_BENCH:-1}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "fuzz-long: $HERE/lib/parse.sh is missing"; exit 2; }
 
 SRC="$(cd "$PROJECT" && pwd)" || { echo "fuzz-long: cannot enter $PROJECT"; exit 1; }
 OUT_DIR="${OUT_DIR:-$SRC/.gauntlet/reports}"
@@ -94,13 +96,10 @@ rm -f "$GAUNTLET_CENSUS"
 forge test $FORGE_FLAGS $MATCH $seed_flag -vv 2>&1 | tee "$OUT_DIR/05-fuzz-long.txt"
 rc=${PIPESTATUS[0]}
 
-# a campaign that ran prints "(runs: N, calls: M, reverts: R)" per invariant. No such line, or zero calls, means the
-# filter matched nothing: forge exits 0 on that too.
-# Whole lines, de-duplicated: forge prints a FAILING invariant twice (in its suite, and again under "Failing tests:").
-lines="$(grep -E '\(runs: [0-9]+, calls: [0-9]+' "$OUT_DIR/05-fuzz-long.txt" | sort -u)"
-calls="$(printf '%s\n' "$lines" | grep -oE 'calls: [0-9]+' | awk '{s+=$2} END {print s+0}')"
-campaigns="$(printf '%s\n' "$lines" | grep -cE 'calls: [0-9]+')"
-smallest="$(printf '%s\n' "$lines" | grep -oE 'calls: [0-9]+' | awk 'NR == 1 || $2 < m {m = $2} END {print m+0}')"
+# a campaign that ran prints "(runs: N, calls: M, reverts: R)" per campaign (scripts/lib/parse.sh names the three shapes
+# forge 1.8.1 prints it in). No such line, or zero calls, means the filter matched nothing: forge exits 0 on that too.
+# Only a result line counts - a test that PRINTS such a text in its logs is not a campaign.
+read -r campaigns calls smallest <<< "$(parse_invariant_runs "$OUT_DIR/05-fuzz-long.txt")"
 # the pre-check above reads `forge config`; some forge versions only print the fallback warning when they RUN. Check again.
 if grep -q "does not exist; falling back" "$OUT_DIR/05-fuzz-long.txt"; then
   echo
@@ -129,8 +128,13 @@ if [ "$rc" -eq 0 ] && [ "$smallest" -lt "$long_budget" ] && [ "${ALLOW_SMALL_BUD
   exit 2
 fi
 # the same rule as battery.sh: a campaign that SKIPPED itself (a fixture that is not there?) next to one that ran is not a pass
-skipped="$(grep -E 'Ran [0-9]+ test suites? .*: [0-9]+ tests? passed' "$OUT_DIR/05-fuzz-long.txt" | tail -1 | sed -E 's/.* ([0-9]+) skipped.*/\1/')"
-if [ "$rc" -eq 0 ] && [ "${skipped:-0}" != "0" ] && [ "${ALLOW_SKIPS:-0}" != "1" ]; then
+# "0" only from a summary that was READ: a line of another shape is refused below, never taken as no skips
+if skip_summary="$(parse_test_summary "$OUT_DIR/05-fuzz-long.txt")"; then read -r _ _ skipped _ <<< "$skip_summary"; else skipped="unreadable"; fi
+if [ "$rc" -eq 0 ] && [ "$skipped" = "unreadable" ]; then
+  echo "fuzz-long: forge's test summary is missing or of a shape this kit cannot read, so the skips are unknown. NOTHING PROVEN."
+  exit 2
+fi
+if [ "$rc" -eq 0 ] && [ "$skipped" != "0" ] && [ "${ALLOW_SKIPS:-0}" != "1" ]; then
   echo "fuzz-long: $skipped test(s) SKIPPED. A skipped campaign has tested nothing. NOTHING PROVEN for it. ALLOW_SKIPS=1 to accept."
   exit 2
 fi

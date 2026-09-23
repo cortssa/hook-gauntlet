@@ -17,6 +17,9 @@
 # Exit:    0 ok, 1 a margin is below MIN_MARGIN, 2 no sizes could be read
 
 set -uo pipefail
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "size: $HERE/lib/parse.sh is missing"; exit 2; }
 
 PROJECT="${1:-.}"
 [ "$#" -gt 0 ] && shift
@@ -44,17 +47,13 @@ forge build $FORGE_FLAGS --sizes > "$RAW" 2>&1
 rc_build=$?
 
 # forge prints a table: | Contract | Runtime Size (B) | Initcode Size (B) | Runtime Margin (B) | Initcode Margin (B) |
-# Only the first two columns are trusted; the margin is recomputed here so that it does not depend on the column order.
-awk -F'|' -v limit="$LIMIT" '
-  NF >= 4 {
-    name = $2; size = $3
-    gsub(/^[ \t]+|[ \t]+$/, "", name); gsub(/[ ,\t]/, "", size)
-    if (name == "" || name == "Contract" || size !~ /^[0-9]+$/) next
-    print name, size, limit - size
-  }' "$RAW" > "$OUT.all"
+# The runtime column is found BY ITS HEADER (scripts/lib/parse.sh, parse_sizes), never by position: a table without
+# that header, or with the column renamed, measures nothing. The margin is recomputed here from the runtime size.
+parse_sizes "$RAW" | awk -v limit="$LIMIT" '{ print $1, $2, limit - $2 }' > "$OUT.all"
 
 if [ ! -s "$OUT.all" ]; then
-  echo "size: could not read any size from forge's output (rc=$rc_build). See $RAW. NOTHING MEASURED."
+  echo "size: could not read any size from forge's output (rc=$rc_build): no table headed 'Contract | ... Runtime Size', or"
+  echo "      no row under it. See $RAW. NOTHING MEASURED."
   rm -f "$OUT.all"
   exit 2
 fi

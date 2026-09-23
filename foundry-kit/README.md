@@ -23,8 +23,22 @@ forge build
 forge test
 ```
 
-Solidity 0.8.26, `evm_version = cancun`, optimizer on at 200 runs. Tested with forge 1.8.1 and forge-std as
-vendored by that version; nothing here uses a cheatcode newer than `targetSelector`.
+Solidity 0.8.26, `evm_version = cancun`, optimizer on at 200 runs. The root kit uses no cheatcode newer than
+`targetSelector`; the v4 module's sandbox reads forge's `lastFrameGas()` record, which is where a version shows first.
+
+### Supported versions
+
+What the kit's own gates (`.github/workflows/gates.yml`) run on. Outside this table nothing is claimed.
+
+| component | version | where it is pinned | what breaks outside it |
+| --- | --- | --- | --- |
+| forge | **1.8.1** | `FOUNDRY_VERSION` in `gates.yml` (battery + selftest jobs) | flags renamed by a nightly (`doctrine/JUDGES.md` was checked flag by flag against 1.8.1); the shape of the test summary and of the `--sizes` table, which `scripts/lib/parse.sh` refuses rather than guesses; the length of the `lastFrameGas()` record (below) |
+| forge | 1.8.3 | `FOUNDRY_VERSION_2` in `gates.yml` (job `battery-forge-1-8-3`) | **not yet seen green: unsupported until that job passes.** Added 2026-09-23 without a run (only 1.8.1 is on the machine that wrote it). If it goes red, the job is removed and this row says "unsupported" |
+| forge-std | **1.16.2** (root kit) | `FORGE_STD_TAG` in `gates.yml` | its `Vm.Gas` declares six words (a trailing `gasStateUsed`) and forge 1.8.1 returns five, so code compiled against it that calls the typed `vm.lastCallGas()` fails in the decoder; `SimGasMeter` reads the raw record and accepts either length |
+| forge-std | as pinned by v4-core (v4 module) | `V4_CORE_PIN` in `scripts/install-v4.sh` (the module remaps `forge-std/` into `lib/v4-core/lib/forge-std`; 1.9.3 on the bench that wrote this table) | the v4 tests compile against v4-core's own forge-std, not the root kit's: a cheatcode newer than that copy does not exist for them |
+| solc | **0.8.26** | `solc_version` in both `foundry.toml` | the sizes (and the EIP-170 margins every hook note quotes) are for this compiler; another one changes every byte count |
+| EVM | **cancun** | `evm_version` in both `foundry.toml` | transient storage (v4-core's `unlock` uses it) needs cancun or later; gas numbers are cancun's |
+| `lastFrameGas()` record | 160 bytes (five words) or 192 bytes (six) | `SimGasMeter.decodeFrameGas` | any other length reverts `FrameGasLayoutUnknown(length)` and stops the run: a forge that changes the record is refused, never read at the wrong offsets |
 
 **Keep your own examples inside `src/` and `test/`.** The worked example is at `src/examples/ToyVault.sol`
 and `test/examples/ToyVault.invariants.t.sol`, not in an `examples/` tree of its own. `forge` compiles `src`,
@@ -298,7 +312,10 @@ against it, now at **72.97 %**.
 
 The runners live in `../scripts`. `battery.sh` is the phase gate, `fuzz-long.sh` the overnight run,
 `census.sh` the campaign's census added up over every run, `bench.sh` the per-agent copy, `release-guard.sh` and `assert-fresh-build.sh` the two publication guards, and
-`selftest.sh` proves the guards go red when they should.
+`selftest.sh` proves the guards go red when they should (every guard that can be exercised offline). The text
+they read from forge - the test summary, the invariant `(runs, calls, reverts)` line, the `--sizes` table, the
+sandbox ledger - is parsed in one place, `scripts/lib/parse.sh`, against real and near-miss samples in
+`scripts/test/fixtures/`: a shape it does not recognise is refused, never read as 0.
 
 ## Not covered yet
 
