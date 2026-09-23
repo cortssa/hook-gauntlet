@@ -92,7 +92,7 @@ test: <name>, in {{SCRATCH}}, and it PASSES
 raw: <pasted output, not summarised>
 ```
 
-Label every finding with its evidence (`doctrine/EVIDENCE.md`). A finding you could not turn into a test is labelled
+Label every finding with its evidence (`doctrine/EVIDENCE.md`). A bug you reproduced with a test that passes on the current code is TESTED (MODEL-TESTED if it runs inside a model harness), never PROVED - that word is reserved for formal proofs. A finding you could not turn into a test is labelled
 **REASONED**: give the argument in a form someone else can attack - economic and ordering attacks often cannot be
 compiled, and dropping them because they would not compile is the worst outcome of a round. A REASONED high or
 medium keeps the loop open until it is tested, answered by the owner in writing, or handed to the human audit by name.

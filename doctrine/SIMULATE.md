@@ -70,16 +70,17 @@ to fight over; say so in the dossier and move on (`AGENTS.md` 6b).
     `test/sim/RefusedAtQuote.t.sol` (`EngineRefusesAtQuote`) goes red. Measured, bound to a second system, private:
     834 of 841 refusals a population logged were orders sent into an empty book and read back as "the market
     refused."
-11. **A binding's reference price comes only from what is deliverable - and a precondition that is not met is
-    `vm.skip`, never `return`.** The price an agent acts on must be built from entries the lens marks deliverable
-    (backing above the floor), never from declared entries; a side with no deliverable entry has NO price, and a
-    binding then returns the main market's price or nothing - never the other side's best tick. Break this and the
-    binding's empty-leg and ghost-only-leg tests go red (an arbitrageur that decides against a priceless side).
-    Measured, bound to a second system, private: an empty leg was priced off the other leg, and the arbitrageur
-    bought air 834 times in three tapes. The same discipline covers the harness: a precondition the environment does
-    not meet is `vm.skip(true, why)` - a skip the battery refuses unless accepted on purpose - never a bare `return`,
-    which prints PASS with zero assertions reached (`EVIDENCE.md` §2). Measured: a fork test with a bare `return`
-    gave 4 PASS in 966 µs without `--fork-url`.
+11. **A binding's reference price comes only from what the system could actually fill - and a precondition that
+    is not met is `vm.skip`, never `return`.** Whatever the system under test calls its resting liquidity (a position,
+    an order, a promise), the price an agent acts on is built from the part of it that would deliver if hit, never
+    from a declared size the system could not honour. A side with nothing to deliver has NO price: the binding then
+    returns the main market's price, or no quote at all - never the other side's. Break this and an agent that acts on
+    the price trades into nothing; the binding's test for a side with nothing to deliver (an agent must decide zero
+    trades against it) goes red. Measured, bound to a second system, private: an empty side was priced off the other
+    side, and the arbitrageur bought air 834 times in three tapes. The same discipline covers the harness: a
+    precondition the environment does not meet is `vm.skip(true, why)` - a skip the battery refuses unless accepted on
+    purpose - never a bare `return`, which prints PASS with zero assertions reached (`EVIDENCE.md` §2). Measured: a
+    fork test with a bare `return` gave 4 PASS in 966 µs without `--fork-url`.
 
 ## 4. How this judge lies
 
@@ -109,12 +110,14 @@ to fight over; say so in the dossier and move on (`AGENTS.md` 6b).
 
 - **Recorded logs keep the logs of frames that reverted.** `vm.getRecordedLogs()` returns an event emitted inside a
   call that later reverted (forge 1.8.1, established by a three-line test, not by memory). A reading that sums a
-  venue's fill events over a tape therefore counts fills the router then undid on `minOut` - the kit measured 126
-  pulled on an allowance of 120 that way. Measure what STAYED: balances, allowances consumed, positions; use events
-  for counts and names, never for amounts.
+  system's fill events over a tape therefore counts fills that a later `minOut` check undid - the kit once read 5 %
+  more delivered than the wallet had authorised, by summing events, while balances said otherwise. Measure what
+  STAYED: balances, allowances consumed, positions; use events for counts and names, never for amounts.
 
 ## 5. What goes in the dossier
 
-Section 5, one row: the scenarios run (agents, ordering, latency, seeds, steps), the parameters that were read from
-the chain and the ones that were guessed, the ledger table over seeds, and the spec line each number was compared
-against. Section 8: the agents that were NOT written, by name, starting with the ones `HOOK-ATTACKS.md` suggests.
+Section 6 (what the judges said), the row for judge 11: the scenarios run (agents, ordering, latency, seeds, steps),
+the parameters that were read from the chain and the ones that were guessed, the ledger table over seeds, and the spec
+line each number was compared against. Section 9 (what was NOT checked): the agents that were NOT written, by name,
+starting with the ones `HOOK-ATTACKS.md` suggests. In `LOG.md`, one ROUND line of type `simulation` with its cost
+(`state/README.md`).

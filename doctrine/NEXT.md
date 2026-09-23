@@ -45,7 +45,7 @@ therefore the deployed address, but not behaviour: they count for promotion, not
 | 8 | a finding came from outside the fuzzer and has no rule for it yet | add the invariant and/or the action that would have caught it; show it fails on the old code | the growth rule |
 | 9 | there are open findings from the last round with no answer | triage each: fix at the cause / refuse in writing / accept with a number (the owner accepts). Then rows 6-8 | `TRIAGE.md` |
 | 10 | only documents, comments, scripts or tests changed since the last round, and they make claims about the code | a **verifier pass**: one agent, short brief, "falsify these sentences" | no bytecode, no adversarial round |
-| 11 | no adversarial round has ever run, the battery is green, and rows 4-7b are quiet | round 1: a DISCOVERY round, reads everything | |
+| 11 | no adversarial round has ever run, the battery is green, and rows 4-7a are quiet (7b, the real manager, may still be waiting on the owner: it is required before rows 12 and 16, not before round 1) | round 1: a DISCOVERY round, reads everything | |
 | 12 | at least one round has run, the battery is green, the spec's promises did not change in the last triage, and `blackbox` is `never_run` (not `skipped_by_owner`: that is a recorded decision, and it goes in the dossier) | the black-box round, on a source-free bench | it finds what reading cannot, and it re-aims every later round - so it goes EARLY |
 | 13 | bytecode changed since the last audit round, and the battery is green | a REGRESSION round, **aimed at the diff** and at the two or three places trusted least | |
 | 13b | `last_audit_round` closed with 0 high and 0 medium but was NOT a discovery round (or a REASONED high or medium is still open). Black-box and verifier rounds never trigger this row: they are in `last_other_round` | close what is REASONED (test it, ask the owner, or hand it to the human audit by name); then a DISCOVERY round: no earlier reports, pointed also at the "does not apply" list and the spec's assumptions | a regression round inherits the blind spots of the rounds it read; only an independent look can close the loop |
@@ -54,6 +54,7 @@ therefore the deployed address, but not behaviour: they count for promotion, not
 | 16 | the loop is over, `blackbox` is `current` or `skipped_by_owner`, and the owner wants to freeze a release candidate | promotion (phase 6): canonical copy, manifest, guard, reproducible bytecode, stale-build check | only for code that has stopped moving |
 | 17 | promoted, and a deployment runbook is part of the dossier | rehearsal (phase 7): an agent that did not write the runbook follows it literally on a fork | |
 | 18 | promoted (and rehearsed, if applicable) | the handoff dossier (phase 8). **STOP. This is the end of the route.** | the next step is human |
+| 18b | **light mode**: the loop is over (row 2's ceiling, or a CLEAN discovery round), and the owner declined promotion in writing (`COST.md`: light mode skips phase 6) | the handoff dossier (phase 8) with section 6 rows 16-17 marked "not done: light mode, owner's decision" and section 9 saying what promotion would have added. **STOP.** | the next step is human |
 
 ## The loops inside the table
 

@@ -189,7 +189,7 @@ You may replace a tool or reorder the local judges on your own. You may SKIP a s
 2. say how your substitute answers it, or why the question does not apply to THIS hook (a hook that never touches a
    token has no use for the hostile token; a hook with no loops has no unbounded-walk question);
 3. write it in `DECISIONS.md`, dated - and for a skip, with the owner's answer in their own words;
-4. carry it into the handoff dossier, under "what was not checked, or was checked differently".
+4. carry it into the handoff dossier: section 9 ("what was NOT checked") and, if you answered a question another way, section 8 ("where we diverged").
 
 A divergence that is written down is engineering. A step silently skipped is a hole with a green tick on it. And a
 substitute is not four sentences: it PRODUCES something - a test output, a tool's report, a measurement - that goes

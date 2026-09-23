@@ -37,7 +37,7 @@ ROUND r05 | phase 4 | regression | vendor-a/large | bench ~/hg-a05 | 2026-03-09.
 ```
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
-`executor`, `promotion`, `rehearsal`, `handoff`) · model, as specific as you can be · bench · dates · findings AS THE ROUND
+`executor`, `promotion`, `rehearsal`, `handoff`, `simulation`) · model, as specific as you can be · bench · dates · findings AS THE ROUND
 CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass · cost AND effort (tokens, wall-clock,
 files read, tests written; leave out what you cannot measure, never guess) · the report. The effort fields exist for one
 reason: the route ends on a discovery round that finds nothing, and a round that found nothing because it did not look

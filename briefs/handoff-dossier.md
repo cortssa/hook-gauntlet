@@ -123,10 +123,11 @@ is what tells them apart.
 | symbolic / formal | | what was proven, for which bounds - or "not done", and in full mode the owner's reason | |
 | second fuzzing engine | | or "not done" | |
 | size, gas | | sizes and margins; gas of the main paths, regenerated for this revision | |
+| 11 - simulation sandbox (`doctrine/SIMULATE.md`; optional, owner-requested) | scenario, agents, ordering model, seeds, steps; `scripts/sim-report.sh` | the ledger table over seeds and the spec line each number was compared against - SUPPORTED, never PROVED; or "not run: <owner's written reason>" | the census TSV and the report |
 
 ## 7. The adversarial history (must)
 
-The ROUND lines of `LOG.md` (`grep '^ROUND '`), one per round: id, kind (audit / black-box / verifier), model family, findings by severity, what
+The ROUND lines of `LOG.md` (`grep '^ROUND '`), one per round: id, kind (audit / black-box / verifier / simulation), model family, findings by severity, what
 changed because of it. Every report in full, in the repository. Say which model families were used; if only one, say
 that a blind spot shared by that family is invisible in everything above.
 
