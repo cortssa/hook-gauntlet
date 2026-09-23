@@ -175,12 +175,12 @@ if command -v git > /dev/null 2>&1; then
   (cd "$LS/v4-core" && git init -q && printf 'x\n' > f && git add f \
     && git -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false commit -q -m fake) > /dev/null 2>&1
   # GIT_ALLOW_PROTOCOL=file: whatever the script does, git itself refuses to reach the network from this case
-  GIT_ALLOW_PROTOCOL=file V4_LOCAL_SRC="$LS" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o114" 2>&1
+  GIT_ALLOW_PROTOCOL="file" V4_LOCAL_SRC="$LS" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o114" 2>&1
   check "offline install from a local clone at the WRONG pin is refused" 1 $?
   if grep -q "is at $(git -C "$LS/v4-core" rev-parse HEAD), the pin is" "$TMP/o114" && [ ! -e "$IV/proj/lib/v4-core" ]; then
     echo "  ok    and it names both commits, and nothing was copied into the project"; else
     echo "  FAIL  the wrong-pin clone was not refused by name, or it was copied: $(grep install-v4 "$TMP/o114" | head -2)"; fails=$((fails + 1)); fi
-  GIT_ALLOW_PROTOCOL=file V4_LOCAL_SRC="$TMP/no-such-dir" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o115" 2>&1
+  GIT_ALLOW_PROTOCOL="file" V4_LOCAL_SRC="$TMP/no-such-dir" "$IV/scripts/install-v4.sh" "$IV/proj" > "$TMP/o115" 2>&1
   check "offline install from a directory with no v4-core clone is refused" 1 $?
 
   # A GOOD local clone, made here: a fake v4-core with the two submodules (lib/forge-std, lib/solmate) as real gitlinks,
@@ -195,7 +195,7 @@ if command -v git > /dev/null 2>&1; then
   PINNED="$TMP/ivpinned"; mkdir -p "$PINNED/scripts/lib"; cp "$HERE/lib/parse.sh" "$PINNED/scripts/lib/"
   sed "s/^V4_CORE_PIN=\"[0-9a-f]*\"/V4_CORE_PIN=\"$(git -C "$GV" rev-parse HEAD)\"/" "$HERE/install-v4.sh" > "$PINNED/scripts/install-v4.sh"
   chmod +x "$PINNED/scripts/install-v4.sh"
-  inst() { GIT_ALLOW_PROTOCOL=file "$PINNED/scripts/install-v4.sh" "$@"; }
+  inst() { GIT_ALLOW_PROTOCOL="file" "$PINNED/scripts/install-v4.sh" "$@"; }   # quoted: shellcheck reads a bare file as the file command (SC2209)
   if [ "$(git -C "$GV" ls-tree HEAD lib/solmate | awk '{print $2}')" = "commit" ] && grep -q "^V4_CORE_PIN=\"$(git -C "$GV" rev-parse HEAD)\"" "$PINNED/scripts/install-v4.sh"; then
     mkdir -p "$IV/p1" "$IV/p2" "$IV/p3" "$IV/p4"
     V4_LOCAL_SRC="$G" inst "$IV/p1" > "$TMP/o120" 2>&1; check "control: offline install from a GOOD local clone" 0 $?
