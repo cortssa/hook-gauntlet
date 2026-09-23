@@ -1,6 +1,7 @@
 # Simulation: the judge that measures instead of searching
 
-`JUDGES.md` lists ten judges and ends with what none of them can see. This page is about one of those things -
+`JUDGES.md` lists ten deterministic judges and ends with what none of them can see. This page is the eleventh judge,
+about one of those things -
 economic attacks that break no rule - and the sandbox in `foundry-kit/v4/src/sim/` that measures them. Read the
 module's README for the pieces; read this for when to run it, what its numbers mean, and how it lies.
 
@@ -48,6 +49,37 @@ to fight over; say so in the dossier and move on (`AGENTS.md` 6b).
    both currencies move against the world, that lies a little; say which numeraire was used.
 7. **A profit is not a finding by itself.** It becomes one when it exceeds what the spec accepted - which is why the
    spec needs the number first.
+8. **The unit of a size belongs to the Intent, never to the binding's guess.** `Intent.amountInQuote` says whether
+   `amountIn` is sized in the input currency or in the quote currency; a binding that infers the unit from context
+   instead of reading the flag re-converts a size that was already right. Break this and
+   `test_the_closing_leg_never_says_it_is_quote_sized` (`test/sim/IntentUnit.t.sol`) goes red. Measured, bound to a
+   second system, private: an arbitrageur's closing leg was re-converted, and 40 sells of size 1e35 were refused
+   where the real size should have gone through. Support the flag or refuse `QuoteSizedIntentUnsupported` - never
+   guess.
+9. **Gas is metered as the action's own transaction, never as a `gasleft()` window inside the test.**
+   `SimGasMeter.total` is intrinsic cost (21 000) + calldata + the callee's own frame, minus a capped refund - a
+   lower bound, no cold-slot cost, no L1 fee. A `gasleft()` window taken around the call, in the test's own frame,
+   instead counts the TEST's memory growth, not the action's cost. Break this and `test/sim/GasMeter.t.sol`'s swap
+   and liquidity cases go red once the test frame is grown by 4 MB between runs. Measured, bound to a second system,
+   private: gas moved 11-18% between two runs with identical decisions and identical execution, and a product
+   conclusion was drawn from the difference.
+10. **A swap quoted zero is refused at decision, and never sent.** `SimEngine` marks a `KIND_SWAP` whose decision-time
+    quote is 0 as `REFUSED_AT_QUOTE` before it is submitted - at zero gas, no execution order, no searcher ever
+    shown the leg; the ledger's `atQuote` column counts it, and `refused` no longer does. An engine that sends it
+    anyway is not measuring the hook, it is measuring the agent's own naivety. Break this and
+    `test/sim/RefusedAtQuote.t.sol` (`EngineRefusesAtQuote`) goes red. Measured, bound to a second system, private:
+    834 of 841 refusals a population logged were orders sent into an empty book and read back as "the market
+    refused."
+11. **A binding's reference price comes only from what is deliverable - and a precondition that is not met is
+    `vm.skip`, never `return`.** The price an agent acts on must be built from entries the lens marks deliverable
+    (backing above the floor), never from declared entries; a side with no deliverable entry has NO price, and a
+    binding then returns the main market's price or nothing - never the other side's best tick. Break this and the
+    binding's empty-leg and ghost-only-leg tests go red (an arbitrageur that decides against a priceless side).
+    Measured, bound to a second system, private: an empty leg was priced off the other leg, and the arbitrageur
+    bought air 834 times in three tapes. The same discipline covers the harness: a precondition the environment does
+    not meet is `vm.skip(true, why)` - a skip the battery refuses unless accepted on purpose - never a bare `return`,
+    which prints PASS with zero assertions reached (`EVIDENCE.md` §2). Measured: a fork test with a bare `return`
+    gave 4 PASS in 966 µs without `--fork-url`.
 
 ## 4. How this judge lies
 
@@ -60,6 +92,18 @@ to fight over; say so in the dossier and move on (`AGENTS.md` 6b).
   earlier gets the block's opening quote and the other agent's execution. The kit measured this by accident on its
   first run.
 - **A deterministic population agrees with itself.** Three identical runs are one run. Vary the seed.
+- **A number that moves when only the instrumentation moved is a defect of the meter until proven otherwise.** Four
+  lies the instrument told in one week, bound to a second system (private), each now a rule above and a test:
+  - **the unit lie** - a binding re-converted a size that was already in the right currency (rule 8): the
+    arbitrageur's closes failed and its P&L read as a loss of the maker's making;
+  - **the gas lie** - a `gasleft()` window counted the test's own memory growth as the agent's cost (rule 9): +11-18 %
+    with identical decisions, and a product conclusion drawn from it before the artifact was found;
+  - **the naivety lie** - agents sent swaps quoted zero and the refusals read as "the market refused" (rule 10): 834 of
+    841 refusals were orders into an empty book;
+  - **the declared-price lie** - an empty side priced off the other side's declared entries (rule 11): the arbitrageur
+    bought air, and latency could not be read from that world.
+  The symptom was the same each time: a column that changed when nothing about the hook or the population had. Treat
+  that symptom as a bug in the sandbox first, and only then as a fact about the hook.
 - **The sandbox's own code lies like any other.** Its quote must be the same code path as its execution; its bundle
   order must be asserted from its own execution record, not from counts. The kit's sandbox has mutants for both.
 

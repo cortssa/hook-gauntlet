@@ -31,6 +31,7 @@ question, not the presence of the script.
 | 8b | Would an independently written model agree? | a deliberately dumb reference model, written from the SPEC, fuzzed side by side with the contract (`EVIDENCE.md` section 5) | yes, for a hook with its own arithmetic or accounting |
 | 9 | Would a different engine reach what mine does not? | Medusa, Echidna, on the same properties (Chimera layout) | optional to run; in full mode "not done" needs the owner's written reason |
 | 10 | Does it fit, and what does it cost? | `scripts/size.sh`, `forge snapshot` regenerated at promotion | yes - size and margin |
+| 11 | What would a named population of makers and takers do against this hook, and what does it cost them? | the simulation sandbox (`foundry-kit/v4/src/sim/`, `SIMULATE.md`): agents, a clock at the chain's cadence, an ordering model, a ledger that charges gas | no - a judge the owner asks for in writing; its numbers are SUPPORTED, never a gate, and it cannot see the agent nobody wrote |
 
 **Row 7, extended - vendored dependency provenance.** The question in row 7 is not only about the pool manager's
 bytecode: it applies to every dependency vendored as source instead of installed as a package - a library copied in,

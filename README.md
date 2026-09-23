@@ -55,6 +55,9 @@ flowchart TD
         J1["build, lints,<br/>static analysis<br/>with a written triage"] --> J2["tests +<br/>long fuzz,<br/>corpus on"] --> J3["coverage<br/>by branch +<br/>campaign census"] --> J4["mutation:<br/>do the tests bite?<br/>read the survivors"] --> J5["the REAL pool<br/>manager of<br/>your chain"]
     end
 
+    P1 -. "an economic promise<br/>needs a NUMBER first" .-> SIM["SIMULATION SANDBOX - judge 11, optional<br/>a named population, a stated ordering model,<br/>numbers that are SUPPORTED, never a gate"]
+    P6 -. "before promotion,<br/>parameters sealed" .-> SIM
+    SIM -.-> P1
     LOCAL -. "tool does not fit this hook?" .-> DIV["Answer the QUESTION another way<br/>and write it down.<br/>Questions are fixed, tools are not"]
     DIV -.-> LOCAL
 
@@ -82,7 +85,7 @@ flowchart TD
     classDef owner fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
     classDef stop fill:#fce4ec,stroke:#ad1457,color:#880e4f
     classDef note fill:#f5f5f5,stroke:#9e9e9e,color:#424242,stroke-dasharray: 4 3
-    class SKETCH,J1,J2,J3,J4,J5 local
+    class SKETCH,J1,J2,J3,J4,J5,SIM local
     class ROUND,BB,VER model
     class P0,TRIAGE owner
     class HUMAN stop
@@ -117,7 +120,7 @@ produced. Its sections, because they say more about this kit than any descriptio
 ```
 AGENTS.md        the agent's entry point: the rules, the phases and their gates, when it may diverge
 doctrine/        UPSTREAM (Uniswap's own docs and security framework come first) - NEXT (what do I do now?) -
-                 JUDGES (ten tools, the question each answers, how each one lies) - EVIDENCE - VERIFY - LOOP -
+                 JUDGES (eleven judges: ten deterministic tools and the simulation sandbox, the question each answers, how each one lies) - EVIDENCE - VERIFY - LOOP -
                  TRIAGE - SEVERITY - HOOK-ATTACKS - V4-ACCOUNTING -
                  INVARIANTS - FUZZ-ACTIONS - CHANGES - COST - RETROFIT - LESSONS - SIMULATE
 briefs/          one template per role: owner interview, spec, audit round, black-box, verifier, executor with
@@ -135,8 +138,8 @@ adapters/        claude-code (the path this was run on), codex (untested)
 
 - **Doctrine** - the adversarial loop that makes successive audits converge instead of circling: one round at a
   time, read the whole report, fix the cause, write down the refusals, regression-test everything, re-measure.
-  Plus: a decision table for "what do I do next", the ten judges with the question each one answers and how each one
-  lies, what counts as evidence and how an agent fools itself, baseline prompts for things that go wrong in v4 hooks, how to derive your own invariants and fuzz actions, and when
+  Plus: a decision table for "what do I do next", the eleven judges (ten deterministic tools and the simulation sandbox)
+  with the question each one answers and how each one lies, what counts as evidence and how an agent fools itself, baseline prompts for things that go wrong in v4 hooks, how to derive your own invariants and fuzz actions, and when
   the agent may diverge from all of it.
 - **Briefs** - parameterised templates for each role: audit round, verifier, black-box attacker, executor with
   gates, promotion, owner interview, spec, and the handoff dossier a human auditor reads.
