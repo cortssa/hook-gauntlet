@@ -35,6 +35,20 @@ scripts/selftest.sh              # every guard in scripts/ is made to go RED on 
 scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on the worked example: one exit code
 ```
 
+Done looks like this, on forge 1.8.1 (CI also runs 1.8.3):
+
+```
+SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 376 cases, about 90 s
+test      rc=0   (passed 107, failed 0, skipped 0)  ...  BATTERY PASSED           # the root kit
+test      rc=0   (passed 228, failed 0, skipped 0)  suites test=10 test/examples=11 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
+```
+
+What the v4 module covers with a worked example, and what your project must add:
+
+| covered by an example here | project-specific, yours to add |
+|---|---|
+| hooks with no delta; hooks that return deltas; native ETH pools; ERC-6909 claims; a second pool sharing a currency; settlement re-entrancy through a token; dynamic fees; per-pool reserves; price and tick edges; hostile tokens and hostile native counterparties | fork tests on the target chain; the real manager's bytecode for that chain; unusual periphery; rebasing tokens and the other token behaviours `foundry-kit/README.md` lists as not covered; who receives a payout (a JIT-recipient actor); your hook's own threat model, actions and invariants |
+
 The ten-step version, with every command and what "done" looks like at each step, is [`QUICKSTART.md`](QUICKSTART.md).
 
 Then, in your own project, to your agent: *"Read `AGENTS.md` in hook-gauntlet, all of it. My idea is: ... Start at
@@ -410,8 +424,10 @@ files. Until that run exists, the route is measured on one family and one harnes
 Until there is a run on another vendor's model and another harness, treat the claims in this repository as a
 description of a method measured on one family, with the numbers above.
 
-Issues and confirmations are useful. Results from the benchmark, if you run your own version of it, are the most
-useful thing you can send.
+Issues and confirmations are useful. The most useful thing you can send is a run of the route on a hook we did not
+write: the step where you stalled or guessed, the attack that was missing, the test that turned out vacuous, the mutant
+that survived, and what the human auditor found afterwards. `CONTRIBUTING.md` says how; `SECURITY.md` is for a flaw in
+the kit itself.
 
 ## Origin
 
