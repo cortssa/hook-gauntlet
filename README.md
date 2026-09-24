@@ -19,8 +19,10 @@ It never deploys anything, never touches a key, and never calls a hook "safe".
 > were tested exclude the attack. The dossier it produces exists to show a human auditor exactly where the tested
 > surface stops.
 >
-> **Validation status: an unvalidated process.** One small blind benchmark (n = 1, one round, one model family) and
-> one pass over a real hook. Details and limits under *Status*.
+> **Validation status: measured, not validated.** Two blind runs on one small target, twelve walks of the route by
+> agents that had never seen it (each on a hook nobody had seen), and a v4 module closed one area at a time with a
+> second agent verifying each. All of it with one vendor's models inside one agent harness (Claude Code). Details,
+> numbers and limits under *Status*.
 
 Start at [`AGENTS.md`](AGENTS.md). Humans can keep reading here.
 
@@ -264,17 +266,18 @@ from all of these:
 
 ## Status
 
-**v0. Two blind runs on one small target - the second walked the full light route; n = 1 each, one model family.**
+**v0, 2026-09-24. Two blind runs on one small target; twelve fresh-reader walks of the route, the last seven with a
+real discovery round each; the v4 module's gap list closed except fork tests. One model family, one agent harness.**
 
 | part | state |
 |---|---|
-| doctrine, briefs, state convention | written, distilled from a real project, **not yet run on a second project** |
+| doctrine, briefs, state convention | distilled from a real project, then walked twelve times by strangers on twelve new hooks (below); every stall they hit is fixed, and each fix was re-walked |
 | Foundry kit and scripts | written with their own tests (hostile token: one test per switch; guards: a self-test that makes each one go red on purpose). Scripts exercised on bash 5 / Linux only |
-| v4 module | harness with both managers, address mining, one worked hook with unit tests and an invariant suite; proven once against the Ethereum mainnet manager's bytecode. **Covered since 2026-09-24:** delta-returning hooks (`DeltaFeeHook`), native currency in the router and helper with a hostile native counterparty, ERC-6909 claims (`ClaimsFeeHook`, conservation per party). **Not covered:** sync hijack and re-entrancy through a token's transfer hook mid-settlement, a second pool sharing a currency, tick/price/fee edges, fork tests, a block-pinned fixture, v4-periphery (its README, "What this module still does not do") |
+| v4 module | harness with both managers, address mining, three worked hooks with unit, invariant, mutant and edge tests; proven once against the Ethereum mainnet manager's bytecode. **Covered:** delta-returning hooks, native currency with a hostile native counterparty, ERC-6909 claims with conservation per party, settlement re-entrancy through a token's transfer hook, a second pool sharing a currency, tick/price/fee edges (all 2026-09-24, each area verified by a second agent - below). **Not covered:** fork tests and a block-pinned fixture; a JIT-recipient actor for hooks that pay "whoever is in range"; v4-periphery (its README, "What this module still does not do") |
 | `adapters/claude-code/` | the path the method was actually run on |
 | `adapters/codex/` | **UNTESTED** - written from the documented convention, confirmations welcome |
 | blind benchmark (planted bugs, sealed answer key, measured recall) | **run twice on the same target**: one round, then the full light route - see below |
-| review of the kit itself | three passes by fresh model instances - see below. **Same model family as the authors; no human has reviewed this kit** |
+| review of the kit itself | three audit passes, twelve fresh-reader walks, five verifier passes over the v4 series - see below. **Same model family as the authors, one agent harness; no human has reviewed this kit** |
 
 ### The kit, put through its own loop
 
@@ -349,7 +352,63 @@ Read this for what it is:
 - Both arms left a list of places where the kit was wrong or silent. The fixes are in the commits after this run;
   whether a fresh reader still stalls at those steps is the next measurement, not a claim made here.
 
-Until there are more runs, treat the claims in this repository as a description of a method with two data points.
+### Twelve walks by strangers
+
+After run 2, the question changed from "does an auditor find the bugs" to "does a stranger get through the route
+without guessing". Each walk was a fresh agent given `QUICKSTART.md` and nothing else, on a hook it wrote for the
+purpose (a capped desk, a surge-fee pool, a budget gate, an impact guard, a cooldown gate, a tip jar, a swap-reward pot,
+a claims escrow, a bonded-swap gate, a milestone escrow, a referral skim, a donate-back hook - the last four real v4
+hooks, the last with a delta and ERC-6909 claims on native pools), owner played from the project's files, token
+behaviours left undecided on purpose. Each recorded every step as clean, guessed or stalled; the orchestrator fixed
+what it named and the next walk re-walked it.
+
+| walks | what they stalled on, in order | state after the fix |
+|---|---|---|
+| 2-3 | the sandbox did not compile on forge's defaults; a freshness guard red once in ten for no reason; holes in the decision table | the guard asks forge itself; the table has a row for phase 3 and for an absent owner |
+| 4-5 | binding the sandbox changed the audited bytecode (1374 -> 727 B) with no flag moving | the sandbox lives in its own forge profile; measured byte-identical before and after |
+| 6-9 | where the auditor's tests compile, which campaign the census gate judges, the long-fuzz budget on forge's defaults, a whole missing step (building the harness) | step 7b exists; the gate judges the long campaign and leaves a record |
+| 10 | "nothing false in the tools" - three doctrine guesses | fixed |
+| 11-13 | a real v4 hook has no project recipe; coverage under the manager's IR restriction measured the wrong build; a hook that pays "whoever is in range" has no recipient check | recipe in 7b; `--ir-minimum` mandatory there; class 20 names the JIT recipient - the actor is the module's next gap |
+
+Every walk ended with "no": a stranger still had to guess somewhere. What shrank is what they guessed at - from a
+sandbox that would not compile to a sentence about who counts a pending row. The last four walks reported every
+script doing what its document said. No walk was on a hook anyone had seen before; no walk was on a hook that exists
+in production.
+
+### The v4 module, closed one area at a time
+
+The module's own list of what it did not do was closed in four agent passes (deltas; native currency and claims;
+settlement re-entrancy, a second pool, the edges; and the fold-ins), each followed by a verifier agent with fresh
+context and its own tests, told to falsify. What the verifiers did:
+
+- confirmed the four-orientation accounting at the wei from raw balances, the re-entry tables, the mutant tables;
+- **broke one claim**: "a position of an LP that refuses ETH is stuck, not lost" - a stranger could remove it and keep
+  the money, because the fixture's liquidity helper owned every position; fixed (positions per caller);
+- **found what the authors had not**: forge clears transient storage between top-level calls, so a unit suite never
+  sees two swaps in one transaction (a mutant survived on that alone); a token callback paying with its own claims
+  bypassed a check and left a rebate as nobody's; a hook's `settle` mid-payment against a router that pays what it
+  still owes is theft, visible only to books kept per party; state kept per currency let a stranger's pool drain
+  another pool's rebates while conservation per currency stayed green.
+
+The v4 battery went from 108 to 228 tests. `doctrine/V4-ACCOUNTING.md` carries the measured items (13-24) and four
+rules; `doctrine/HOOK-ATTACKS.md` names the test file for every class the module exercises.
+
+### How all of this was run, and what is next
+
+Every agent above ran inside **one harness, Claude Code, on one vendor's models**: Opus 5.5 as the workers, verifiers
+and strangers; Sonnet as the cheaper arm of run 2; Fable 5.1 deciding doctrine, reading reports, and never certifying
+its own work (`doctrine/ORCHESTRATION.md`). That is the single largest limit of every number on this page: a blind spot
+shared by that family and that harness is invisible here.
+
+The next measurement is therefore **another vendor and another harness**: an open-weights model run locally inside an
+agent harness of a different lineage, given this repository and a hook, with the orchestrator asking it to walk the
+gauntlet as the owner would - the same score sheet as the walks above (steps clean / guessed / stalled, findings against
+a sealed key). It also removes two things that shaped the runs here: a provider-side safety classifier that stopped
+agents asked to author planted defects (and once a plain discovery round), and a harness that refuses report-named
+files. Until that run exists, the route is measured on one family and one harness.
+
+Until there is a run on another vendor's model and another harness, treat the claims in this repository as a
+description of a method measured on one family, with the numbers above.
 
 Issues and confirmations are useful. Results from the benchmark, if you run your own version of it, are the most
 useful thing you can send.
