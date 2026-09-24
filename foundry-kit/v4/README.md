@@ -1,8 +1,10 @@
 # v4 module
 
 The Uniswap v4 half of the foundry kit: a harness that gives a hook a PoolManager to be tested against, a
-salt miner for the flag bits, two deliberately stupid fixtures to trade through, a hostile hook, and one
-worked example with its unit tests and its invariant suite.
+salt miner for the flag bits, two deliberately stupid fixtures to trade through (ETH on either side too), a hostile
+hook, a hostile native counterparty, the other end of a token's transfer callback pointed at the manager, and three
+worked examples with their unit tests and invariant suites: a hook that
+returns no delta, one that does, and one that keeps what it takes as ERC-6909 claims.
 
 It is a **separate Foundry project** from the kit's root, at `foundry-kit/v4`. The root kit's only dependency
 is `forge-std`, and nobody who is not writing a v4 hook should have to compile a PoolManager to run it.
@@ -123,16 +125,33 @@ behaviour, the upstream one is right.
 | --- | --- |
 | `src/V4Harness.sol` | the base your tests inherit: **both** managers, currencies, routers, pool helpers (overlaps `v4-core/test/utils/Deployers.sol`) |
 | `src/HookMiner.sol` | CREATE2 salt search for an address carrying **exactly** the declared flags (overlaps `v4-periphery/src/utils/HookMiner.sol`) |
-| `src/MinimalRouter.sol` | the dumbest swap router that can settle its own deltas (overlaps `v4-core/src/test/PoolSwapTest.sol`) |
-| `src/LiquidityHelper.sol` | adds and removes liquidity inside its own unlock callback (overlaps `PoolModifyLiquidityTest.sol`) |
-| `src/HostileHook.sol` | a hook that lies on demand, and declares nothing, so it can be mined to a WRONG address |
-| `src/SwapEventReader.sol` | reads the fee the manager's own `Swap` event reports |
+| `src/MinimalRouter.sol` | the dumbest swap router that can settle its own deltas, ETH included: `msg.value` in, the rest refunded after the unlock (overlaps `v4-core/src/test/PoolSwapTest.sol`) |
+| `src/LiquidityHelper.sol` | adds and removes liquidity inside its own unlock callback, ETH included (overlaps `PoolModifyLiquidityTest.sol`). Positions are PER CALLER: the manager is given the salt `positionSalt(msg.sender, salt)`, so a hook that reads `params.salt` in a liquidity callback sees that derived salt, never the caller's |
+| `src/HostileHook.sol` | a hook that lies on demand, and declares nothing, so it can be mined to a WRONG address; since K13 it also returns deltas on demand, settles them or not (in ETH too), and re-enters while holding one; it records the last swap's `sender` |
+| `src/HostileNativeActor.sol` | a swapper or provider that is a contract, whose `receive()` accepts, reverts, re-enters or burns all its gas: the counterparty on every ETH payment |
+| `src/TokenCallbackActor.sol` | the target of a `HostileERC20` transfer callback, pointed at the MANAGER: from inside a payment's transfer (between the payer's `sync` and its `settle`) it syncs, settles, settles and takes, settles and mints, takes, mints, swaps or unlocks, in its own name, and records what it saw |
+| `src/SwapEventReader.sol` | reads the fee, and the POOL's delta, off the manager's own `Swap` event |
 | `src/examples/CappedDynamicFeeHook.sol` | the worked toy: a congestion fee with a hard cap |
 | `src/examples/SPEC.md` | its spec: the rule, the hostile-actor table, and what a discovery round found on it (F1, fixed at the cause; F2, decided) |
 | `src/examples/MUTANTS.md` | its mutation survivors: four real gaps, six equivalents argued one by one |
 | `test/examples/CappedDynamicFeeHook.t.sol` | its unit tests, one per line of its threat model |
 | `test/examples/CappedDynamicFeeHook.invariants.t.sol` | its handler, its invariants, its non-vacuity smoke test |
 | `test/examples/CappedDynamicFeeHook.r01.t.sol` | what round r01 found, kept as tests: F1 (seen red on the old rule), its residual, F2 on a real native pool |
+| `src/examples/DeltaFeeHook.sol` | the worked DELTA toy: a fee on the unspecified side, a rebate on the specified side, a per-block cap, all kept per pool; its promises P1-P13 and one measured limit in the file header |
+| `test/examples/DeltaFeeHook.t.sol` | its unit tests: all four orientations, a price far from 1, the cap, no free rebate, the partial fill (P9, P11), the payment in flight (P7), a currency that re-syncs mid-rebate (P12), and `TwoSwaps` - a helper that makes two swaps in ONE transaction |
+| `test/examples/DeltaFeeHook.multipool.t.sol` | two pools on the delta toy sharing a currency: a pool nobody approved draining another's rebates, the cap per pool, and a two-pool campaign with invariants per pool AND per currency |
+| `test/examples/DeltaFeeHook.invariants.t.sol` | its handler (per-swap books from three sources), its invariants, its smoke test |
+| `test/examples/PrepayRouter.sol` | a router that pays FIRST (sync, transfer, swap, settle): the payment in flight a delta hook must not clobber |
+| `test/examples/DeltaFeeHook.native.t.sol` | the delta example on an ETH / 6-decimal-token pool at 3 000 per ETH: the four orientations with ETH specified and unspecified, the rebate paid in ETH, the cap in ETH, a payment in flight in the fee currency, a second pool sharing ETH |
+| `test/examples/Edges.t.sol` | the three examples and the harness at the edges: tick spacing 1 and 32 767, prices near and at the ends of the range, an LP fee of 0 and of 100 %, a dynamic fee at the cap, a cap above 2^96, a fee the manager does not hold yet |
+| `src/examples/ClaimsFeeHook.sol` | the worked CLAIMS toy: a fee kept as an ERC-6909 claim (`mint`), withdrawn by a treasury (`burn` + `take`); its promises C1-C5 in the file header |
+| `test/examples/ClaimsFeeHook.t.sol` | its unit tests: the four orientations counted by balance and by party, the withdrawal in both currencies, a treasury that refuses ETH |
+| `test/examples/ClaimsFeeHook.invariants.t.sol` | its campaign on an ETH / token pool: every party's ETH, token and claims per swap, three naive invariants kept next to the per-party ones |
+| `test/NativeHarness.t.sol` | the harness on a native pool: four orientations hookless and with a delta hook settling in ETH, refunds, too little ETH, liquidity |
+| `test/NativeCounterparty.t.sol` | `HostileNativeActor` in every mode, as swapper and provider, at both receipts (inside the unlock, after it) |
+| `test/DeltaAccounting.t.sol` | the harness against a hook that returns deltas: every party's books in the four orientations, and a router that pays the pool's delta, refused |
+| `test/HostileDeltaHook.t.sol` | `HostileHook` re-entering `unlock`, `take`, `swap` and `settle` while HOLDING a delta; `TopUpPrepayRouter` - a router that pays first and then pays whatever its books still show owing |
+| `test/TokenReentry.t.sol` | a currency's own transfer hook re-entering the manager DURING SETTLEMENT (`TokenCallbackActor`): every door before and after the balances move, a topping-up payer, a hook paying its own delta, a stale synced slot |
 | `test/ManagerSelection.t.sol` | tests of the harness's own decision about which manager |
 | `test/HookFlags.t.sol` | the mining, and the two different refusals of a wrong address |
 | `test/HostileHook.t.sol` | one test per switch on the hostile hook, plus all ten entry points driven once |
@@ -196,6 +215,16 @@ test runs whole, and see that every line of it has the same count. A line at 0 i
 mapping error, not a gap. This module itself needs `--ir-minimum` anyway: plain `forge coverage`, even with
 `--match-path test/HostileHook.t.sol`, compiles the whole module and stops at "Stack too deep" (measured the same day;
 with `--ir-minimum`, `src/HostileHook.sol` 86.67 % of lines, 5/5 branches, from that one test file).
+
+Re-measured after the file grew (deltas, ETH settlement, the swap's `sender`; forge 1.8.1, 2026-09-24): the command
+above on the WHOLE module, `src/HostileHook.sol` **90.76 % of lines (108/119), 12/13 branches, 32/32 functions**; from
+`test/HostileHook.t.sol` alone 63.87 % (76/119), 4/13. The sanity check does not pass on this file, and says why: every
+one of the 11 lines at 0 in the whole-module run is a call to a private function (`_enter();` in ten entry points,
+`_reenter();` once) inside a function that ran - `_enter`'s own body has 34 hits in the single-file run - so by
+execution every line ran, and the 90.76 % is the mapping's number, not a gap. And the command is itself a gate on the
+test code: with `--ir-minimum` the optimizer is minimal, and a test helper with too many locals stops the WHOLE build
+at "stack too deep" (a K14 test did, until its locals became a struct; the module before it compiled). Run it once
+after adding a test file.
 
 ---
 
@@ -374,7 +403,586 @@ that makes it move before you build an invariant on it.
 
 ---
 
+## Hooks that return deltas
+
+Until 2026-09-24 this module's example declared no delta permission and the harness had never met a hook that moves
+value through the manager's books. Now it has: `HostileHook` returns any `BeforeSwapDelta` and after-swap delta a test
+sets (`setDeltas(specified, unspecified, afterUnspecified)`), settles it or not (`setSquareOwnDelta`), and
+`test/DeltaAccounting.t.sol` reads every party's books around one swap, each from its own source
+(`V4Harness._swapWithBooks`): the delta the manager returned to the router, the POOL's delta off the `Swap` event
+(`SwapEventReader.lastSwapDelta`), and the true balances of swapper, hook and manager.
+
+**Which router, and why no new one.** `MinimalRouter` needed no change for delta hooks (it was changed later, for ETH
+and for `msg.value` counted - "Native currency" below) and settles them correctly in all four orientations, because it
+settles the delta the manager RETURNS, and the manager has already moved that by the hook's delta. The hook's own delta is the hook's to settle, inside its own callback: nobody else can clear a positive hook
+delta (`take`, `mint` and `clear` all act on `msg.sender`), so "the router settles the hook's delta" is not something a
+router can do, and a harness that tried would be hiding the hook's bug. What the kit needed was the measurement, not a
+router. (The sandbox also meters `MinimalRouter`, through `ExampleScenario`; a router with more work in it would have
+moved every gas figure in the sandbox section.)
+
+Measured (forge 1.8.1, source manager, 2026-09-24): full range, 100e18 of liquidity at 1:1, LP fee 0.30 %, a swap of
+1e18, and a hook that PAYS 2e14 on the specified side before the swap and TAKES 1e14 + 3e14 on the unspecified side
+(signed from each party's side; negative = paid):
+
+| orientation | swapper c0 / c1 | pool delta (event) c0 / c1 | hook c0 / c1 | manager c0 / c1 |
+| --- | --- | --- | --- | --- |
+| exact-in, zeroForOne | -1e18 / +986 953 516 656 027 196 | -1.0002e18 / +987 353 516 656 027 196 | -2e14 / +4e14 | +1.0002e18 / -987 353 516 656 027 196 |
+| exact-in, oneForZero | +986 953 516 656 027 196 / -1e18 | +987 353 516 656 027 196 / -1.0002e18 | +4e14 / -2e14 | -987 353 516 656 027 196 / +1.0002e18 |
+| exact-out, zeroForOne | -1 013 335 756 974 054 076 / +1e18 | -1 012 935 756 974 054 076 / +0.9998e18 | +4e14 / -2e14 | +1 012 935 756 974 054 076 / -0.9998e18 |
+| exact-out, oneForZero | +1e18 / -1 013 335 756 974 054 076 | +0.9998e18 / -1 012 935 756 974 054 076 | -2e14 / +4e14 | -0.9998e18 / +1 012 935 756 974 054 076 |
+
+Read it as the manager's rule, `caller = pool - hook` per currency, and as conservation, `swapper + hook + manager = 0`
+per currency: both asserted to the wei in every row. The specified half of the hook's delta moved the POOL (it swapped
+1.0002e18 in, or delivered 0.9998e18 out) and never the swapper (exactly `amountSpecified` on its specified side); the
+unspecified half is the sum of what `beforeSwap` and `afterSwap` returned, in the other currency. The `Swap` event is
+the pool's delta, emitted before `afterSwap`: for a delta hook it is NOT what the swapper paid.
+
+**Red first.** A router that pays the pool's delta instead - the amounts a hookless quote, or a simulation of "the
+pool", gives (`PoolQuoteRouter`, in the test file) - is refused in all four orientations; the same router with the
+hook's deltas at zero passes. With the expectation of the refusal removed, the four tests read:
+
+```
+[FAIL: CurrencyNotSettled()] test_red_a_router_that_pays_the_pools_delta_is_refused_exact_in_one_for_zero() (gas: 732890)
+[FAIL: CurrencyNotSettled()] test_red_a_router_that_pays_the_pools_delta_is_refused_exact_in_zero_for_one() (gas: 744177)
+[FAIL: CurrencyNotSettled()] test_red_a_router_that_pays_the_pools_delta_is_refused_exact_out_one_for_zero() (gas: 827093)
+[FAIL: CurrencyNotSettled()] test_red_a_router_that_pays_the_pools_delta_is_refused_exact_out_zero_for_one() (gas: 833940)
+```
+
+Two more facts the tests pin: a hook that returns a delta and does not settle it kills the swap at the outer
+`unlock` (`CurrencyNotSettled`) whatever the router pays; and a delta returned by a hook whose ADDRESS lacks the
+`*_RETURNS_DELTA` flag is discarded, so a hook that took its fee as if it had the flag is left owing it and the swap
+dies (`test_deltas_without_the_return_delta_flags_are_discarded_and_a_squaring_hook_is_left_owing`).
+
+**What the harness of a delta hook needs** (the layout of QUICKSTART step 7b, and this module's):
+
+1. **Mine for the returns-delta flags as well as the action flags**, and check them in the constructor: without the
+   flag a returned delta vanishes silently (`doctrine/V4-ACCOUNTING.md` item 5).
+2. **Settle inside the hook; test the swapper through the unchanged router.** `MinimalRouter` is correct; a test
+   router that pays a quote is the counter-example, not the harness.
+3. **Read the books from three sources on every swap** - the returned delta, the `Swap` event, true balances - and
+   DERIVE the hook's delta as `pool - caller`. Never ask the hook what it took.
+4. **Put the hook in the conservation holder list.** A delta hook holds value; an invariant over the actors and the
+   manager only reports the hook's whole balance as tokens destroyed.
+5. **All four orientations, a price far from 1, and a FUNDED hook** before any test that expects a payment from the
+   hook: a fresh hook holds nothing, and a sign bug in a payment it never makes never runs.
+6. **A price limit, and a router that pays first**, as actions: the partial fill and the payment in flight are where a
+   delta hook's arithmetic meets the manager's (`V4-ACCOUNTING.md` items 13 and 14).
+7. **Classify the hook's own guards in the handler.** A guard can hide a bug: with the example's partial-fill refusal
+   filed as "expected", a sign-flipped rebate tripped it on every swap and the whole campaign stayed green (below).
+8. **Two swaps in ONE transaction, if the hook keeps anything in transient storage.** forge clears transient storage
+   between the top-level calls of a test, so a unit test whose swaps are separate calls never sees what one swap leaves
+   for the next; a helper contract that swaps twice in one call does (`TwoSwaps` in `test/examples/DeltaFeeHook.t.sol`,
+   below). A handler that makes several swaps in one call - the example's smoke test - sees it too, by chance.
+9. **A second pool on the same hook, sharing a currency - and one created by a stranger.** A hook serves every pool
+   that names it; nobody asks it first. Give the harness two pools with one currency in common (ERC-20, and ETH if the
+   hook takes ETH) and a third made by an attacker with a token of its own, and book every swap to (pool, currency) from
+   the manager's side. Then hold the hook's state to invariants PER POOL as well as per currency: a conservation per
+   currency passed while one pool paid out of another's fees ("Two pools, one currency", below).
+10. **A currency with transfer hooks, pointed at the manager.** If the hook pays the manager (sync + transfer + settle),
+   point `TokenCallbackActor` at that transfer: the hook must refuse, or at least not lose, when the checkpoint moves
+   under it ("Re-entrancy through a currency's transfer hook", below).
+11. **The edges, once per example:** spacing 1 and the maximum, a price near each end, fees of 0 and 100 %, and amounts
+   of 1 wei and the largest the pool holds - and the hook's own narrow casts at a reserve above 2^96 ("At the edges").
+
+## Re-entrancy through a hook that HOLDS A DELTA
+
+`HostileHook` re-enters from inside `afterSwap` AFTER it has taken its fee (`setReenterWhileHolding`), so at the moment
+it calls out the manager's books show it owing that fee back (`heldAtReentry1 == -1e15`, read through `exttload`), and
+before it returns the delta that cancels it. `test/HostileDeltaHook.t.sol`, source manager:
+
+| the door, while holding | what the manager does | `reentriesSucceeded` after the transaction |
+| --- | --- | --- |
+| `unlock` | **refused**, `AlreadyUnlocked`; the swap stands and the hook keeps exactly its fee | 0 |
+| `take` 1e16 of currency0 | **allowed**: a flash loan out of the manager's reserves, mid-swap. It stands only if the hook reads its own open delta afterwards and repays (`setCheckOwnDelta`); otherwise the manager refuses the WHOLE swap, the swapper's included | 1, with the check |
+| `swap` 1e17 on its own pool | **allowed, and the hook is not called** (`calls` stays 2: the manager skips a hook's callbacks when the hook is the caller). The hook traded on the pool it guards, inside the swapper's transaction, with none of its own fees or checks; it stands only with the same check | 1, with the check |
+
+**Red first, on a hook that forgets to check** (the same two tests with `setCheckOwnDelta(true)` removed):
+
+```
+[FAIL: CurrencyNotSettled()] test_swap_on_its_own_pool_while_holding_is_allowed_and_skips_the_hook() (gas: 881518)
+[FAIL: CurrencyNotSettled()] test_take_while_holding_is_a_flash_loan_that_stands_only_if_the_hook_checks_its_own_delta() (gas: 713113)
+```
+
+The lesson for a hook that calls out while its delta is open: its own arithmetic ("I hold exactly my fee") is not its
+books. Read `TransientStateLibrary.currencyDelta(manager, address(this), currency)` after anything that can move them,
+and square what it says. And `reentriesSucceeded` counts only re-entries in a transaction that STOOD: every "allowed"
+above is one the hook also squared, because an allowed re-entry followed by a dead transaction leaves the counter at 0.
+
+**`settle()` while a router's payment is in flight** (added 2026-09-24, K13b, from the verifier V13). A router that
+pays FIRST (`PrepayRouter`: `sync`, transfer 1e18 of currency0, swap, `settle`) has its transfer synced and unpaid
+while the hook runs. The hook's bare `settle()` from `afterSwap` is allowed and credits that transfer to the HOOK
+(read inside the router's callback by a probe outside the repo: hook +1e18, router still -1e18 after its own `settle`
+credited 0). What happens next depends on the ROUTER:
+
+| the router | hook without the own-delta check | hook with it (it takes the credit it was handed) |
+| --- | --- | --- |
+| settles once (`PrepayRouter`) | **refused**, `CurrencyNotSettled`: a denial of service | **refused** the same way: the router still owes |
+| then pays whatever its books still show owing (`TopUpPrepayRouter`, in the test file) | **refused**: the hook's credit is left open | **stands**: the swapper pays 2e18 for a 1e18 swap and the hook keeps 1e18 - a theft |
+
+Controls in the same tests: the prepaid swap with the hook not re-entering stands, and the same `settle()` against
+`MinimalRouter` (nothing in flight) credits 0 and the swap stands. Red first, each test with its precondition removed
+(the re-entry not armed; the check not set):
+
+```
+[FAIL: next call did not revert as expected] test_settle_while_a_router_payment_is_in_flight_kills_the_transaction() (gas: 1570454)
+[FAIL: CurrencyNotSettled()] test_settle_while_a_topping_up_router_payment_is_in_flight_takes_the_first_payment() (gas: 2059229)
+```
+
+`V4-ACCOUNTING.md` item 16. In the theft row the unlock CLOSED - the manager's own check was satisfied - so only a
+per-party book (the swapper paid twice its `amountSpecified`) shows it.
+
+## Native currency
+
+Until 2026-09-24 `MinimalRouter` and `LiquidityHelper` refused a pool whose `currency0` is the zero address. They accept
+it now, with the rules in their headers: the swapper (or provider) sends ETH with the call, the fixture pays the manager
+exactly what the RETURNED delta says (`settle{value: owed}`, no `sync`, as v4-core's `CurrencySettler` does), refuses
+too little by name (`InsufficientValue(owed, value)`, before anything is paid) and refunds the rest AFTER the unlock
+(`RefundFailed(to, reason)` if it cannot). ETH owed to the caller is sent by the manager's own `take`, inside the unlock.
+`V4Harness` counts ETH wherever it counts a token: `_trueBalance(currency, who)` is `who.balance` for the zero address,
+`_swapWithBooks` sends the value (exact-in: `|amountSpecified|`; exact-out: the swapper's whole balance, the router
+refunds the rest; an overload takes the value) and reads the swapper's ETH net of the refund, and `_initNativePool`,
+`_fundNative` and `_addFullRangeLiquidity` (which sends the provider's balance on a native pool) do the rest.
+
+Two rules added the same day, after the verifier V14 broke the first version. **The ETH a fixture pays and refunds is
+the call's `msg.value`, counted** - never its own balance. ETH that reaches the router or the helper any other way (a
+selfdestruct, a coinbase reward) is nobody's payment and stays there; the first version paid the next caller's input
+with it and refunded the rest to that caller (V14: a swap sent with no value was refunded 9e17). Red against the old
+accounting put back: `[FAIL: next call did not revert as expected] test_stray_eth_in_the_router_pays_for_nobodys_swap()`,
+and the helper's twin, `test_stray_eth_in_the_helper_pays_for_nobodys_deposit`. **Positions are the caller's.** To the
+manager every position is the helper's, and the helper pays whoever calls it, so the first version let anybody remove
+anybody's position and keep what it paid out; the helper now hands the manager the salt `positionSalt(caller, salt)`, so
+the same pool, range and salt from two callers are two positions and a caller can only ever touch its own
+(`test_two_callers_with_the_same_salt_hold_two_positions`; a hook sees that derived salt in its liquidity callbacks).
+
+Measured (forge 1.8.1, source manager, 2026-09-24; `test/NativeHarness.t.sol`): ETH / token at 1:1, 100e18 of
+liquidity, a swap of 1e18. On a hookless pool the four orientations close to the wei - swapper, manager, router - with
+the swapper's ETH equal to the returned delta whatever it sent (exact-out ETH in sent 1 000 ETH and paid
+1 013 140 431 395 195 690 wei). With `HostileHook` returning the deltas of the table in "Hooks that return deltas" and
+settling them in ETH (`settle{value}` for what it owes, `take` into its `receive()` for what it is owed), the four rows
+are that table's rows to the wei, with ETH as currency0: e.g. exact-out, ETH in: swapper -1 013 335 756 974 054 076 ETH
+/ +1e18, pool -1 012 935 756 974 054 076 / +0.9998e18, hook +4e14 ETH / -2e14. The router ends every test holding no
+ETH; ETH sent to a swap with no ETH input (or to an all-ERC-20 pool) comes back whole; a liquidity round trip returns
+the provider's ETH to within 2 wei.
+
+**Red first.** The same file against the router with its old refusal put back:
+
+```
+[FAIL: NativeCurrencyNotSupported()] test_native_plain_exact_in_eth_in() (gas: 89123)
+[FAIL: NativeCurrencyNotSupported()] test_native_hook_deltas_exact_out_eth_in() (gas: 92244)
+[FAIL: NativeCurrencyNotSupported()] test_excess_eth_on_an_exact_in_swap_is_refunded() (gas: 88642)
+```
+
+(11 of 14 red; the helper's refusal put back fails the `setUp`). Without the refund, 5 red
+(`the swapper paid other than its input: the excess was kept: -3000000000000000000 != -1000000000000000000`); without the
+value check, the named refusal becomes `call reverted as expected, but without data` (the EVM's out-of-funds).
+
+### A hostile native counterparty
+
+ETH is the one currency whose every delivery runs the recipient's code. `src/HostileNativeActor.sol` is a swapper or
+provider that is a contract and whose `receive()` accepts, reverts, re-enters (any call, or a swap in its own name with
+its own delta squared), or burns every unit of gas it is given; it records whether the manager was unlocked at each
+receipt. `test/NativeCounterparty.t.sol`, a native pool with `HostileHook` as an observer (`swapsSeen`,
+`lastSwapSender`):
+
+| `receive()` | ETH OUT: the manager's `take`, inside the unlock | a REFUND: the router, after the unlock |
+| --- | --- | --- |
+| reverts | swap refused: `WrappedError(actor, 0x00000000, Refused(), NativeTransferFailed())` from the manager's transfer; nothing moved, the hook's record of the swap rolled back | `RefundFailed(actor, Refused())`, the whole swap rolled back. With EXACTLY the input sent there is no refund, and the swap stands |
+| `unlock` | refused, `AlreadyUnlocked`; the actor swallows it, the swap stands | - (manager locked: its own `unlock` is the way in, row 4) |
+| `take` 1 ETH | **allowed**, and the transaction dies at the outer unlock (`CurrencyNotSettled`) | refused, `ManagerLocked` |
+| a swap in its own name, delta squared | **stands**: the hook sees a second swap, from the actor, after the first swap's `afterSwap` and before the router has finished settling | **stands**, through a lock of its own: the hook sees two swaps in one transaction |
+| `settle{value}` 1e17, then `mint` of the ETH claim to itself | **stands**: its ETH turned into a claim in the middle of somebody else's swap - the manager's ETH and the claims it issued both up 1e17. Either half alone leaves its own delta open: `CurrencyNotSettled` | refused, `ManagerLocked` (the verifier V14's run; not in this suite) |
+| burns all gas | 4 664 718 of 5 000 000 gas gone, `WrappedError` with an empty reason | 4 884 379 of 5 000 000, `RefundFailed(actor, "")` |
+
+(The gas row read 4 664 701 and 4 884 372 before the fixtures began counting `msg.value`, above.)
+
+As a PROVIDER, a contract that cannot receive ETH can add liquidity only by sending exactly what is charged (one wei
+more and the refund fails), and can never remove it: `NativeTransferFailed` on every attempt, the position untouched,
+removable again the moment its `receive()` accepts - and nobody else can remove it in the meantime. That half was
+FALSE until 2026-09-24: the helper owned every position and paid whoever called, and the verifier V14 had a stranger with
+no approvals name the provider's pool, range and salt, remove the position and keep its ETH and token. With positions
+kept per caller the stranger reaches its own, empty position and the manager refuses (`SafeCastOverflow()`); against
+the old helper the same test is red (`[FAIL: next call did not revert as expected]
+test_reverting_provider_can_add_exactly_and_can_never_remove()`). Stuck, not lost - for a position manager that lets
+only the owner touch a position. What that means for a hook: on a native pool the recipient of every
+ETH payment runs code in the middle of somebody else's settlement, and a hook that assumes one swap per unlock, or a
+`sender` it knows, is wrong there (`doctrine/V4-ACCOUNTING.md` items 17-20).
+
+**Red first**, each test against a mutant of what it measures: the router refunding INSIDE the unlock - invisible to
+`NativeHarness.t.sol`, all 14 green - is caught here twice
+(`the refund was delivered while the manager was unlocked`, and the `take` during the refund then allowed:
+`CurrencyNotSettled()`); no refund, 5 red; a zero refund still sent (`if (left == 0) return;` removed), 4 red, among them the contract that cannot receive swapping ETH in with exactly its input
+(`RefundFailed(actor, 0x8ac5ff0b)` - `Refused()` - for a refund of zero);
+and the double itself disarmed - `receive()` that does not revert (3 red, `next call did not revert as expected`), does
+not burn gas (2 red), does not re-enter (5 red). Re-run on the files as they are after the `msg.value` accounting (each
+mutant on a bench re-synced from the tree): refund inside the unlock, `NativeHarness.t.sol` 16 green and here 2 red, the
+same two; no refund, 6 red there and 5 here; a zero refund still sent, 5 red here; the old balance accounting put back
+in the router or in the helper, the stray-ETH test red; positions no longer kept per caller, 2 red
+(`the second caller's position, as the manager books it: 0 != 1000000000000000000`); the double's `mint` never made,
+both settle-and-mint tests red (`[FAIL: CurrencyNotSettled()]
+test_reentry_by_settle_and_mint_during_take_stands_and_turns_eth_into_a_claim()`).
+
+### The delta example on an ETH / USD-like pool
+
+`DeltaFeeHook` refused native pools at initialisation until 2026-09-24 (its P8). It accepts them now (P10 in its header):
+the fee in ETH arrives through the manager's `take` into a `receive()` that accepts ETH from the manager only, a rebate
+in ETH is paid with `settle{value}` and no `sync`, P7 still applies, and both ledgers read the hook's ETH balance around
+each move. It no longer declares `beforeInitialize` (the refusal was all it did), so its address carries four flags.
+`test/examples/DeltaFeeHook.native.t.sol`: ETH (18 decimals) against a 6-decimal token at 3 000 per ETH - a raw price of
+3e-9, so a fee or a rebate on the wrong side is off by about 3e8, not by rounding - reserves filled, a new block, then
+one swap of 0.1 ETH or 300 of the token:
+
+| orientation | ETH is | hook delta specified / unspecified | swapper ETH / USDL | hook ETH / USDL |
+| --- | --- | --- | --- | --- |
+| exact-in, zeroForOne | specified (in) | -1e14 wei / +898 150 | -1e17 / +298 485 217 | **-1e14** / +898 150 |
+| exact-out, oneForZero | specified (out) | -1e14 wei / +901 856 | +1e17 / -301 520 746 | **-1e14** / +901 856 |
+| exact-in, oneForZero | unspecified (out) | -300 000 / +299 382 102 680 327 wei | +99 494 652 124 095 390 / -300e6 | **+299 382 102 680 327** / -300 000 |
+| exact-out, zeroForOne | unspecified (in) | -300 000 / +300 617 619 549 609 wei | -100 506 490 802 752 695 / +300e6 | **+300 617 619 549 609** / -300 000 |
+
+Every row asserted to the wei against the manager's books, ETH included (swapper + hook + manager = 0 per currency; the
+hook's ETH balance equal to its ledger), and the per-block cap in ETH spent to the wei. Mutants (each on a fresh bench):
+`receive()` removed - all 5 native tests of the time red (`WrappedError(hook, afterSwap, ...)`: a hook that cannot take ETH kills
+every swap that owes it ETH), while the two-ERC-20 campaign stays green; the ETH branch of the rebate removed - the 3
+ETH-rebate tests red, everything else green; `receive()` open to anyone - red only in the unit test that sends it ETH
+from a stranger. K13's nine mutants, re-run on the hook as it is now (same lines, same edits): all nine
+still killed by the unit suite and by the campaign (one draw of 64 x 64 each, fresh corpus); the native file alone kills
+six of them - not the rebate returned as meant (K13's M5), the P9 check removed (M6) or the P7 check removed (M7), which
+need a short-delivering token, a price limit and a prepaying router, none of which it has.
+
+**A limit, measured: P7 covers the rebate, not the fee** (`V4-ACCOUNTING.md` item 14, the fee side; found by the verifier
+V14). A payer with a payment in flight syncs a currency, swaps, and settles after. P7 sees the synced slot and pays no
+rebate - but the fee is still taken, and when the synced currency IS the pool's token and the fee is taken in it (ETH
+in, exact-in: the fee is USDL), the hook's `take` moves the manager's USDL after the payer's checkpoint. With nothing
+sent yet the payer's `settle()` underflows (`Panic(0x11)`, no name); with 1 USDL sent it is credited 1 USDL less the fee
+and dies `CurrencyNotSettled`. A denial of service of that payer, not a theft
+(`test_a_payment_in_flight_in_the_fee_currency_dies_on_the_fee_take`; its control, an ERC-20 that is not in the pool
+synced, stands with the rebate skipped - item 19's ETH case, run). Skipping the `take` alone would leave the hook's own
+delta open; keeping the fee as a claim while its currency is synced would move no balance, but changes the example's
+ledger, and it is not tried here.
+
+**The shared ETH reserve** (K14 stated it; K15 measured and removed it). The hook's reserve and its per-block cap were per
+CURRENCY and hook-wide, and with ETH, which is on one side of almost every pool a hook is attached to, that was the
+common case: fees taken in ETH by one pool paid ETH rebates in another. Both are per pool now (P13, "Two pools, one
+currency" below): `test_the_eth_reserve_of_one_pool_pays_no_eth_rebate_on_another` has an ETH / token1 pool next to
+this one, and a swap on it with ETH specified is paid nothing out of this pool's ETH (red with the rebate funded
+hook-wide: `pool B was paid an ETH rebate out of pool A's ETH fees: -100000000000000 != 0`), and later its own. The
+native file has 7 tests now, all green.
+
+## ERC-6909 claims
+
+The manager's claims are a second way to hold value: `mint(to, id, amount)` debits the caller's delta and gives `to` a
+claim on tokens the manager keeps; `burn` is the reverse. `src/examples/ClaimsFeeHook.sol` is the worked toy: a fee of
+0.30 % of the pool's unspecified amount, returned from `afterSwap` and squared by `mint(address(this), ...)` - kept as a
+claim, never taken - and a treasury that withdraws (`burn`, then `take` of the currency) inside the hook's own unlock.
+Its promises C1-C5 are in its header. `_swapWithBooks` reads the hook's claims (`hookClaims0/1`) next to its balances.
+
+Measured on an ETH / token pool at 1:1, a swap of 1e18 (`test/examples/ClaimsFeeHook.t.sol`):
+
+| orientation | swapper ETH / token | hook BALANCES | hook CLAIMS ETH / token | manager ETH / token |
+| --- | --- | --- | --- | --- |
+| exact-in, ETH in | -1e18 / +984 196 560 293 870 115 | 0 / 0 | 0 / **+2 961 474 103 191 183** | +1e18 / -984 196 560 293 870 115 |
+| exact-in, ETH out | +984 196 560 293 870 115 / -1e18 | 0 / 0 | **+2 961 474 103 191 183** / 0 | -984 196 560 293 870 115 / +1e18 |
+| exact-out, ETH in | -1 016 179 852 689 381 277 / +1e18 | 0 / 0 | **+3 039 421 294 185 587** / 0 | +1 016 179 852 689 381 277 / -1e18 |
+| exact-out, ETH out | +1e18 / -1 016 179 852 689 381 277 | 0 / 0 | 0 / **+3 039 421 294 185 587** | -1e18 / +1 016 179 852 689 381 277 |
+
+Read the rows twice. By BALANCES, swapper + hook + manager = 0 in every row, and the hook got nothing: its fee is in no
+`balanceOf`. By PARTY, claims counted, the hook got exactly its booked delta (`pool - caller`) as a claim and the
+manager's NET - its balance minus the claims it issued - moved by exactly the pool's delta. Both are asserted.
+
+**The README's old sentence, made a test.** "An invariant that counts only ERC-20 balances will report a leak as
+conservation." `test/examples/ClaimsFeeHook.invariants.t.sol` runs the campaign on the ETH / token pool (every party's
+ETH, token and claims per swap; a treasury withdrawing ETH and token; a swapper whose `receive()` reverts; ETH pushed
+at the manager; a fee-on-transfer switch; since 2026-09-24 a third party with claims of its own) with eleven invariants
+(nine until the section below), three of them deliberately NAIVE: ETH conserved over
+the holders, the token conserved, and every swap's books closed over balances alone. The mutant that leaks into 6909 -
+the fee claim minted to the swap's `sender` (the router) instead of the hook, one line - on a fresh corpus, one draw of
+64 x 64:
+
+| invariant | fee claim to the router (C1) | to an unlisted address (C2) |
+| --- | --- | --- |
+| ETH conserved over every holder | **passed** | **passed** |
+| token conserved over every holder | **passed** | **passed** |
+| every swap closes in balances alone | **passed** | **passed** |
+| the manager's net (balance - claims issued) is the pool's delta | **passed** | failed |
+| every party counted with its claims (C1, C3) | failed | failed |
+| the hook's claims = fees booked - withdrawn; nobody else holds one | failed | failed |
+| the router and the helper hold nothing - claims included | failed (`the router holds claims: 25 != 0`) | passed |
+
+(That table is the nine-invariant suite's draw, before C3 was scoped below; the scoped suite still kills C1, below.)
+
+Four invariants that a reader would call "conservation" pass with the fee in the wrong hands; the claim summed over
+everybody cancels against the manager's debt for it. What kills the leak is the books PER PARTY against the manager's
+own numbers, and a holder list that names every contract that can receive a claim. The unit suite kills both mutants too
+(the four orientation tests: `the hook's token1 claims are not its booked delta: 0 != 2961474103191183`). Two more
+mutants: a withdrawal paid in claims (`mint` to the treasury instead of `take`) is killed by the unit suite and the
+campaign (`C4: a withdrawal paid other than it burned, or paid in claims`); the fee taken as the token instead of
+minted is killed by both (`C2: the hook's balance moved in a swap`). Census of the campaign (`scripts/census.sh foundry-kit/v4`, ONE draw, 2026-09-24, re-run by K15 on the suite as K14b left
+it, 65 runs, fresh corpus): no unexplained revert; a fee claimed in ETH in 61 runs and in the token in 65; a withdrawal
+of ETH in 59 and of the token in 61; an exact-out swap with ETH in, refunded, in 55; the swapper that cannot receive
+refused ETH out in 61 runs and swapping ETH in with its exact input in 65; a third party holding ETH claims in 53 and
+token claims in 62. (K14's draw, which this line gave before: 62, 65, 45, 60, 61, 61, 62.)
+
+**Operators, allowances, and other people's claims** (2026-09-24, after the verifier V14). An operator moves every claim
+the hook holds with `transferFrom`, outside any swap, and nothing in the campaign calls `transferFrom`: V14's mutant W4 -
+`setOperator(0xBAD, true)` in the constructor - passed the unit suite and all nine invariants. Now the unit test
+`test_the_hook_grants_nobody_an_operator_or_an_allowance` counts every `OperatorSet` and `Approval` event the manager
+emits with the hook as owner (its constructor, a swap in each orientation, a withdrawal of each currency) and asks the
+manager about every party; the campaign counts the same events (constructor, every swap and withdrawal) and asks about
+every holder (`invariant_the_hook_grants_nobody_its_claims`); and `invariant_the_hooks_claims_move_only_in_its_swaps_and_withdrawals`
+holds the hook's claims between actions to what its last swap or withdrawal left. W4, and the same with a listed spender
+(`approve(treasury, ETH, 1)` in the constructor), are red in the unit test (`the hook granted an operator or an allowance
+on its claims: 1 != 0`) and, in the campaign, in ONE invariant of eleven - `the_hook_grants_nobody_its_claims` (`C3: the
+hook's constructor granted an operator or an allowance: 1 != 0`; re-measured by the verifier V15 and again by K15b). A
+grant nobody uses moves nothing, so no other invariant has anything to see. What fails TWO invariants is the grant
+USED: 1 wei of the hook's ETH claim moved by an operator outside a swap, where it failed one
+(`test_a_claim_moved_by_an_operator_outside_a_swap_is_caught_twice`).
+
+**The unit test was blind inside a swap** (the verifier V15, 2026-09-24). `V4Harness._swapWithBooks` reads the `Swap`
+event with `vm.recordLogs()` / `vm.getRecordedLogs()`, and those CONSUME the recorder: a test that records logs around
+`_swapWithBooks` loses what it recorded before the swap and every event of the swap itself. V15's mutant VC1 -
+`approve(0xBEEF, id, 1)` after every fee mint, a grant made inside `afterSwap` - passed the unit suite 11 of 11 (the
+campaign's invariant caught it). Now the harness keeps a swap's logs when asked (`_keepSwapLogs`, `_takeKeptSwapLogs()`),
+the test reads them there, and it counts the four `Swap` events so it cannot go blind that way unnoticed. Red on the
+fixed test: VC1 `the hook granted an operator or an allowance on its claims: 4 != 0`; the same grant as an operator
+(VC1b) the same; the harness not keeping the logs (H0) `test setup: the swaps' own events were not read: 0 != 4`; W4 and
+V15's VC2 (the treasury made operator inside a withdrawal) still red. A test of your own that records logs around
+`_swapWithBooks` has the same blindness: keep the logs, or record around the router's call yourself.
+
+The other half: the campaign's world was CLOSED -
+"nobody but the hook holds a claim" - so a third party depositing ETH as a claim of its own and passing it to an actor
+tripped C3 (V14). C3 is now about the hook's claims: the campaign has such a third party (`thirdPartyClaims`, ETH and
+the token, half sent to an actor), and no invariant calls it a leak (`test_a_third_party_moving_its_own_claims_trips_nothing`,
+red on the closed world: `an invariant called it a leak: 1 != 0`, `C3: somebody other than the hook holds claims`). That
+is a third party using its OWN claims. A claim a third party PUSHES INTO the hook (`transfer` to it, outside any swap)
+trips two invariants, by design - the hook's claims are then no longer its fees less its withdrawals, and they moved
+outside its own actions (`test_a_third_partys_claim_pushed_into_the_hook_trips_two_invariants`; the verifier V15 measured
+the same, 2 of 11). A third party that makes the hook its operator, or gives it an allowance, trips none. A
+claim that reaches anybody else FROM A SWAP is still caught per swap and per party: the scoped suite, one draw of 64 x 64
+on a fresh corpus each, kills C1 in three invariants (per party, fees less withdrawals, the router holding claims) and
+V14's W3 - 1 wei of every fee claim passed on to the treasury inside `afterSwap` - in two (per party, fees less
+withdrawals); ETH and token conservation, the balance-only books and the manager's net pass both, as before.
+
+**What the harness of a native pool, or a claims hook, needs** (on top of the eleven points for a delta hook above):
+
+1. **Count ETH where you count tokens**: `_trueBalance` for every party, the swapper's ETH net of the refund, the router
+   and the helper in the holder list and asserted empty of ETH after every action.
+2. **Send value the way a user does**: exactly the input on exact-in, more than enough on exact-out (and read the
+   refund), too little once (the named refusal).
+3. **A contract counterparty in every mode** - accept, revert, re-enter, burn gas - as swapper AND as provider, at both
+   receipts: inside the unlock (ETH out) and after it (a refund). `HostileNativeActor` does all of it.
+4. **A hook that takes ETH has a `receive()`**, accepts from the manager only, and has a mutant that removes it.
+5. **Price far from 1 with unequal decimals** (ETH against a 6-decimal token): side confusion is then eight orders of
+   magnitude, not a factor of four.
+6. **Claims per party, never summed**: each party's balance + claims against what the manager booked for it, the
+   manager's net as balance minus claims issued, and every contract that can receive a claim (router, helper,
+   treasury) in the holder list with "holds no claim" asserted. A conservation over balances, or over everybody's
+   claims, passes when a claim goes to the wrong party (table above).
+7. **Withdraw both currencies, and to a recipient that cannot receive ETH** - the claim must survive the refusal.
+8. **Grants, and claims that are not the hook's.** Assert the hook grants no operator and no allowance (count the
+   manager's `OperatorSet` / `Approval` events with the hook as owner - an operator can be anybody, so a holder list is
+   not enough), hold the hook's claims between actions to what its own last action left, and let a third party hold
+   and move claims of its own: a closed world ("nobody but the hook holds a claim") calls a legitimate user a leak.
+9. **Count the fixture's own ETH, not its balance.** A router or helper that pays out of `address(this).balance` spends
+   ETH that is nobody's payment; one that owns every position and pays its caller lets anybody remove anybody's.
+
+## Re-entrancy through a currency's transfer hook, during settlement
+
+A payment to the manager is three calls: `sync(c)` (the manager writes down its balance of `c`), a transfer of `c`,
+`settle()` (the manager credits the payer with its balance now less that checkpoint). The transfer runs the
+currency's own code, and a currency with transfer hooks (`HostileERC20`'s send and receive callbacks: nothing had to be
+added to the root kit) runs it INSIDE the payment, with the manager mid-accounting for it. `src/TokenCallbackActor.sol`
+is that code pointed at the manager; `test/TokenReentry.t.sol` arms it on the next transfer that pays the manager, before
+the balances move (the payer's send callback) or after (the manager's receive callback), and every door is the actor's,
+in its own name, its failure swallowed - so what happens to the payer is the manager's doing.
+
+**The door table** (source manager, forge 1.8.1, 2026-09-24; `MinimalRouter` paying the currency0 of a 1e18 exact-in swap
+on a hookless pool, i.e. a payer that settles ONCE):
+
+| the callback, in the middle of the payer's transfer | before the move | after the move |
+| --- | --- | --- |
+| `sync` of another currency | dies | dies |
+| `sync` of the zero address (clears the slot) | dies | dies |
+| `sync` of the SAME currency | **stands** (the checkpoint does not change) | dies (the checkpoint now includes the payment) |
+| a bare `settle()` (takes the payer's credit, resets the slot) | dies | dies |
+| `settle()` + `take` of what it was credited | dies | dies |
+| `settle()` + `mint` of it as a claim | dies | dies |
+| `take` of 1 wei, `mint` of 1 wei (a delta left open) | dies | dies |
+| `take` of x paid with x of its OWN claims (`burn`: its books square; V15) | dies | dies |
+| `unlock` | **stands** (`AlreadyUnlocked`, swallowed) | **stands** |
+| a swap in its own name, squared (squaring takes a `sync` of its own) | dies | dies |
+| `settleFor(the payer)` (V15) | dies (credits it 0, resets the slot) | **stands**, harmless: the payer is credited its own payment, its own `settle` then 0 |
+
+Every death is the manager's `CurrencyNotSettled` at the outer unlock - the payer's books did not close - never a
+refusal of the door itself: `sync`, `settle`, `take` and `mint` were all allowed. So against a payer that settles once,
+a token's callback can DENY the payment by any of eight doors and take nothing. Hijacking `sync` is that, and nothing more,
+against such a payer. (The two rows marked V15 are the verifier's, added 2026-09-24 with
+`test_two_more_doors_a_take_paid_with_own_claims_and_settle_for_the_payer`: 1e17 taken and burned, both moments, dies
+`CurrencyNotSettled` with the callback's claims back where they were; `settleFor(router)` after the move credits the
+router 1e18, the swapper pays exactly its input and the router ends with nothing.) Three things change the answer:
+
+* **A payer that tops up** (`TopUpPrepayRouter`: after its own `settle` it pays whatever its books still show owing):
+  `settle` + `take` from the callback is a THEFT - the unlock closes, the swapper pays 2e18 for a 1e18 swap, the callback
+  keeps 1e18 (`test_a_topping_up_payer_pays_twice_and_the_tokens_callback_keeps_one_payment`). K13b's finding about a
+  hook's `settle()`, with the token as the thief.
+* **A hook that pays its own delta** (`HostileHook`, a negative delta of 1e15 squared by sync + transfer + settle from
+  `afterSwap`), with `settle` + `take` on the hook's transfer: the hook's own `settle` credits nothing. A hook that trusts
+  its arithmetic leaves its delta open and the SWAPPER's transaction dies; a hook that reads its own delta afterwards
+  (`setCheckOwnDelta`, `V4-ACCOUNTING.md` item 16's advice) pays again and the swap stands - the hook paid 2e15 for a
+  1e15 delta and the callback kept 1e15. With a `sync` of another currency instead, the same check pays again and the
+  first 1e15 sits in the manager as nobody's (`b.manager0 == -b.pool0 + 1e15`). Reading your own delta turns this denial
+  of service into a loss: check the checkpoint BEFORE settling, as below.
+* **What a hook that reads the synced slot believes.** `DeltaFeeHook`'s P7 reads `getSyncedCurrency` and takes "set" to
+  mean "a payment is in flight". A callback that clears the slot during a prepaying router's transfer makes the hook
+  believe nothing is in flight; the payer dies either way (`test_a_token_that_resyncs_during_a_prepayment_kills_the_payer`).
+  And a callback on a DELIVERY - the manager's `take` to the swapper, not a payment - leaves its `sync` behind: the
+  synced slot outlives the unlock inside the transaction (`test_a_callback_on_a_delivery_leaves_the_synced_slot_behind`),
+  so a later swap in the same transaction finds a "payment" that nobody is making (P7 would then pay no rebate:
+  reasoned, not run). Harmless to the next payer, measured: `MinimalRouter` syncs before it pays, and its swap stands.
+
+**`DeltaFeeHook` pays its rebate the same way, and it was the victim** (P12 in its header). On the hook as it was, with
+the callback on the hook's own rebate transfer (a 1e17 exact-in swap, the rebate cut to the block's budget,
+89 828 095 180 378): `sync` of another currency, of the zero address or of the same currency after the move - the swap
+STOOD, the hook's `settle` credited 0, the swapper got no rebate, the hook's reserve fell by the rebate (its ledger still
+equal to its balance: it counts what left) and the rebate sat in the manager as nobody's; `settle` + `take` and `settle` +
+`mint` - the swap STOOD and the callback KEPT the 89 828 095 180 378 (as token0, or as a claim); a bare `settle` and a
+`take` died. Now the hook reads the synced currency and the checkpoint after its transfer and refuses the swap if either
+moved (`SettlementHijacked`). Red first, the new test on the hook before the check:
+`[FAIL: next call did not revert as expected] test_P12_a_currency_that_moves_the_checkpoint_mid_rebate_is_refused()`.
+Mutants (each on a bench re-synced from the tree): the check removed (M12), and only the currency checked, not the
+checkpoint (M12b) - both red on the same test; the callback
+disarmed (A0) - all 7 tests of `TokenReentry.t.sol` red and both P12 tests
+(`sync(another currency) (before the move): true != false`, `the swapper did not pay its input twice: 1000000000000000000
+!= 2000000000000000000`). The control, a `sync` of the same currency BEFORE the move, stands with the rebate paid in full
+(`test_P12_a_resync_of_the_same_currency_before_the_move_is_harmless`). The token can still refuse service - it can
+revert its own transfer any time - it can no longer take the rebate. A swap NESTED in the rebate's transfer, on the
+hook's own pool, is refused the same way (the nested swapper's own `sync`), the last case of the P12 test; that case
+was not run alone against M12.
+
+**P12 was not the whole payment** (the verifier V15, 2026-09-24). The slot and the checkpoint are what a `sync` moves;
+the payment is what the manager CREDITS. A callback that `take`s x of the currency and pays for it with x of its own
+claims (`burn`) squares its own books and leaves the slot and the checkpoint alone - and the hook's `settle` then reads a
+balance x short. Measured on the hook with P12's first check only (V15's `test_v15_take_burn_leaves_the_rebate_nobodys`,
+x = the rebate, after the move): the swap stood, the pool's reserve fell by the rebate (100 000 000 000 000), the
+hook's booked delta was 0, `rebatesPaid` rose by 0, the swapper got nothing and the callback gained nothing (claims for
+tokens, 1:1) - a loss with no beneficiary, still a loss (`doctrine/SEVERITY.md`). Now, after settling, the hook compares
+what the manager credited it (`settle`'s return, exactly what the manager added to the hook's own delta) with what left
+its balance, and refuses the swap if the credit is short (`RebateNotCredited(sent, credited)`). Red first, on the hook
+before the check: `[FAIL: next call did not revert as expected]
+test_P12_a_take_paid_with_the_callbacks_own_claims_mid_rebate_is_refused()` (both moments, x the whole rebate and half
+of it); V15's own test, on the hook after it, now meets the refusal (`RebateNotCredited(100000000000000, 0)`). Mutants:
+the check removed (P12b) and weakened to "credited nothing" (P12c) - red on both new tests; P12's FIRST check removed
+(M12) - the P12 test red on the error (the second check refuses the same swaps under its own name, every door and the
+nested swap: probed with the expected error loosened). The PRICE, stated in the header and in
+`test_P12_price_a_rebate_in_a_currency_that_charges_on_transfer_is_refused`: the hook cannot tell a callback that took
+part of its payment from a currency that charges a fee on the transfer, so a rebate in a fee-on-transfer currency is
+refused whole - on the exact-out swap whose OUTPUT is that currency (a swap whose input is that currency already dies on
+the router's own short payment), while the pool's budget in that currency lasts; before the check that swap stood with
+the rebate less the token's fee. The cost in gas: +71 to +93 per unit test of seven swaps.
+
+## Two pools, one currency
+
+A hook serves every pool that names it, and nobody asks it first. `test/examples/DeltaFeeHook.multipool.t.sol` puts two
+pools on one `DeltaFeeHook` - A = token0 / token1, B = token0 / token2 - and a third made by a stranger. Until K15 the
+hook kept its reserve and its per-block cap per CURRENCY, hook-wide. Measured on that hook (red, then fixed):
+
+| test | on the hook-wide reserve and cap |
+| --- | --- |
+| a swap on B (which has earned nothing) specifying token0, after A earned token0 | `pool B was paid a rebate out of pool A's fees: 100000000000000 != 0` |
+| B's swaps spend B's block cap; then a swap on A in the same block | `pool B's swaps spent pool A's block cap: 0 != 100000000000000` |
+| **a pool nobody approved**: a stranger creates token0 / EVIL (a token it mints), is its only provider, swaps token0 in twelve times in one block and withdraws | `a pool nobody approved drained the rebates pool A earned: 906067445652208 > 0` - the block's whole token0 cap (906 067 445 652 210, 10 % of what A had earned) less 2 wei of rounding, in one block; each block renews the cap (not run over several) |
+
+The drain in words: the rebate is paid in token0 out of A's fees, the hook's fee on the swap is paid in EVIL, the swap's
+input and the rebate both end in the stranger's pool, and the stranger, its only provider, takes them back out. That is
+"what does the hook believe about a pool it has never seen": `DeltaFeeHook` has no `UnknownPool` check at all (it
+declares no initialisation hook), and a "known pool" check would not have helped - the stranger's pool is initialised
+through the manager like any other (reasoned; `CappedDynamicFeeHook` records every pool that way).
+
+**Decided, with the measurement: per pool** (P13 in the header). The reserve and the cap are kept per (pool, currency);
+`reserveOf`, `feesBooked` and `rebatesPaid` stay hook-wide (the ledger against the hook's balance, their sum);
+`poolReserveOf(id, c)` is new; `rebateBudgetLeft` and `budgetOf` take the pool's id (an incompatible change of two views,
+callers updated). All three tests green; a pool's rebates now come out of its own fees, and the stranger ends the block
+with at most what it started with.
+
+**The campaign** (`DeltaFeeHookMultiPoolInvariants`): three actors swapping on both pools, bursts to reach a pool's cap,
+new blocks; every swap booked to (pool, currency) from the hook's TRUE balances (honest tokens), never from its ledger.
+Invariants per pool - no pool pays rebates beyond the fees IT earned; no pool's rebates in a block exceed 10 % of what
+IT had earned - and per currency - the hook holds exactly what its pools left it, and its hook-wide ledger agrees -
+and, since the fix, the hook's own per-pool ledger against each pool's books. On the hook-wide reserve, one draw of
+64 x 64: `invariant_per_pool_no_rebate_beyond_its_own_fees` and `invariant_per_pool_block_cap` red (`pool 1 paid
+3477930474135999 of token0 in a block whose cap, from its own books, is 1044022763866543`), and **the per-currency
+invariant passed**: the hook held exactly what its pools, summed, left it, while one pool paid out of another's fees.
+Conservation per currency cannot see a pool mixing; only books per pool can. Mutants on the fixed hook: the rebate
+funded from the hook-wide reserve (M13a) - the drain and the "paid out of another's reserve" unit tests red, both per-pool
+invariants red, the ETH test red (`pool B was paid an ETH rebate out of pool A's ETH fees: -100000000000000 != 0`), the
+single-pool unit suite GREEN (21 of 21: one pool cannot tell); the budget shared by every pool (M13b) - the cap test red,
+`invariant_per_pool_block_cap` red, and two single-pool unit tests red. Census of the fixed hook's two-pool campaign (`scripts/census.sh foundry-kit/v4`, ONE draw, 2026-09-24, 65 runs, fresh
+corpus): no unexplained revert; every action succeeded in every run; a rebate paid on pool A in 65 runs (3 745 times),
+on pool B in 65 (2 130), cut by a pool's own cap in 65 (784).
+
+**The other two examples.** `CappedDynamicFeeHook` keys everything by `PoolId` and refuses a pool its `afterInitialize`
+never recorded: ten swaps on a second pool of the same pair congest THAT pool's next block to the cap and leave the
+first at the base, quoted and charged (`test_congestion_on_one_pool_does_not_move_another_pools_fee`; red with the
+state keyed by currency0 alone, mutant K1: `pool B's congestion moved pool A's quote: 5000 != 500`). `ClaimsFeeHook` pays
+nothing back per pool, so nothing can be drained across pools, but the manager keeps claims per (owner, currency): the
+ETH fees of two ETH pools on the hook are ONE claim, `feesBooked` is per currency, and only the hook's
+`FeeClaimed(poolId, ...)` events say which pool a claim came from - they add up to it exactly
+(`test_two_pools_fees_in_one_currency_are_one_claim_and_only_the_events_split_it`; a statement of the design, no red).
+
+## At the edges
+
+A deposit that a reader's handler made after driving an emptied pool to an end of the price range failed with
+`SafeCastOverflow()`: at the edge the full-range liquidity's token amount does not fit the manager's `int128` casts. Classify it
+as the manager refusing an impossible position, not as the hook's revert, and bound the handler's deposits away from the ends.
+
+`test/examples/Edges.t.sol` runs each example through a fixed grid: five edges (spacing 1 with the price 100 ticks from
+each end, spacing 1 AT `MIN_SQRT_PRICE` and at `MAX_SQRT_PRICE - 1`, spacing 32 767 at price 1), amounts of 1 wei, 1e6 and
+1e18, the four orientations - 60 swaps per hook, each one either standing with its books closed per party to the wei
+(swapper + hook + manager = 0 per currency, the hook's claims counted, the hook's delta exactly its rule) or refused for a
+reason the test names:
+
+| hook | stood, books closed | the manager's `PriceLimitAlreadyExceeded` (a price AT an end, a swap into it) | refused by the hook's fee `take` |
+| --- | --- | --- | --- |
+| `DeltaFeeHook` | 48 | 4 | **8** |
+| `ClaimsFeeHook` | 56 | 4 | 0 |
+| `CappedDynamicFeeHook` | 56 | 4 | 0 |
+
+**The 8: a fee taken before its currency arrives** (a LIMIT of `DeltaFeeHook`, measured, not fixed). On an exact-out swap
+the hook's fee is in the INPUT currency, which the swapper pays after the swap returns; `take` is a transfer out of what
+the manager holds now. Near an end of the range an exact-out swap's input can exceed everything the manager holds of it,
+and the swap dies in the hook's `take` (`WrappedError(hook, afterSwap, WrappedError(token, transfer,
+InsufficientBalance(manager), ERC20TransferFailed()), HookCallFailed())`). It is not only an edge: a pool whose liquidity
+is all on one side (a range above the price) on a manager that holds none of the other currency refuses its first
+exact-out swap the same way, and the same swap stands once an exact-in swap has brought the currency in
+(`test_the_fee_on_an_input_the_manager_does_not_hold_yet_kills_an_exact_out_swap`). `ClaimsFeeHook` mints its fee and never
+meets it. The general rule is `V4-ACCOUNTING.md` item 24.
+
+**Arithmetic that broke: the block cap above 2^96.** `DeltaFeeHook` stored the cap as `uint96(reserve * 10 %)`, a cast
+that truncates silently. 100 ticks from the low end one unit of currency1 is worth about 1e32 of currency0, and one
+exact-in swap of 1e6 units left the hook a fee of 5.5e34: the next block's cap read 17 430 635 726 297 566 524 129 938 969
+where 10 % of the reserve is 5 506 216 269 052 069 231 642 641 590 390 297, and a rebate of 1e30 was cut to it. Red:
+`[FAIL: the rebate was cut by a truncated cap: 17430635726297566524129938969 != 1000000000000000000000000000000]
+test_the_block_cap_holds_above_2_to_the_96()`. The budget's fields are uint256 now; the mutant that puts the cast back
+(MU96) is red on that test and green on the whole unit suite. An 18-decimal token with a trillion-token supply has 1e30
+units: at ANY price its reserve passes 7.9e29, where the old cast began to truncate.
+
+**Spacing, fees, the harness.** `_fullRange` computes the range from the spacing (it never assumed 60): at spacing 1 it is
+`MIN_TICK..MAX_TICK`; at 32 767 it is +-884 709, 2 563 ticks short of each end, so a pool priced near an end is OUTSIDE
+the widest position that spacing allows and a swap there fills nothing (measured: 0 / 0,
+`test_the_harness_full_range_at_spacing_1_and_at_the_maximum`; a swap the other way moves the price into the position,
+and swaps after it fill). An LP fee of 0 changes nothing for the fee-taking examples; at 100 %
+(`MAX_LP_FEE`, the most a static pool may have) an exact-in swap is all LP fee - the pool delivers nothing and the hook's
+fee on nothing is 0 - and an exact-out swap is refused by the manager (`InvalidFeeForExactOut`), for either hook
+(`test_an_lp_fee_of_zero_and_of_one_hundred_percent`). A DYNAMIC fee at the manager's cap (a hook overriding with exactly
+`MAX_LP_FEE`) behaves the same, and one more is `LPFeeTooLarge` (`test/HostileHook.t.sol`); `CappedDynamicFeeHook` at its
+OWN cap on a spacing-32 767 pool charged exactly `MAX_FEE`, read off the manager's `Swap` event
+(`test_a_dynamic_fee_at_the_cap`). None of these is red on the current code except the cap above 2^96: they are pinned,
+and a change to what they measure has to be re-measured.
+
+---
+
 ## The worked example
+
+Three of them (the third, `ClaimsFeeHook`, is in "ERC-6909 claims" above). `CappedDynamicFeeHook`, below, returns no delta and holds nothing; `DeltaFeeHook`, at the end of this
+section, returns deltas on both sides and holds what it takes.
 
 `CappedDynamicFeeHook` raises the pool's LP fee with congestion, one block late — every swap of a block pays the
 base fee plus one step for each swap the PREVIOUS block saw, hard cap, back to the base after a quiet block — and takes
@@ -473,6 +1081,113 @@ The fix is not free, and the spec says so (T2): with the same constants the pool
 everyone, because a busy block now raises the whole next block instead of resetting. A verifier measured it on the
 sandbox's ordering population; the honest trader's loss in that table is that higher fee level, not a targeted one.
 
+### The delta example: `DeltaFeeHook`
+
+The second worked toy (2026-09-24) is the one a hook that holds tokens needs: it returns deltas on both sides, holds
+what it takes as ERC-20, and pays some of it back out. A FEE of 0.30 % of the pool's unspecified amount, returned from
+`afterSwap` as a positive delta and taken in the same call; a REBATE of 0.10 % of `|amountSpecified|`, paid out of what
+it already holds in the specified currency, returned from `beforeSwap` as a negative specified delta and settled in the
+same call; a CAP on rebates of 10 % of the reserve per currency and block. Its promises, P1-P11, are in the file header
+(the SPEC, written before the tests; P9-P13 were added after, each says when); each has a named test or invariant. Measured,
+source manager: unit suite 23 of 23 (15 at first; the test that it refused a native pool became a test that it refuses
+ETH from anyone but the manager, 14; K13b added five: P11, the reserve under a fee-on-transfer currency, and three with
+two swaps in one transaction; K15 two, P12; K15b two, P12's second half and its price), 7 of 7 on an ETH / USD-like pool (P10, "Native currency" above; 5 at
+first), 3 of 3 multi-pool unit tests and a two-pool campaign (P13), campaign 64 x 64 green, smoke test green. The reach, from `scripts/census.sh foundry-kit/v4` (ONE draw, 2026-09-24,
+after P12 and P13, 65 runs, a fresh corpus): the fee taken in 61 runs, a rebate paid in 35, a rebate cut by the block cap
+in 30, on an exact-out swap in 24, a partial fill refused in 41, a prepaid swap with a rebate budget in 19, and no
+unexplained revert (K13's draw read 62, 34, 31, 25, 49, 26; K13b's another). Half the runs
+never see a rebate: a fresh hook has to earn a reserve before it can pay one, which is the point of the rebate reach
+lines and a reason to set `REACH="rebate paid"` in a gate.
+
+What its tests found in it before it was finished, in the order it happened:
+
+1. **P9, the rebate for a swap that did not happen** (`V4-ACCOUNTING.md` item 13). A specified delta is committed in
+   `beforeSwap`, before the pool knows its fill, and the swapper's specified side is `pool - hook`. The test
+   `test_a_swap_the_pool_does_not_fill_earns_no_rebate` (a swap of 1e18 limited one step from the pool's price) went
+   **red** on the first version:
+   `[FAIL: the swapper was PAID in the currency it was selling: a rebate for nothing: 906067445652208 > 0]` - the whole
+   block's rebate budget (906 067 445 652 210) less the 2 wei of currency0 the pool swapped, and no currency1 at all
+   (re-measured with the check removed, 2026-09-24). Fixed at the cause: the rebate is carried to `afterSwap`
+   in transient storage, and a swap whose pool fill is not exactly `amountSpecified - rebate` is refused
+   (`RebateOnPartialFill`); a partial fill with no rebate still goes through (`test_a_partial_fill_without_a_rebate_is_allowed`).
+2. **The handler hid a sign bug behind that guard.** With every `RebateOnPartialFill` filed as "expected", a mutant
+   that flipped the rebate's sign (and one that put it in the unspecified slot) moved the pool's fill on every swap with
+   a rebate, tripped P9, and the campaign stayed green in all nine invariants - only the smoke test's census
+   (`action barely exercised: swap`) said anything. Now a P9 refusal on a swap with no price limit, in a pool no single
+   swap can exhaust, is a surprise: both mutants die in the campaign
+   (`P9 refused an UNLIMITED swap in a liquid pool - the hook's own delta moved the fill`).
+
+**P11, the price of P9: liveness** (a limit, stated in the hook's header; found by the verifier V13, 2026-09-24).
+"A partial fill with no rebate still goes through" is true and it is the small half. While the rebate budget of the
+specified currency lasts (and no payment is in flight, P7), EVERY swap the pool does not fill completely is refused
+whole. V13's sweep, on a funded hook at 1:1 with 100e18 of liquidity - 160 swaps of 1e16 to 4.9e18 in all four
+orientations, with price limits 0.0025 % to 1 % of the sqrt price away:
+
+| outcome | swaps |
+| --- | --- |
+| filled completely, with the rebate | 17 |
+| refused `RebateOnPartialFill` | 143 |
+| stood without a rebate | 0 |
+| any other revert | 0 |
+| paid a rebate on a partial fill | 0 |
+
+A limit quoted for the plain swap does not fit the swap with the rebate (the rebate makes the pool swap more input, or
+deliver less output), so a router that quotes without the hook is refused too (V13 measured that case). The unit test
+`test_P11_with_a_rebate_budget_every_partial_fill_is_refused` limits the same swap at 1/4, 1/2, 3/4 and 999/1000 of
+the way to its full fill's end price in each orientation: refused every time; AT the end price it fills with the
+rebate. One sqrt-price unit short of the end price is not always partial: the step that reaches the limit rounds the
+amount it needs, and in both exact-in orientations it needed the whole amount - a full fill, which stood (the test
+accepts either, never a partial fill with a rebate). Once the block's budget is spent, a partial fill stands again,
+also as the second swap of a transaction (`test_two_swaps_in_one_transaction_a_partial_second_with_no_rebate_left_stands`).
+
+**The sign-convention trap, measured.** Nine one-line mutants, each run against a NAIVE suite (kept outside the repo,
+a naive suite (kept out of the kit on purpose): exact-in only, 1:1, a fresh hook per test, the fee checked to within 5 %, total supply
+conserved), the unit suite and the campaign (fresh corpus):
+
+| mutant (one line of `DeltaFeeHook.sol`) | naive suite | unit suite (15) | campaign, first invariant red |
+| --- | --- | --- | --- |
+| M1 specified currency chosen by `zeroForOne` alone (exact-out forgotten) | **survived** | killed, 4 red (`test_exact_out_*`, ...) | `CurrencyNotSettled with every switch off` |
+| M2 fee computed on the pool's SPECIFIED amount | **survived** | killed, 6 red (`3000000000000000 != 2961474103191183`) | `P2: the fee is not 0.30 % of the pool's unspecified amount` |
+| M3 rebate returned with its sign flipped (`+paid`) | **survived** | killed, 10 red | `P9 refused an UNLIMITED swap in a liquid pool` |
+| M4 rebate returned in the UNSPECIFIED slot | **survived** | killed, 10 red | `P9 refused an UNLIMITED swap in a liquid pool` |
+| M5 rebate returned as what was MEANT, not what the manager credited | **survived** | killed, 1 red (`..._what_the_manager_credited_not_what_was_meant`) | `P9 refused an UNLIMITED swap in a liquid pool` |
+| M6 the partial-fill check (P9) removed | **survived** | killed, 1 red (`a rebate for nothing: 906067445652208 > 0`) | `P9: a rebate was paid on a swap the pool did not fill` |
+| M7 the synced-currency check (P7) removed | **survived** | killed, 1 red (`CurrencyNotSettled`, the prepaying router) | `CurrencyNotSettled with every switch off` |
+| M8 the per-block cap removed | **survived** | killed, 1 red (`7068793114650906 > 706879311465090`) | `P5: rebates in one block exceeded the cap` |
+| M9 fee returned with its sign flipped (`-fee`) | killed | killed, 12 red | `CurrencyNotSettled with every switch off` |
+
+(forge 1.8.1, source manager, 2026-09-24; each campaign is ONE draw of 64 x 64 on a fresh corpus)
+
+**Two mutants the unit suite missed, now killed by it** (the verifier V13's own, 2026-09-24; K13b wrote the tests):
+
+| mutant | unit suite before (15) | campaign | unit suite now (19) |
+| --- | --- | --- | --- |
+| X1 the reserve counts what was BOOKED (`reserveOf[unspecified] += fee`, not `received`) | survived | killed (`the hook holds other than its ledger plus donations`) | killed, 1 red |
+| X2 the transient slot not cleared after P9 reads it (`tstore(slot, 0)` removed) | survived | killed by the smoke test only (`P9 refused an UNLIMITED swap in a liquid pool`) | killed, 2 red |
+
+X1 differs from the original only when the fee ARRIVES short, so the test that kills it takes the fee in a currency
+that charges 1 % on transfer; with honest tokens `fee == received` and no test can tell them apart. X2 differs only on
+the SECOND swap of a transaction, and forge clears transient storage between the top-level calls of a test (measured:
+a slot written in one call reads 0 in the next), so a unit suite whose every swap is its own call cannot see it. The
+tests use `TwoSwaps`, a helper in the test file that makes two swaps through `MinimalRouter` in one call - what a
+multicall or an aggregator does. Red, on the mutants:
+
+```
+[FAIL: the reserve is not what arrived: 2961474103191183 != 2931859362159272] test_the_reserve_is_what_arrived_not_what_the_manager_booked() (gas: 601006)
+[FAIL: WrappedError(0x3b387cA0D1A6Bbe2e1A2ec9A69E09Ffc02fD80Cc, 0xb47b2fb1, 0xedb7c647, 0xa9e35b2f)] test_two_swaps_in_one_transaction_a_partial_second_with_no_rebate_left_stands() (gas: 3234114)
+[FAIL: WrappedError(0x3b387cA0D1A6Bbe2e1A2ec9A69E09Ffc02fD80Cc, 0xb47b2fb1, 0xedb7c647, 0xa9e35b2f)] test_two_swaps_in_one_transaction_the_second_with_no_rebate_left() (gas: 2902906)
+```
+
+(`0xedb7c647` is `RebateOnPartialFill`: the second swap read the first one's rebate.) M6 (P9 removed) now turns 3 unit
+tests red, not 1.
+
+The naive suite let eight of nine through. What the unit suite has that it lacks is written in `V4-ACCOUNTING.md`,
+"Sign and side, measured": the four orientations, a price far from 1 (at price 4 a fee on the wrong side is four times
+off), a funded hook, and equality with the manager's own numbers. The class is `HOOK-ATTACKS.md` class 5 (delta
+accounting); class 36 (gate unit-confusion) is its neighbour.
+
+---
+
 ## Measured on this machine
 
 forge 1.8.1, solc 0.8.26, `evm_version = cancun`. Numbers, not adjectives:
@@ -481,7 +1196,7 @@ forge 1.8.1, solc 0.8.26, `evm_version = cancun`. Numbers, not adjectives:
 | --- | --- |
 | module's own tests | all passed, 0 failed, **0 skipped**, the same count on both managers, and under `--brutalize`. The count is whatever `scripts/battery.sh` prints today: it was copied here twice and was stale both times |
 | native mutation on the example hook | in `src/examples/MUTANTS.md`, which is the only place that number lives |
-| `forge coverage --ir-minimum --match-path test/HostileHook.t.sol`, `src/HostileHook.sol` | **86.67 % of lines** (2026-09-24, `--ir-minimum` is required next to the PoolManager's IR restriction: the coverage paragraph above; the earlier 72.97 % was measured without it and mapped the wrong build) |
+| `forge coverage --ir-minimum`, whole module, `src/HostileHook.sol` | **90.76 % of lines** (108/119), 12/13 branches (2026-09-24, after the file grew; the 11 lines at 0 are mapping errors, see the coverage paragraph above). From `test/HostileHook.t.sol` alone 63.87 %; the 86.67 % given here before was that measurement on the smaller file, and the 72.97 % before it was taken without `--ir-minimum` and mapped the wrong build |
 | invariant campaign | 64 runs × 64 depth, 4 096 calls; the census, not `reverts:` — see the root README |
 | clean build | about 25 s |
 | `PoolManager` from source | **24 050 B**, 526 under the EIP-170 limit |
@@ -714,6 +1429,16 @@ latency-one    honest           1      41.0      41.0      0.0              0 79
 latency-one    late             1      41.0      40.0      0.0 310652317197111  3483779825495 249003066423052      8322417 -9936354757654142       1            0 -9936354757654142        1         0.0
 ```
 
+(Re-run 2026-09-24 when `MinimalRouter` learned ETH, same commands: `gas/run` of `calibration` 8 685 446 before the change
+and 8 687 406 after - 49 gas a swap for `payable` and the refund check. The gas columns of `calibration-gas-priced` move
+with it: `gasCost/run` 26 056 338 000 000 000 000 -> 26 062 218 000 000 000 000 and `net/run` -26 060 288 038 008 590 336 ->
+-26 066 168 038 008 590 336 as printed; `latency-one` gas/run 8 877 683 / 8 502 337 -> 8 879 692 / 8 504 297 (measured by
+the verifier V14). Every other column - decided, executed, refused, shortfall, windfall, worst, `pnl/run` - identical to
+the wei. Re-run again the same day when the router and the helper started paying out of `msg.value` counted, same
+commands: `calibration` 8 687 406 -> 8 698 106 gas/run, 267.5 gas a swap; `gasCost/run` 26 094 318 000 000 000 000,
+`net/run` -26 098 268 038 008 590 336 as printed; `latency-one` 8 890 612 / 8 514 997; the other columns again identical
+to the wei. The 8 505 526 above was already stale before the first change; nobody re-measured this table in between.)
+
 That is the report as the kit's `scripts/sim-report.sh` printed it (forge 1.8.1, 2026-09-23, from the first command
 above alone): rows in the order the ledger received them, whole numbers through awk's `%.0f`, so a value beyond 2^53
 keeps only its leading digits exact (the gas-priced `net/run` is -25 520 528 038 008 590 954 raw units, printed
@@ -825,27 +1550,23 @@ equivalence ends - a limit, written here so it is not rediscovered.
 
 Written down because a list of gaps is the only honest end to a README.
 
-* **Native currency.** The router and the liquidity helper refuse a pool whose `currency0` is the zero
-  address. ETH changes settlement, refunds and re-entrancy at once, and a hook tested only on two ERC-20s
-  has not been tested on the most common pair on the chain. This is the biggest gap. One test crosses it, for the
-  example only: `test_r01_F2_...` swaps both ways on a native pool through v4-core's own `PoolSwapTest`; no campaign,
-  no hostile currency, no harness support.
-* **Hooks that return deltas.** The example declares no delta permissions, so the harness has never had to
-  settle a hook's own delta. `BeforeSwapDelta`, the specified and unspecified sides, exact-in against
-  exact-out and the sign conventions are where most hook arithmetic bugs live, and there is no worked
-  example of them here.
-* **ERC-6909 claims.** The manager's internal balances are a second way to hold value. Nothing here uses
-  them, and an invariant that counts only ERC-20 balances will report a leak as conservation.
-* **Re-entrancy through a hook that HOLDS A DELTA, and through a currency's own transfer hook during
-  settlement**, where the manager is mid-accounting. `HostileHook` can now re-enter through `unlock`,
-  through `swap` and `take` — the doors that are OPEN while a hook runs — and through any target and
-  calldata you hand it, and `reentriesSucceeded` is observable at last (see below). What is still missing
-  is a hook with delta permissions to do it from.
-* **Hijacking `sync`**, and a currency re-synced by a token's own transfer hook mid-settlement.
+* **What is left of native currency and claims** (both left this list on 2026-09-24: "Native currency" and
+  "ERC-6909 claims", above). Not run: `DeltaFeeHook`'s campaign on a native pool (its native pool has unit tests; the
+  campaign on ETH is `ClaimsFeeHook`'s); P7 with ETH (a payment in flight while the hook pays an ETH rebate - the
+  kit's `PrepayRouter` prepays currency0, which is ETH there); a hook that pays ETH to a THIRD party (a referrer, a
+  treasury in the swap path), whose `receive()` would then be able to refuse or grief every swap; claims moved with
+  the ERC-6909 `transfer` / operator approvals, a router that settles WITH claims (`burn`) or takes them (`mint`), and
+  WETH / wrapped-native pools. The fixture manager has not run the new files.
+* **What is left of the four areas that left this list on 2026-09-24** (K15: "Re-entrancy through a currency's
+  transfer hook", "Two pools, one currency", "At the edges", above). Not run: a token callback re-entering from a
+  DELIVERY in the middle of a multi-hop (only the stale slot it leaves was measured), a callback on the payment of a
+  `modifyLiquidity` or a `donate`, a native pool's campaign with two pools, the edges under a campaign (the battery is
+  a fixed grid of 60 swaps per hook), the protocol fee at any edge, and `DeltaFeeHook`'s limit on a fee taken before
+  the input arrives (measured and stated, not fixed).
+* **Deltas beyond the swap.** `afterAddLiquidityReturnDelta` / `afterRemoveLiquidityReturnDelta` and a hook that takes
+  the WHOLE swap (a custom curve, `HOOK-ATTACKS.md` class 35) have no test. Nor has `DeltaFeeHook` a fixture-manager
+  run, a long campaign or a native mutation pass: see "Hooks that return deltas".
 * **Fork tests.** Everything here is local. There is no test that runs against a live fork.
-* **A second pool sharing a currency with the first**, which is where "what does the hook believe about a
-  pool it has never seen" gets interesting beyond the single `UnknownPool` check.
-* **Tick-spacing and price edges**, and unusual fees. The example is exercised at spacing 60 and 1:1.
 * **A block-pinned fixture.** `fetch-bytecode.sh` reads the latest block; it does not pin one.
 * **`v4-periphery` is optional and untested.** `V4_WITH_PERIPHERY=1` installs it; nothing in this module compiles
   against it.

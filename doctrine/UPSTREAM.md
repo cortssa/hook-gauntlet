@@ -35,12 +35,12 @@ each page is available as plain Markdown.
 |---|---|---|
 | what a hook is, which callbacks exist, what the permission bits in the address mean | `concepts/hooks`, `guides/hooks/getting-started`, `guides/hooks/your-first-hook` | `foundry-kit/v4/README.md` (mining, and the two different refusals of a wrong address) |
 | deltas, `unlock`, settling, why a transaction reverts with a non-zero delta | `concepts/flash-accounting`, `guides/unlock-callback-and-deltas`, `guides/flash-accounting`, `concepts/poolmanager` | `doctrine/V4-ACCOUNTING.md` - checked against the pinned code, operation by operation |
-| hooks that return deltas, custom curves, custom accounting, async swaps | `guides/custom-accounting`, `guides/hooks/async-swap` | `HOOK-ATTACKS.md`; the kit has NO worked example of this class yet - say so in your dossier |
+| hooks that return deltas, custom curves, custom accounting, async swaps | `guides/custom-accounting`, `guides/hooks/async-swap` | `HOOK-ATTACKS.md`; worked examples since 2026-09-24: `DeltaFeeHook` (fee and rebate by delta) and `ClaimsFeeHook` (fee kept as claims) in `foundry-kit/v4/`, with the delta accounting measured in `doctrine/V4-ACCOUNTING.md` 13-24 |
 | dynamic fees: who may set them, the override flag, the maximum | `concepts/dynamic-fees`, `guides/hooks/swap-hooks` | the worked hook in `foundry-kit/v4/src/examples/` |
 | liquidity hooks | `guides/hooks/liquidity-hooks` | |
 | who `msg.sender` / `sender` is inside a hook (the hook sees the router, not the end user) | `guides/hooks/accessing-msg.sender` | `HOOK-ATTACKS.md`, the "layer in front of the hook" class; the dossier's "trusted periphery" row |
 | deploying a hook, CREATE2, why the deployer address matters | `guides/hooks/hook-deployment`, and the `v4-template` README | `foundry-kit/v4/src/HookMiner.sol` |
-| ERC-6909 claims | `concepts/erc-6909`, `guides/erc-6909` | not covered by the kit's examples |
+| ERC-6909 claims | `concepts/erc-6909`, `guides/erc-6909` | covered since 2026-09-24: `ClaimsFeeHook` and its per-party conservation suite (`foundry-kit/v4/`) |
 | whether routers and aggregators will route through a pool with your hook | `concepts/hook-routing` | the owner interview: who is expected to trade here? |
 | positions, the position manager, subscribers | `guides/position-manager`, `concepts/subscribers`, `guides/subscriber` | |
 | reading pool state from outside | `guides/read-pool-state`, `guides/state-view` | the views other software will trust are entry points too (`FUZZ-ACTIONS.md`) |

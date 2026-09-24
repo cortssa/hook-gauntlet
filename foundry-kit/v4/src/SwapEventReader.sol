@@ -28,4 +28,23 @@ library SwapEventReader {
         }
         return (false, 0);
     }
+
+    /// @notice the POOL's delta of the last `Swap` emitted by `manager`: `amount0`, `amount1`, signed from the caller's
+    /// side (negative = into the pool). It is the pool's own delta, emitted BEFORE `afterSwap` runs and before any hook
+    /// delta is subtracted from the caller's: for a hook that returns deltas it is NOT what the swapper paid, and the
+    /// difference is the hook's delta (`callerDelta = poolDelta - hookDelta`, per currency, `Hooks.afterSwap`).
+    function lastSwapDelta(Vm.Log[] memory logs, address manager)
+        internal
+        pure
+        returns (bool found, int128 amount0, int128 amount1)
+    {
+        for (uint256 i = logs.length; i > 0; i--) {
+            Vm.Log memory l = logs[i - 1];
+            if (l.emitter == manager && l.topics.length > 0 && l.topics[0] == IPoolManager.Swap.selector) {
+                (amount0, amount1,,,,) = abi.decode(l.data, (int128, int128, uint160, uint128, int24, uint24));
+                return (true, amount0, amount1);
+            }
+        }
+        return (false, 0, 0);
+    }
 }

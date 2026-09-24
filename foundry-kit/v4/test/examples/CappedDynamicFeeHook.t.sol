@@ -369,6 +369,32 @@ contract CappedDynamicFeeHookTest is V4Harness {
         assertFalse(p.beforeSwapReturnDelta || p.afterSwapReturnDelta, "no delta permissions, ever");
     }
 
+    // ------------------------------------------------------------------ two pools (K15)
+    /// @notice the hook's state is keyed by `PoolId` (HOOK-ATTACKS class 4): ten swaps in one block on pool B, a second
+    /// pool on this hook with the same currencies (another spacing), congest pool B's NEXT block to the cap and leave
+    /// pool A's at the base - quoted and charged. Red with the state read from one slot for every pool (mutant K1 in the
+    /// README: pool A charged 5 000).
+    function test_congestion_on_one_pool_does_not_move_another_pools_fee() public {
+        PoolKey memory b = _initPool(IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, 10, SQRT_PRICE_1_1);
+        _addFullRangeLiquidity(b, provider, 100e18);
+        for (uint256 i = 0; i < 10; i++) {
+            vm.prank(trader);
+            router.swap(
+                b,
+                SwapParams({
+                    zeroForOne: i % 2 == 0,
+                    amountSpecified: -1e15,
+                    sqrtPriceLimitX96: i % 2 == 0 ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                }),
+                ""
+            );
+        }
+        vm.roll(vm.getBlockNumber() + 1);
+        assertEq(hook.quoteNextFee(b), hook.MAX_FEE(), "pool B's congestion did not reach its own cap");
+        assertEq(hook.quoteNextFee(key), hook.BASE_FEE(), "pool B's congestion moved pool A's quote");
+        assertEq(_swapAndReadFee(1e15), hook.BASE_FEE(), "pool B's congestion moved pool A's charge");
+    }
+
     // ------------------------------------------------------------------ helpers
     /// @dev swap once as the trader and return the fee the POOL reports having charged, read off its own
     /// event rather than from the hook. The two agreeing is a claim, and this is how it is tested.

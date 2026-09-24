@@ -96,7 +96,7 @@ open`. Sections 1, 2, 3 and 10 are filled as far as they are known (10 only if a
 `not yet`). In a skeleton, a cell that waits on the owner for something OTHER than triage (a not-run judge's reason in
 section 6, a full-mode reason while the mode is undecided, the chain, the framework self-score, the decline of
 promotion) reads `owner decision pending: <what>` - never `triage pending`, which is for findings only - and each such
-item is also a named entry in `STATE.md` `waiting_on_owner:`. None of these is a skip. A row that does not apply to this
+item is also a named entry in `STATE.md` `waiting_on_owner:`. None of these is a skip, and each of them COUNTS as not done in `N` (a judge waiting on the owner is a judge not run). A row that does not apply to this
 hook (the real-manager battery for a hook on no manager) reads `n/a: <what replaced it, section 8>` and does not count as
 not done; neither does an optional judge the owner did not ask for (the sandbox: `not run: optional, not requested`).
 What DOES count as not done: `N` counts the rows of section 6 only (the judges of `doctrine/JUDGES.md`): a judge not

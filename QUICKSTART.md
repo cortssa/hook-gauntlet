@@ -122,7 +122,7 @@ and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` a
 `forge-std/=<kit>/foundry-kit/lib/forge-std/src/` (no `allow_paths` needed; say in the dossier's section 10 that they are
 absolute). That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
 (the PoolManager stops at "stack too deep"): start its `foundry.toml` and `remappings.txt` from the kit's own
-`foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (solc 0.8.26, evm cancun, the optimizer, the PoolManager's
+`foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (drop its `libs = ["lib"]` and `allow_paths = ["../src"]`: with every dependency remapped by absolute path, `libs = []` and no `allow_paths` is what a reader measured to work; solc 0.8.26, evm cancun, the optimizer, the PoolManager's
 IR compilation restrictions - its `paths` entry made absolute too, `<kit>/foundry-kit/v4/lib/v4-core/src/PoolManager.sol` -
 and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `ds-test/`, `solmate/`, `@openzeppelin/`,
 `v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
@@ -130,8 +130,9 @@ carry because the module reaches its own sources directly: `gauntlet-v4/=<kit>/f
 `HookMiner`), and its scenarios from `foundry-kit/v4/test/`. Every test that creates the PoolManager is then compiled under the
 restricted via-IR profile, so the hook the tests, the fuzz and the mutants deploy is the `<Hook>.manager.json` build, not the
 default `<Hook>.json`: THAT is the audited artefact - `size.sh` prints both rows, cite the `.manager` one; promotion hashes it;
-a hook deployed from any other profile is a different artefact (`NEXT.md`, bytecode changed). A hook that HOLDS tokens has no single worked example: the token
-side is `foundry-kit/test/` (ToyVault), the hook side is `foundry-kit/v4/test/`; merge them. Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
+a hook deployed from any other profile is a different artefact (`NEXT.md`, bytecode changed). A hook that HOLDS tokens has a worked example since 2026-09-24: `DeltaFeeHook` (a fee taken by
+delta, a rebate, a per-block cap) in `foundry-kit/v4/src/examples/` with its unit, invariant and mutant tests; the
+token-side hostile cases stay in `foundry-kit/test/` (ToyVault). Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
 A promise that breaks under a token behaviour the owner has not decided: `doctrine/NEXT.md` row 6b, not a reason to leave
 the action out.
 
@@ -167,7 +168,7 @@ cp <kit>/briefs/audit-round.md .gauntlet/briefs/r01.md   # fill the placeholders
 ```
 
 A **fresh** agent - a new session, no memory of writing the hook - runs the brief inside the bench and writes
-`.gauntlet/reports/r01.md`. Then you: read the WHOLE report; reproduce every HIGH and MEDIUM by your own means, on your own bench, and rerun the auditor's test for each low (`doctrine/VERIFY.md` 6; a test counts once seen RED);
+`.gauntlet/reports/r01.md` (a project on the WSL side and an agent on the Windows side: the agent returns the report as text or writes it where it can, and you copy it there; the report's LAST line is `END OF REPORT r01` - a placeholder is not a report, and a poll waits for that line). Then you: read the WHOLE report; reproduce every HIGH and MEDIUM by your own means, on your own bench, and rerun the auditor's test for each low (`doctrine/VERIFY.md` 6; a test counts once seen RED);
 decide each one - fix at the cause / refuse in writing / accept with a number - in `DECISIONS.md`; add the regression
 test and the fuzz action that would have caught it; run the judges again; close the round with one `ROUND` line at the
 top of the `LOG.md` entry (`state/README.md`). Then back to `doctrine/NEXT.md`.

@@ -2,16 +2,19 @@
 pragma solidity ^0.8.26;
 
 import {Test, console2} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {PoolManager} from "v4-core/src/PoolManager.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
-import {ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
+import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
+import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
 import {MinimalRouter} from "./MinimalRouter.sol";
 import {LiquidityHelper} from "./LiquidityHelper.sol";
+import {SwapEventReader} from "./SwapEventReader.sol";
 
 /// @title V4Harness
 /// @notice The base a v4 hook's tests inherit from. It gives you a PoolManager, two hostile currencies, a
@@ -263,11 +266,162 @@ abstract contract V4Harness is Test {
         vm.stopPrank();
     }
 
+    // ------------------------------------------------------------------ native currency and claims (K14)
+    /// @notice what `who` holds of `c`, whatever `c` is: ETH for the zero address, the TRUE balance of a harness token
+    /// (`HostileERC20.trueBalanceOf`, which no switch of the token can falsify) otherwise. Every currency the harness
+    /// hands out is one of the two; a project that brings its own ERC-20 overrides this.
+    function _trueBalance(Currency c, address who) internal view virtual returns (uint256) {
+        if (c.isAddressZero()) return who.balance;
+        return HostileERC20(Currency.unwrap(c)).trueBalanceOf(who);
+    }
+
+    /// @notice the ERC-6909 claims `who` holds on the manager for `c`: value the manager OWES `who`, in `c`, which no
+    /// token balance shows. A hook that keeps its fees as claims holds them here and nowhere else.
+    function _claimsOf(Currency c, address who) internal view returns (uint256) {
+        return manager.balanceOf(who, c.toId());
+    }
+
+    /// @notice give `who` `amount` more ETH (`vm.deal` SETS a balance; this adds to it)
+    function _fundNative(address who, uint256 amount) internal {
+        vm.deal(who, who.balance + amount);
+    }
+
+    /// @notice a pool with ETH as `currency0` and `other` (an ERC-20) as `currency1`: the zero address always sorts first
+    function _nativePoolKey(IHooks hook, uint24 fee, int24 tickSpacing, Currency other)
+        internal
+        pure
+        returns (PoolKey memory)
+    {
+        return PoolKey({
+            currency0: Currency.wrap(address(0)),
+            currency1: other,
+            fee: fee,
+            tickSpacing: tickSpacing,
+            hooks: hook
+        });
+    }
+
+    function _initNativePool(IHooks hook, uint24 fee, int24 tickSpacing, uint160 sqrtPriceX96, Currency other)
+        internal
+        returns (PoolKey memory key)
+    {
+        key = _nativePoolKey(hook, fee, tickSpacing, other);
+        manager.initialize(key, sqrtPriceX96);
+    }
+
+    // ------------------------------------------------------------------ one swap, with every party's books (K13, K14)
+    /// @notice what one swap did to everyone, per currency, each from its OWN source - so that a test can hold a hook
+    /// that returns deltas to `swapper + hook + manager == 0` and see WHERE a unit went. Signed from each party's side:
+    /// negative = it paid, positive = it received.
+    /// @param caller0/1 the delta the manager returned to the router: the swapper's side, the hook's delta INCLUDED
+    /// @param pool0/1 the pool's own delta, off the manager's `Swap` event (caller-signed; emitted before `afterSwap`)
+    /// @param swapper0/1, hook0/1, manager0/1 true balance changes (`_trueBalance`: ETH for a native currency, and a
+    ///        hostile token cannot lie to them). The swapper's ETH is net of the router's refund: what it sent less what
+    ///        came back
+    /// @param hookClaims0/1 the change in the hook's ERC-6909 claims on the manager. A claim is value the manager owes,
+    ///        held as tokens the manager keeps: with claims minted in a swap the manager's balance moves by the pool's
+    ///        delta PLUS those claims (`manager - hookClaims == -pool`), and conservation counts them as the hook's
+    /// @param valueSent the ETH the swapper sent with the call
+    /// The hook's own delta, as the manager booked it, is `pool - caller`. A hook that settles its own delta inside
+    /// its callbacks - the only way a POSITIVE hook delta can be cleared: `take`, `mint` and `clear` all act on
+    /// `msg.sender` - shows it as `hook + hookClaims == pool - caller`: in its balance if it took, in its claims if it
+    /// minted.
+    struct SwapBooks {
+        int256 caller0;
+        int256 caller1;
+        int256 pool0;
+        int256 pool1;
+        int256 swapper0;
+        int256 swapper1;
+        int256 hook0;
+        int256 hook1;
+        int256 manager0;
+        int256 manager1;
+        int256 hookClaims0;
+        int256 hookClaims1;
+        uint256 valueSent;
+    }
+
+    /// @notice `_swapWithBooks` finds the manager's `Swap` event with `vm.recordLogs()` / `vm.getRecordedLogs()`, and those
+    /// CONSUME the recorder: a test that called `vm.recordLogs()` before it loses what it recorded before the swap AND the
+    /// swap's own events - the hook's among them. (K15b, from the verifier V15: a grant the hook made inside `afterSwap`
+    /// went unseen by a unit test that recorded around four swaps, its mutant 11/11 green.) Set `_keepSwapLogs` and every
+    /// `_swapWithBooks` appends every log of its swap here; `_takeKeptSwapLogs()` hands them over and empties the list.
+    bool internal _keepSwapLogs;
+    Vm.Log[] internal _keptSwapLogs;
+
+    function _takeKeptSwapLogs() internal returns (Vm.Log[] memory logs) {
+        logs = new Vm.Log[](_keptSwapLogs.length);
+        for (uint256 i = 0; i < logs.length; i++) {
+            logs[i] = _keptSwapLogs[i];
+        }
+        delete _keptSwapLogs;
+    }
+
+    /// @notice swap through `router` as `swapper` and return every party's books (see `SwapBooks`). Reverts if the
+    /// manager emitted no `Swap` (the swap did not happen). With ETH as the INPUT (a native `currency0`, zeroForOne) it
+    /// sends `|amountSpecified|` on an exact-in swap and the swapper's whole ETH balance on an exact-out one (the input
+    /// is not known in advance; the router refunds the rest): the overload with `value` chooses.
+    function _swapWithBooks(address swapper, PoolKey memory key, SwapParams memory params)
+        internal
+        returns (SwapBooks memory b)
+    {
+        uint256 value;
+        if (key.currency0.isAddressZero() && params.zeroForOne) {
+            value = params.amountSpecified < 0 ? uint256(-params.amountSpecified) : swapper.balance;
+        }
+        return _swapWithBooks(swapper, key, params, value);
+    }
+
+    function _swapWithBooks(address swapper, PoolKey memory key, SwapParams memory params, uint256 value)
+        internal
+        returns (SwapBooks memory b)
+    {
+        address hook = address(key.hooks);
+        int256[8] memory pre = [
+            int256(_trueBalance(key.currency0, swapper)),
+            int256(_trueBalance(key.currency1, swapper)),
+            int256(_trueBalance(key.currency0, hook)),
+            int256(_trueBalance(key.currency1, hook)),
+            int256(_trueBalance(key.currency0, address(manager))),
+            int256(_trueBalance(key.currency1, address(manager))),
+            int256(_claimsOf(key.currency0, hook)),
+            int256(_claimsOf(key.currency1, hook))
+        ];
+        vm.recordLogs();
+        vm.prank(swapper);
+        BalanceDelta d = router.swap{value: value}(key, params, "");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        if (_keepSwapLogs) {
+            for (uint256 i = 0; i < logs.length; i++) {
+                _keptSwapLogs.push(logs[i]);
+            }
+        }
+        (bool found, int128 p0, int128 p1) = SwapEventReader.lastSwapDelta(logs, address(manager));
+        require(found, "V4Harness: no Swap event, the swap did not happen");
+        b.caller0 = d.amount0();
+        b.caller1 = d.amount1();
+        b.pool0 = p0;
+        b.pool1 = p1;
+        b.swapper0 = int256(_trueBalance(key.currency0, swapper)) - pre[0];
+        b.swapper1 = int256(_trueBalance(key.currency1, swapper)) - pre[1];
+        b.hook0 = int256(_trueBalance(key.currency0, hook)) - pre[2];
+        b.hook1 = int256(_trueBalance(key.currency1, hook)) - pre[3];
+        b.manager0 = int256(_trueBalance(key.currency0, address(manager))) - pre[4];
+        b.manager1 = int256(_trueBalance(key.currency1, address(manager))) - pre[5];
+        b.hookClaims0 = int256(_claimsOf(key.currency0, hook)) - pre[6];
+        b.hookClaims1 = int256(_claimsOf(key.currency1, hook)) - pre[7];
+        b.valueSent = value;
+    }
+
     /// @notice add `liq` of liquidity over the full range, paid for by `provider`.
+    /// On a pool with ETH as `currency0` the provider sends its whole ETH balance and the helper refunds what the
+    /// manager did not charge.
     function _addFullRangeLiquidity(PoolKey memory key, address provider, int256 liq) internal {
         (int24 lower, int24 upper) = _fullRange(key.tickSpacing);
+        uint256 value = key.currency0.isAddressZero() && liq > 0 ? provider.balance : 0;
         vm.prank(provider);
-        liquidity.modifyLiquidity(
+        liquidity.modifyLiquidity{value: value}(
             key,
             ModifyLiquidityParams({tickLower: lower, tickUpper: upper, liquidityDelta: liq, salt: bytes32(0)}),
             ""

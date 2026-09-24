@@ -114,4 +114,6 @@ Three fixed subsections, in this order, every line carrying the evidence label i
   disclaimer.
 
 Goes red at the executor's gate (`briefs/executor-with-gates.md`) exactly like a red test: a report missing one of
-the three, or carrying a line with no evidence label, does not pass.
+the three, or carrying a line with no evidence label, does not pass. The report's last line is `END OF REPORT {{ROUND}}`,
+written once, when it is complete: never as a placeholder. `scripts/size.sh` writes under `.gauntlet/reports/` of the
+directory it runs in: in the bench that directory is yours to delete, or point `OUT_DIR` at `{{SCRATCH}}`.

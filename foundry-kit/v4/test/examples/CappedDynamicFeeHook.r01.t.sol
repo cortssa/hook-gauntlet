@@ -30,7 +30,8 @@ import {CappedDynamicFeeHook} from "../../src/examples/CappedDynamicFeeHook.sol"
 ///
 /// F2 (low): the hook accepts native-currency pools and the spec left it undecided. Decided in SPEC.md: ACCEPTED, the
 /// hook moves no value and never reads a currency. The last test holds it to that on a real native swap, through
-/// v4-core's own test routers (the kit's `MinimalRouter` refuses native currency).
+/// v4-core's own test routers (written when the kit's `MinimalRouter` still refused native currency; it accepts it
+/// since 2026-09-24, and `test/NativeHarness.t.sol` holds it to that).
 contract CappedDynamicFeeHookRound01 is V4Harness {
     uint160 internal constant P11 = 79228162514264337593543950336;
     CappedDynamicFeeHook internal hook;

@@ -270,7 +270,7 @@ from all of these:
 |---|---|
 | doctrine, briefs, state convention | written, distilled from a real project, **not yet run on a second project** |
 | Foundry kit and scripts | written with their own tests (hostile token: one test per switch; guards: a self-test that makes each one go red on purpose). Scripts exercised on bash 5 / Linux only |
-| v4 module | harness with both managers, address mining, one worked hook with unit tests and an invariant suite; proven once against the Ethereum mainnet manager's bytecode. **Not covered:** native currency, delta-returning hooks, ERC-6909 claims, fork tests. The long fuzz profile has not been run on it |
+| v4 module | harness with both managers, address mining, one worked hook with unit tests and an invariant suite; proven once against the Ethereum mainnet manager's bytecode. **Covered since 2026-09-24:** delta-returning hooks (`DeltaFeeHook`), native currency in the router and helper with a hostile native counterparty, ERC-6909 claims (`ClaimsFeeHook`, conservation per party). **Not covered:** sync hijack and re-entrancy through a token's transfer hook mid-settlement, a second pool sharing a currency, tick/price/fee edges, fork tests, a block-pinned fixture, v4-periphery (its README, "What this module still does not do") |
 | `adapters/claude-code/` | the path the method was actually run on |
 | `adapters/codex/` | **UNTESTED** - written from the documented convention, confirmations welcome |
 | blind benchmark (planted bugs, sealed answer key, measured recall) | **run twice on the same target**: one round, then the full light route - see below |

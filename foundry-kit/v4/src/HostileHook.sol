@@ -7,7 +7,9 @@ import {IUnlockCallback} from "v4-core/src/interfaces/callback/IUnlockCallback.s
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
+import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
+import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
+import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
 
 /// @title HostileHook
@@ -25,6 +27,8 @@ import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation
 /// Because of job 2 it must NOT call `Hooks.validateHookPermissions`. That is deliberate, and it is the one
 /// thing to copy from this file into nothing.
 contract HostileHook is IHooks, IUnlockCallback {
+    using TransientStateLibrary for IPoolManager;
+
     IPoolManager public immutable manager;
 
     /// @notice return a selector that is not the one the manager asked for. The manager treats any mismatch
@@ -59,11 +63,40 @@ contract HostileHook is IHooks, IUnlockCallback {
     bytes public reentryData;
 
     uint256 public calls;
+    /// @notice who the manager said was swapping (`sender`, the contract that called `manager.swap`) on the last
+    /// `beforeSwap`, and how many swaps the hook has seen: a swap nested in another's settlement shows up here as a
+    /// second swap from a sender that is not the router (K14, `test/NativeCounterparty.t.sol`)
+    address public lastSwapSender;
+    uint256 public swapsSeen;
     uint256 public reentriesAttempted;
     uint256 public reentriesSucceeded;
     /// @notice the return data of the last re-entry attempt, successful or not. Read it in a test: "it
     /// reverted" and "it reverted with THAT" are different findings.
     bytes public lastReentryReturn;
+
+    // ------------------------------------------------------------------ deltas (2026-09-24, K13)
+    /// @notice what `beforeSwap` returns as its `BeforeSwapDelta` (specified, unspecified) and `afterSwap` as its
+    /// unspecified delta. The HOOK's delta: positive = the manager owes the hook, negative = the hook owes the manager.
+    /// The manager reads them only if the hook's ADDRESS carries `BEFORE_SWAP_RETURNS_DELTA` / `AFTER_SWAP_RETURNS_DELTA`
+    /// (without the flag they are discarded silently, `doctrine/V4-ACCOUNTING.md` item 5): mine for the flags.
+    int128 public beforeSpecifiedDelta;
+    int128 public beforeUnspecifiedDelta;
+    int128 public afterUnspecifiedDelta;
+    /// @notice settle what it returns, in `afterSwap`: take a positive total, pay a negative one, per currency. Off, the
+    /// hook returns deltas and leaves them open - the manager then refuses the whole unlock (`CurrencyNotSettled`).
+    bool public squareOwnDelta;
+    /// @notice re-enter from inside `afterSwap` AFTER squaring, i.e. while the manager's books show the hook holding a
+    /// delta (what it took or paid is booked; what it returns is not yet). While it is on, that is the ONLY place
+    /// the hook re-enters (the re-entry at the top of every callback is off).
+    bool public reenterWhileHolding;
+    /// @notice after the re-entry, read its OWN open delta from the manager (`exttload`) and square any residue the
+    /// re-entry left - the check a hook that re-enters must make. Off = the hook trusts that it knows its own books.
+    bool public checkOwnDelta;
+    /// @notice the hook's own open delta in currency0 / currency1, read from the manager just before the re-entry
+    int256 public heldAtReentry0;
+    int256 public heldAtReentry1;
+    /// @notice times `checkOwnDelta` found and squared a residue the hook's own arithmetic did not predict
+    uint256 public residuesSquared;
 
     /// @dev one level only. Re-entering through `swap` would otherwise call this hook again, which would
     /// re-enter again, until the frame dies - and a test that runs out of gas measures nothing.
@@ -122,6 +155,25 @@ contract HostileHook is IHooks, IUnlockCallback {
         reentryData = data;
     }
 
+    /// @notice the deltas the two swap callbacks return (see the fields). Zero, the default, is the old behaviour.
+    function setDeltas(int128 beforeSpecified, int128 beforeUnspecified, int128 afterUnspecified) external {
+        beforeSpecifiedDelta = beforeSpecified;
+        beforeUnspecifiedDelta = beforeUnspecified;
+        afterUnspecifiedDelta = afterUnspecified;
+    }
+
+    function setSquareOwnDelta(bool on) external {
+        squareOwnDelta = on;
+    }
+
+    function setReenterWhileHolding(bool on) external {
+        reenterWhileHolding = on;
+    }
+
+    function setCheckOwnDelta(bool on) external {
+        checkOwnDelta = on;
+    }
+
     /// @notice So that a manager which ALLOWS a nested unlock can be told apart from one that refuses.
     /// Without it, `manager.unlock` calls back into a hook that cannot answer, the call reverts, and
     /// `reentriesSucceeded` stays 0 whatever the manager decided - the counter measured this contract's own
@@ -140,8 +192,12 @@ contract HostileHook is IHooks, IUnlockCallback {
             uint256 target = gasleft() > gasToBurn ? gasleft() - gasToBurn : 0;
             while (gasleft() > target) {}
         }
-        if (reenter && !_inReentry) {
-            _inReentry = true;
+        if (reenter && !reenterWhileHolding && !_inReentry) _reenter();
+    }
+
+    function _reenter() private {
+        {
+            _inReentry = true; // (the block is the old `if` body, kept as it was)
             reentriesAttempted += 1;
             // Whether any of this is allowed is the manager's business, and this is how a test asks it the
             // question instead of assuming the answer. A low-level call, not a `try`, because the target is
@@ -215,23 +271,77 @@ contract HostileHook is IHooks, IUnlockCallback {
         return (_sel(IHooks.afterRemoveLiquidity.selector), BalanceDelta.wrap(0));
     }
 
-    function beforeSwap(address, PoolKey calldata, SwapParams calldata, bytes calldata)
+    function beforeSwap(address sender, PoolKey calldata, SwapParams calldata, bytes calldata)
         external
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
+        lastSwapSender = sender;
+        swapsSeen += 1;
         _enter();
-        return (_sel(IHooks.beforeSwap.selector), BeforeSwapDeltaLibrary.ZERO_DELTA, rawFeeOverride);
+        return (_sel(IHooks.beforeSwap.selector), beforeSwapDeltaNow(), rawFeeOverride);
     }
 
-    function afterSwap(address, PoolKey calldata, SwapParams calldata, BalanceDelta, bytes calldata)
+    function beforeSwapDeltaNow() public view returns (BeforeSwapDelta) {
+        return toBeforeSwapDelta(beforeSpecifiedDelta, beforeUnspecifiedDelta);
+    }
+
+    /// @notice the hook's whole delta for this swap, per currency, as the manager will book it after `afterSwap`
+    /// returns: specified and unspecified mapped to currency0/1 by `(amountSpecified < 0) == zeroForOne` - the
+    /// manager's own rule (`Hooks.afterSwap`)
+    function bookedDelta(SwapParams calldata params) public view returns (int256 d0, int256 d1) {
+        int256 spec = beforeSpecifiedDelta;
+        int256 unspec = int256(beforeUnspecifiedDelta) + int256(afterUnspecifiedDelta);
+        (d0, d1) = (params.amountSpecified < 0) == params.zeroForOne ? (spec, unspec) : (unspec, spec);
+    }
+
+    function afterSwap(address, PoolKey calldata key, SwapParams calldata params, BalanceDelta, bytes calldata)
         external
         override
         returns (bytes4, int128)
     {
         _enter();
-        return (_sel(IHooks.afterSwap.selector), int128(0));
+        (int256 b0, int256 b1) = bookedDelta(params);
+        if (squareOwnDelta) {
+            _square(key.currency0, b0);
+            _square(key.currency1, b1);
+        }
+        if (reenterWhileHolding && reenter && !_inReentry) {
+            heldAtReentry0 = manager.currencyDelta(address(this), key.currency0);
+            heldAtReentry1 = manager.currencyDelta(address(this), key.currency1);
+            _reenter();
+        }
+        if (checkOwnDelta) {
+            // what the manager's books say we hold now, plus what it will book when we return, must be zero
+            int256 r0 = manager.currencyDelta(address(this), key.currency0) + b0;
+            int256 r1 = manager.currencyDelta(address(this), key.currency1) + b1;
+            if (r0 != 0 || r1 != 0) residuesSquared += 1;
+            _square(key.currency0, r0);
+            _square(key.currency1, r1);
+        }
+        return (_sel(IHooks.afterSwap.selector), afterUnspecifiedDelta);
     }
+
+    /// @dev positive: the manager owes us, take it; negative: we owe the manager, pay it (sync, transfer, settle; for ETH,
+    /// `settle{value}`)
+    function _square(Currency c, int256 d) private {
+        if (d > 0) {
+            manager.take(c, address(this), uint256(d));
+        } else if (d < 0) {
+            if (c.isAddressZero()) {
+                // ETH: no sync, the value IS the payment (K14)
+                manager.settle{value: uint256(-d)}();
+                return;
+            }
+            manager.sync(c);
+            IERC20Minimal(Currency.unwrap(c)).transfer(address(manager), uint256(-d));
+            manager.settle();
+        }
+    }
+
+    /// @notice so that it can TAKE ETH (a positive delta on a native pool is paid to it by the manager's `take`) and
+    /// hold ETH to pay a negative one. Accepts from anyone: it is a test double, not a hook to copy (K14).
+    receive() external payable {}
 
     function beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
         external
