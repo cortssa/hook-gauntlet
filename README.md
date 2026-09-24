@@ -149,7 +149,7 @@ foundry-kit/v4/  harness for two pool managers (source, or your chain's real byt
                  hook, a worked dynamic-fee hook
 scripts/         battery - fuzz-long - census - mutate - size - bench - release-guard - assert-fresh-build -
                  install-v4 - fetch-bytecode - selftest
-adapters/        claude-code (the path this was run on), codex (untested)
+adapters/        claude-code/ (the supported adapter, the path this was run on); experimental/codex/ (untested)
 ```
 
 ## What is in it
