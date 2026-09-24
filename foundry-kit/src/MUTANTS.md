@@ -28,8 +28,11 @@ This file is the only place these numbers live.
 | `InvariantBase.sol`, after the tests below | 370 | 362 | **329** | 33 | 8 | **90.9 %** | 3 m 25 s |
 | `HostileERC20.sol`, as the audit found it | 393 | 379 | 325 | **54** | 14 | 85.8 % | 2 m 2 s |
 
-(Counts above predate the `returnsFalse` switch of 2026-09-24 and the `fuzzedBookkeepingCalls` counter in `InvariantBase.sol` of 2026-09-23; the files changed, the scores were not re-run. The next mutation run replaces this table.)
 | `HostileERC20.sol`, after the tests below | 393 | 379 | **342** | 37 | 14 | **90.2 %** | 2 m 33 s |
+| `InvariantBase.sol`, 2026-09-24 (with the `fuzzedBookkeepingCalls` counter and the guard on `writeCensus`) | - | 423 | **383** | 40 | - | **90.5 %** | 3 m 28 s |
+| `HostileERC20.sol`, 2026-09-24 (with the `returnsFalse` switch) | - | 379 | **343** | 36 | - | **90.5 %** | 2 m 33 s |
+
+(The two 2026-09-24 rows were measured on forge 1.8.1 after the core changes; generated and invalid counts were not captured. The survivors were not re-read: the lists below are from the earlier run.)
 | `InvariantBase.sol`, after the second review (the file grew again: `countedSetter`, the net under `_unexpectedRevert`, `writeCensus`) | 411 | 403 | **365** | 38 | 8 | **90.6 %** | 3 m 44 s |
 | `HostileERC20.sol`, after the second review (one test, for the survivor this file used to confess) | 393 | 379 | **343** | 36 | 14 | **90.5 %** | 2 m 38 s |
 

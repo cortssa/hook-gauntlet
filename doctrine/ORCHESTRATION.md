@@ -45,8 +45,12 @@ step is written.
 - **A subagent that spawns its own agent and "waits" for it does not wake up when the child finishes**: the child's
   completion is delivered to the orchestrator, not to the parent agent. Seen once, four hours lost. The orchestrator
   resumes the parent with the child's result and the path of its report.
-- **The harness may refuse a subagent permission to write report files** ("return findings as text"). Seen twice. The
-  orchestrator saves the returned text to the report path itself and says so in the report's header.
+- **The harness refuses a subagent's Write of a file NAMED like a report** - `REPORT.md`, `report.md`, `findings.md`,
+  case-insensitive - with "Subagents should return findings as text, not write report files". Measured with a probe:
+  every other capability worked (Write/Edit of other names, Bash, PowerShell, WSL, forge, spawning a child agent, reads
+  anywhere), and the scratchpad is the SESSION's, shared with the orchestrator. It is a rule of the harness, not a
+  permission failure: do not dodge it with `echo`. The orchestrator saves the returned text to the report path itself
+  and says so in the report's header.
 - **The model provider's safety classifier may stop an agent at a step whose declared purpose is to produce an
   offensive artefact.** Seen three times, always at the same kind of step: writing a target with planted defects and
   its proof-of-concept exploits (twice, with an instruction not to retry even reworded), and writing a new
