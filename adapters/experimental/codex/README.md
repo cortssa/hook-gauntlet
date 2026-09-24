@@ -1,6 +1,8 @@
 # Adapter: Codex
 
-> **UNTESTED - confirmations welcome.**
+> **Status: experimental / untested.** Written from Codex's documented convention; no end-to-end run of the route has
+> been made with it. It lives under `experimental/` until one has (a run report is the contribution: `CONTRIBUTING.md`
+> item 2). The supported path is `adapters/claude-code/`.
 >
 > Nobody has run this route end to end on Codex. This file is written from the documented conventions and from
 > the shape of the core, which is deliberately vendor-neutral. Treat every instruction here as a proposal. If you

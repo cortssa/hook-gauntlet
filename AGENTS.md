@@ -269,7 +269,7 @@ scripts/                battery, long fuzz, campaign census, per-agent bench, pu
                         selftest.sh (run it first if you do not trust these scripts - it makes each guard go red),
                         install-v4 (pinned Uniswap sources), fetch-bytecode (the manager that exists on your chain)
 adapters/claude-code/   role -> subagent and model map
-adapters/codex/         the same roles as separate tasks (UNTESTED)
+adapters/experimental/codex/  the same roles as separate tasks (experimental: no end-to-end run yet)
 ```
 
 The core (this file, `doctrine/`, `briefs/`, `state/`, `scripts/`) depends on no vendor feature. The adapters are
