@@ -28,6 +28,16 @@ interface IBalanceReader {
 /// instead is the census: `writeCensus()` called from `afterInvariant()`, added up over the whole campaign
 /// by `scripts/census.sh`. (`printCallSummary()` next to it shows ONE run - forge prints one run's logs.)
 /// Both worked examples do it.
+///
+/// Restrict the handler with `targetSelector` to the actions you wrote. Without it the fuzzer calls EVERY non-view
+/// function the handler has, this base's included: `writeCensus(string)` is one, and on a toy handler with one action
+/// it took about half of a 64 x 64 campaign's calls (the census counted 2 016 calls to the action; forge made 4 096).
+/// `writeCensus` ignores a call
+/// that arrives as its own transaction, which is how the fuzzer's arrive, so the census stays the suite's own - but the
+/// calls are spent, and the fuzzer's labels used to reach the census (see `writeCensus`). They are COUNTED
+/// (`fuzzedBookkeepingCalls`), and a run that had any says so in its census line, which `scripts/census.sh` turns into
+/// a line under its table: "the fuzzer reached HandlerBase's own functions". `doctrine/INVARIANTS.md`,
+/// "your handler"; both worked examples list their selectors.
 abstract contract HandlerBase is Test {
     /// @notice the fixed cast. A fuzzer that can reach any address reaches none of them twice.
     address[] public actors;
@@ -43,6 +53,11 @@ abstract contract HandlerBase is Test {
     /// @notice the reason given for the LAST unexplained failure, so the invariant that reads
     /// `revertsUnexpected` can say what happened instead of only that something did.
     string public lastUnexpected;
+
+    /// @notice calls into this base's own bookkeeping that arrived as their own transaction - the FUZZER's, on a handler
+    /// with no `targetSelector` (`writeCensus` is the one non-view function this base has). Above zero, the campaign
+    /// spent calls here instead of on your actions, and `censusLine` carries the count as a boundary.
+    uint256 public fuzzedBookkeepingCalls;
 
     string[] internal actionNames;
     mapping(bytes32 => uint256) internal actionCalls;
@@ -258,13 +273,29 @@ abstract contract HandlerBase is Test {
     /// the everyday battery writes no files.
     /// @dev the path must be writable under `fs_permissions` in `foundry.toml` (the kit allows `./census`). Without
     /// the permission `vm.writeLine` reverts and the campaign goes red saying so, which is the right way round.
+    ///
+    /// A call that arrives as its OWN TRANSACTION (`msg.sender == tx.origin`) writes nothing and returns. That is how
+    /// the invariant fuzzer's calls arrive (measured, forge 1.8.1: 2 016 fuzz calls into a toy handler's action, not
+    /// one with `msg.sender != tx.origin`, none from the test contract). A handler with no `targetSelector` exposes this
+    /// function to the fuzzer, and it used to be called with labels of the fuzzer's making: on that toy, 64 runs left
+    /// 2 125 census lines under 1 473 labels, 1 427 of them not printable, and `scripts/census.sh` answered rc 1 over
+    /// them. `afterInvariant()` calls it from the test contract - `msg.sender` is a contract - and the line is written
+    /// (65 lines for 64 runs after the fix: forge calls `afterInvariant` once more than `runs`).
     function writeCensus(string memory label) public {
+        // the fuzzer's own call, not the suite's: see above. Counted, so that the census can say the handler is unrestricted
+        if (msg.sender == tx.origin) {
+            fuzzedBookkeepingCalls += 1;
+            return;
+        }
         string memory path = vm.envOr("GAUNTLET_CENSUS", string(""));
         if (bytes(path).length == 0) return;
         vm.writeLine(path, censusLine(label));
     }
 
     /// @notice one run, one line, tab separated: `label  U=<unexpected>  A:<action>=<calls>/<successes> ...  B:<boundary>=<count> ...`
+    /// When the fuzzer reached `writeCensus` in this run (`fuzzedBookkeepingCalls > 0`) the line ends with one boundary
+    /// more, `B:handler unrestricted: bookkeeping selectors were fuzzed=<calls>`, and `scripts/census.sh` prints a line
+    /// under its table that says to restrict the handler with `targetSelector`.
     function censusLine(string memory label) public view returns (string memory line) {
         line = string.concat(label, "\tU=", vm.toString(revertsUnexpected));
         for (uint256 i = 0; i < actionNames.length; i++) {
@@ -276,6 +307,11 @@ abstract contract HandlerBase is Test {
         for (uint256 i = 0; i < reachNames.length; i++) {
             line = string.concat(
                 line, "\tB:", reachNames[i], "=", vm.toString(reachCount[keccak256(bytes(reachNames[i]))])
+            );
+        }
+        if (fuzzedBookkeepingCalls > 0) {
+            line = string.concat(
+                line, "\tB:handler unrestricted: bookkeeping selectors were fuzzed=", vm.toString(fuzzedBookkeepingCalls)
             );
         }
     }

@@ -81,6 +81,11 @@ to fight over; say so in the dossier and move on (`AGENTS.md` 6b).
     precondition the environment does not meet is `vm.skip(true, why)` - a skip the battery refuses unless accepted on
     purpose - never a bare `return`, which prints PASS with zero assertions reached (`EVIDENCE.md` §2). Measured: a
     fork test with a bare `return` gave 4 PASS in 966 µs without `--fork-url`.
+    A venue with a bid and an ask - a book - has no single price. The binding states which one it reports (best bid,
+    best ask, or the reference price when the reference sits inside the spread) and builds it from what could
+    actually fill. And a fill that took nothing after a non-zero quote - the side emptied between the quote and the
+    execution - is REFUSED, not executed: the binding returns `executed == false`, and the ledger counts it with the
+    refusals. Two blind-test arms bound a book to the sandbox and each had to guess both.
 
 ## 4. How this judge lies
 
@@ -116,7 +121,7 @@ to fight over; say so in the dossier and move on (`AGENTS.md` 6b).
 
 ## 5. What goes in the dossier
 
-Section 6 (what the judges said), the row for judge 11: the scenarios run (agents, ordering, latency, seeds, steps),
+Section 6 (what the judges said), the simulation-sandbox row: the scenarios run (agents, ordering, latency, seeds, steps),
 the parameters that were read from the chain and the ones that were guessed, the ledger table over seeds, and the spec
 line each number was compared against. Section 9 (what was NOT checked): the agents that were NOT written, by name,
 starting with the ones `HOOK-ATTACKS.md` suggests. In `LOG.md`, one ROUND line of type `simulation` with its cost

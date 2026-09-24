@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {Vm} from "forge-std/Vm.sol";
+import {console2} from "forge-std/console2.sol";
 import {Intent, Fill, KIND_SWAP} from "./ISimAgent.sol";
 
 /// @notice Per-agent books: what each one attempted, filled, was refused, paid in fees, and the gap between what it
@@ -47,6 +48,19 @@ contract SimLedger {
 
     /// @notice `pnlNetOfGas` (or the dump line) was asked for before the scenario priced gas
     error GasUnpriced();
+
+    /// @notice the file `GAUNTLET_SIM` names cannot be written from this project. Raised by `SimEngine._initEngine`, which
+    /// probes the path once, BEFORE the scenario runs. Nearly always the fix is ONE LINE in the project's foundry.toml,
+    /// under the profile the sandbox runs in - `[profile.sim]` in a binding laid out as `README.md` step 0 says, where
+    /// `[profile.default]` works too because a profile inherits it; this module's own is `[profile.default]` - (forge
+    /// refuses every file write a test makes outside the paths listed there):
+    ///
+    ///     fs_permissions = [{ access = "read-write", path = "./census" }]
+    ///
+    /// with `GAUNTLET_SIM` pointing inside that directory (`GAUNTLET_SIM=census/sim.tsv`), and the directory made
+    /// (`mkdir -p census`: forge does not create it). A foundry.toml that already has an `fs_permissions` list adds the
+    /// `{ access = "read-write", path = "./census" }` entry to it. forge's own reason is logged just before the revert.
+    error LedgerNotWritable(string path);
 
     /// @notice the books as a struct (the public getter returns a 13-tuple, which is stack-too-deep to unpack without via-IR)
     function get(address agent) external view returns (Books memory) {
@@ -162,6 +176,36 @@ contract SimLedger {
             vm.toString(b.refusedAtQuote)
         );
         return string.concat(a, c, d);
+    }
+
+    /// @notice fail NOW, by name, if `path` cannot be written (`LedgerNotWritable`), instead of after the last step with
+    /// forge's generic error. Writes and removes `<path>.probe`; the ledger file itself is not touched. A removal that fails
+    /// is ignored: two tests probing the same path in parallel remove each other's probe, and the write is what was tested.
+    function probeWritable(string memory path) external {
+        string memory probe = string.concat(path, ".probe");
+        try vm.writeFile(probe, "") {
+            try vm.removeFile(probe) {} catch {}
+        } catch (bytes memory reason) {
+            console2.log(string.concat("SimLedger: GAUNTLET_SIM=", path, " cannot be written: ", _reasonOf(reason)));
+            console2.log("  add to foundry.toml, under the profile the sandbox runs in ([profile.sim] in a binding, README v4 step 0):");
+            console2.log("  fs_permissions = [{ access = \"read-write\", path = \"./census\" }]");
+            console2.log("  and point GAUNTLET_SIM inside ./census (mkdir -p census first)");
+            revert LedgerNotWritable(path);
+        }
+    }
+
+    /// @dev the text of a `CheatcodeError(string)` (what forge 1.8.1's cheatcodes revert with) or an `Error(string)`
+    /// revert, or a placeholder
+    function _reasonOf(bytes memory r) private pure returns (string memory) {
+        if (r.length < 68) return "(no reason given)";
+        bytes4 sel = bytes4(r);
+        if (sel != 0xeeaa9e6f && sel != 0x08c379a0) return "(no reason given)";
+        assembly {
+            let n := mload(r)
+            r := add(r, 4)
+            mstore(r, sub(n, 4))
+        }
+        return abi.decode(r, (string));
     }
 
     /// @notice append the line for `agent` to the file named by `GAUNTLET_SIM`; silent when unset (the everyday

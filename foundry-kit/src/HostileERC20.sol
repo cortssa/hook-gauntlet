@@ -95,6 +95,9 @@ contract HostileERC20 {
     /// @notice true once the wallet has been the sender of a move. Arms the "after a move" switches.
     mapping(address => bool) public hasMoved;
 
+    /// @notice per sender: `transfer` and `transferFrom` return `false`, revert nothing and change nothing.
+    mapping(address => bool) public returnsFalse;
+
     /// @notice global: basis points taken out of every delivery and parked at FEE_SINK.
     uint256 public feeBps;
     /// @notice global: every move reverts.
@@ -227,6 +230,19 @@ contract HostileERC20 {
     }
 
     // ------------------------------------------------------------------ write-side switches
+    /// @notice transfers FROM `w` return `false`: no revert, nothing moves, no allowance is spent, no event, no
+    /// callback. Checked before every other switch, and it wins over the global ones: a paused token still says
+    /// `false` instead of reverting, and `omitReturnValue` does not hide it (a real 32-byte `false` comes back).
+    /// Imitates: the early ERC-20s that report failure by returning `false` instead of reverting - an insufficient
+    /// balance or allowance answered with a boolean.
+    /// A naive contract gets this wrong by calling `transfer` or `transferFrom` and not reading what it returned: it
+    /// credits a deposit that never arrived. It is the only switch that reaches a caller's
+    /// `if (!token.transfer(...)) revert` branch; with the others that branch is dead code, and a test suite could
+    /// delete it and stay green.
+    function setReturnsFalse(address w, bool on) external {
+        returnsFalse[w] = on;
+    }
+
     /// @notice transfers FROM `w` move nothing and return true.
     /// Imitates: the classic "returns true and does nothing" token, and any token whose transfer is a no-op
     /// for blocked or zero-fee accounts.
@@ -389,12 +405,14 @@ contract HostileERC20 {
     }
 
     function transfer(address to, uint256 value) external returns (bool) {
+        if (returnsFalse[msg.sender]) return false;
         _move(msg.sender, to, value);
         _maybeOmitReturn();
         return true;
     }
 
     function transferFrom(address from, address to, uint256 value) external returns (bool) {
+        if (returnsFalse[from]) return false;
         uint256 a = allowance[from][msg.sender];
         if (a < value) revert InsufficientAllowance(from, msg.sender);
         if (a != type(uint256).max) allowance[from][msg.sender] = a - value;

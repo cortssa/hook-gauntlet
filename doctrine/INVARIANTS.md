@@ -62,6 +62,10 @@ An invariant can pass because nothing ever put it to the test. If ninety-five pe
 calls are rejected - no balance, bad parameters - the book is almost always empty, and "the book is consistent"
 passes every time while testing nothing.
 
+**Reaching the kit from a project that has no `lib/`:** remap it in `foundry.toml` - `remappings = ["gauntlet-kit/=<kit>/foundry-kit/src/", "forge-std/=<kit>/foundry-kit/lib/forge-std/src/"]` (`InvariantBase` imports forge-std, so both),
+an absolute path is fine and needs no `allow_paths` (measured on forge 1.8.1) - and import `gauntlet-kit/InvariantBase.sol`.
+A scenario or a suite for a hook off the v4 manager takes its tokens from `gauntlet-kit/HostileERC20.sol` or its own.
+
 **Defence: count successes, not calls.** `HandlerBase` gives you `_noteSuccess(action)`, `successesOf(action)`,
 `assertExercised(action, min)`, `printCallSummary()` for one run, and `writeCensus()` + `scripts/census.sh` for the campaign. Use them:
 
@@ -69,6 +73,14 @@ passes every time while testing nothing.
 - after a long campaign, read the census. **An action near zero is an action you are not testing.** Fix the
   handler (fund the actors, bound the inputs to legal ranges) until the hostile branches and the honest ones
   are both reached.
+
+**Restrict your handler with `targetSelector` to the actions you wrote.** `targetContract(handler)` alone lets the
+fuzzer call every non-view function the handler has, `HandlerBase`'s own included: `writeCensus(string)` is one. On a
+toy handler with one action it took about half of a 64 x 64 campaign's calls, and before `writeCensus` learned to ignore
+the fuzzer's calls (they arrive as their own transaction, `msg.sender == tx.origin`) it wrote the fuzzer's labels into
+the census - 2 125 lines under 1 473 labels for 64 runs, and `scripts/census.sh` failed over bytes nobody could read. The
+census is now safe; the calls are still spent - and counted: the census then shows the boundary `handler unrestricted:
+bookkeeping selectors were fuzzed` and `census.sh` says so under the table. List the selectors, as both worked examples do.
 
 ## The arbiter has bugs too
 

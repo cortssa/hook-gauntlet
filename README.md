@@ -57,7 +57,7 @@ flowchart TD
         J1["build, lints,<br/>static analysis<br/>with a written triage"] --> J2["tests +<br/>long fuzz,<br/>corpus on"] --> J3["coverage<br/>by branch +<br/>campaign census"] --> J4["mutation:<br/>do the tests bite?<br/>read the survivors"] --> J5["the REAL pool<br/>manager of<br/>your chain"]
     end
 
-    P1 -. "an economic promise<br/>needs a NUMBER first" .-> SIM["SIMULATION SANDBOX - judge 11, optional<br/>a named population, a stated ordering model,<br/>numbers that are SUPPORTED, never a gate"]
+    P1 -. "an economic promise<br/>needs a NUMBER first" .-> SIM["SIMULATION SANDBOX - optional<br/>a named population, a stated ordering model,<br/>numbers that are SUPPORTED, never a gate"]
     P6 -. "before promotion,<br/>parameters sealed" .-> SIM
     SIM -.-> P1
     LOCAL -. "tool does not fit this hook?" .-> DIV["Answer the QUESTION another way<br/>and write it down.<br/>Questions are fixed, tools are not"]
@@ -158,7 +158,8 @@ adapters/        claude-code (the path this was run on), codex (untested)
 
 ## What you need
 
-Foundry, `bash`, `git`, and an agent that can read files and run a terminal; Slither (Python) for the static-analysis
+Foundry, `bash`, `git`, Python 3 (standard library only: the freshness guard recomputes forge's cache hash with it),
+and an agent that can read files and run a terminal; Slither (Python) for the static-analysis
 judge, which full mode requires and which is an install your agent must ask you for. `forge install foundry-rs/forge-std`
 in `foundry-kit/` before the self-test (it says INCOMPLETE without it). The v4 module needs Uniswap's
 sources: `scripts/install-v4.sh` fetches them at pinned commits into a git-ignored `lib/` (or, offline, copies local
@@ -262,7 +263,7 @@ from all of these:
 
 ## Status
 
-**v0. One blind benchmark run; the full route is still unmeasured.**
+**v0. Two blind runs on one small target - the second walked the full light route; n = 1 each, one model family.**
 
 | part | state |
 |---|---|
@@ -271,7 +272,7 @@ from all of these:
 | v4 module | harness with both managers, address mining, one worked hook with unit tests and an invariant suite; proven once against the Ethereum mainnet manager's bytecode. **Not covered:** native currency, delta-returning hooks, ERC-6909 claims, fork tests. The long fuzz profile has not been run on it |
 | `adapters/claude-code/` | the path the method was actually run on |
 | `adapters/codex/` | **UNTESTED** - written from the documented convention, confirmations welcome |
-| blind benchmark (planted bugs, sealed answer key, measured recall) | **run once, first round only** - see below |
+| blind benchmark (planted bugs, sealed answer key, measured recall) | **run twice on the same target**: one round, then the full light route - see below |
 | review of the kit itself | three passes by fresh model instances - see below. **Same model family as the authors; no human has reviewed this kit** |
 
 ### The kit, put through its own loop
@@ -317,7 +318,37 @@ Read this for what it is:
 - One arm built the invariant suite on its own and reported that five of its twelve findings were a missing fuzz
   *action*, not a missing invariant - which is what `doctrine/FUZZ-ACTIONS.md` says, confirmed from outside.
 
-Until there are more runs, treat the claims in this repository as a description of a method with one data point.
+### The blind benchmark, run 2 - the full route, two models
+
+Same target and sealed key as run 1. Two fresh agents entered by `QUICKSTART.md` with nothing else, played the owner,
+and walked the **light route** - interview, spec review, local judges, the simulation sandbox, up to three model rounds,
+the dossier skeleton - each on its own bench.
+
+| | strong model (Opus 5.5) | cheaper model (Sonnet) |
+|---|---|---|
+| planted defects found | 6 / 6 | 6 / 6 |
+| planted highs, rated high | 1 of 2 (one rated medium: "nobody profits") | 2 of 2 |
+| red herring | not raised | not raised |
+| the two real highs beyond the key (known since run 1) | both (one rated medium) | both, rated high - found by the **black-box** round, without the source |
+| model rounds used, of 3 | 1 (discovery) | 3 (discovery found 3 of 6; black-box and verifier found the rest) |
+| tokens | ~265k | at least ~545k (one round's usage was not returned) |
+| simulation sandbox | run, shipped agents | run |
+
+Read this for what it is:
+
+- **The route lifted the cheaper model to the same score; the strong one needed one round of it.** That is the first
+  measurement of what the route adds, and it is one run per arm.
+- **The target was already scored once**, and the key was written by a model of the same family as both auditors.
+- **The second arm's isolation is self-declared**: the orchestration harness gave every agent one shared scratch
+  directory, and the first arm's tests were in it while the second ran. The second arm and its sub-agents declared
+  they did not read it; that cannot be proved, so the result is labelled indicative. (The rule it produced is
+  `doctrine/ORCHESTRATION.md` §1.)
+- **A harder target was not built**: the model provider's safety classifier stopped the agent asked to write a hook
+  with planted defects, twice. The next target comes from public hooks with public fixes (`ORCHESTRATION.md` §4).
+- Both arms left a list of places where the kit was wrong or silent. The fixes are in the commits after this run;
+  whether a fresh reader still stalls at those steps is the next measurement, not a claim made here.
+
+Until there are more runs, treat the claims in this repository as a description of a method with two data points.
 
 Issues and confirmations are useful. Results from the benchmark, if you run your own version of it, are the most
 useful thing you can send.

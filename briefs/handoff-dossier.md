@@ -5,9 +5,9 @@ to give them back the days they would spend asking for what a dossier should alr
 known to be imperfect, and - the section they will read first - **what nobody checked**.
 
 Write it in the language the AUDITOR reads. If the spec is in another language because the owner reads that one,
-say so on the first line and translate at least sections 0, 1, 4 and 9.
+say so in the status line above section 0 and translate at least sections 0, 1, 4 and 9.
 
-It is assembled, not written: almost every section points at a file that already exists if the route was walked. If a
+It lives at `.gauntlet/DOSSIER.md` (or the project root, where `STATE.md` says the state lives). It is assembled, not written: almost every section points at a file that already exists if the route was walked. If a
 section has nothing to point at, do not pad it. Write "not done" and the reason. An honest gap costs the auditor five
 minutes; a confident paragraph over a gap costs them a day and costs you their trust.
 
@@ -21,8 +21,9 @@ published guides; the dossier's author should cite the ones they checked against
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
 **Not deployed. Not audited by humans.** Prepared with AI agents under the owner's direction; every claim below carries
 its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
-**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement** -
-a dossier can be complete and thin at the same time; this line says which one it is.
+**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{yes/no}} · skeleton: {{K}} findings open** -
+the status line: the one line every flag in `doctrine/NEXT.md` points at. A dossier can be complete and thin at the
+same time; this line says which one it is.
 
 ## 0. Executive summary (must)
 
@@ -88,6 +89,19 @@ that other software will trust.
 
 Every finding that was accepted rather than fixed: what an attacker achieves, who loses how much, what it costs them,
 why it was not fixed, and who accepted it. -> `SPEC.md` section 6. Refusals with their reasons -> `DECISIONS.md`.
+Every finding carries a status: `accepted` (with the owner's line), `fixed` (with the regression test), or
+`open - owner triage pending`. A dossier with an open finding is a **skeleton** (`doctrine/NEXT.md` row 9b): sections
+0, 4, 5, 6, 7, 8, 9 filled honestly, the open ids listed here by id and severity, and the status line above section 0 carrying `skeleton: N findings
+open`. Sections 1, 2, 3 and 10 are filled as far as they are known (10 only if a fresh agent can actually run it; else
+`not yet`). In a skeleton, a cell that waits on the owner for something OTHER than triage (a not-run judge's reason in
+section 6, a full-mode reason while the mode is undecided, the chain, the framework self-score, the decline of
+promotion) reads `owner decision pending: <what>` - never `triage pending`, which is for findings only - and each such
+item is also a named entry in `STATE.md` `waiting_on_owner:`. None of these is a skip. A row that does not apply to this
+hook (the real-manager battery for a hook on no manager) reads `n/a: <what replaced it, section 8>` and does not count as
+not done; neither does an optional judge the owner did not ask for (the sandbox: `not run: optional, not requested`).
+What DOES count as not done: a judge light mode skips by design (promotion, rehearsal, the black-box until it runs) -
+that is what the count is for - and a tool the owner did not allow (Slither never installed: `not done: static triage by
+forge lint only`). It is a status report for the owner, not a handoff; nothing below it moves to promotion.
 An auditor judges new findings against this list; leaving something out of it is how a known issue becomes a "critical".
 
 ## 5. Candidates raised and refuted (must)
@@ -123,7 +137,7 @@ is what tells them apart.
 | symbolic / formal | | what was proven, for which bounds - or "not done", and in full mode the owner's reason | |
 | second fuzzing engine | | or "not done" | |
 | size, gas | | sizes and margins; gas of the main paths, regenerated for this revision | |
-| 11 - simulation sandbox (`doctrine/SIMULATE.md`; optional, owner-requested) | scenario, agents, ordering model, seeds, steps; `scripts/sim-report.sh` | the ledger table over seeds and the spec line each number was compared against - SUPPORTED, never PROVED; or "not run: <owner's written reason>" | the census TSV and the report |
+| simulation sandbox (`doctrine/SIMULATE.md`; optional, owner-requested) | scenario, agents, ordering model, seeds, steps; `scripts/sim-report.sh` | the ledger table over seeds and the spec line each number was compared against - SUPPORTED, never PROVED; or "not run: <owner's written reason>" | the census TSV and the report |
 
 ## 7. The adversarial history (must)
 
@@ -145,7 +159,8 @@ rows of section 6 marked "not done".
 ## 10. Reproduce it (must)
 
 From a clean checkout on a machine with nothing but Foundry: the exact commands, in order, that rebuild the bytecode
-(`forge clean` first), run the battery, and check the manifest. If it needs an RPC endpoint, say for which step; never
+(`forge clean` first), run the battery, and check the manifest. Absolute remappings or `libs` paths in `foundry.toml`
+are not portable: name them here and say what the fresh machine must put at those paths (or ship a `lib/`). If it needs an RPC endpoint, say for which step; never
 include one.
 
 ## 10b. What comes after the handoff (so the owner is ready for it)
@@ -167,7 +182,7 @@ wrong after deployment · security contact.
 
 ---
 
-**Gate for phase 8:** every "must" section is filled or says "not done" with a reason, the not-done count is on the first
-line above AND in `STATE.md`, and every skip has the owner's written agreement; section 9 is not empty (an
+**Gate for phase 8:** every "must" section is filled or says "not done" with a reason, the not-done count is on the status
+line above AND in `STATE.md`'s `dossier:` flag, and every skip has the owner's written agreement; section 9 is not empty (an
 empty list of unchecked things is never true); section 5 is not empty either, on the same terms; a fresh agent, given
 only this dossier and the repository, can run section 10 to the end and get the numbers in section 6.

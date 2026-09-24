@@ -72,11 +72,13 @@ struct Fill {
     uint256 amountOut;
     /// @dev the input ACTUALLY taken. A venue that fills part of an order and refunds the rest (a book with a price bound, a
     /// v4 swap that hits its limit) takes less than the intent offered; the ledger counts this, never `Intent.amountIn`.
-    /// A binding sets it on every executed fill; the engine refuses a swap fill that left it at zero.
+    /// A binding sets it on every executed fill; the engine refuses a swap fill that left it at zero. A swap that was SENT and
+    /// took nothing (the book side emptied between the quote and the fill) is not an executed fill: `executed = false`,
+    /// `revertSelector = FILLED_NOTHING`, and the ledger counts it in `refused`.
     uint256 amountInUsed;
     uint24 feeCharged; // read from the manager's Swap event
     uint256 gasUsed;
-    bytes4 revertSelector; // when !executed; `REFUSED_AT_QUOTE` when the engine never sent it
+    bytes4 revertSelector; // when !executed; `REFUSED_AT_QUOTE` when the engine never sent it, `FILLED_NOTHING` when it took nothing
 }
 
 /// @dev The `Fill.revertSelector` of a swap the ENGINE did not send: its own quote at decision time was 0. A bot that
@@ -117,3 +119,13 @@ interface ISimSearcher {
         external
         returns (Intent[] memory after_);
 }
+
+/// @dev The `Fill.revertSelector` of a swap that was SENT (its quote was not 0) and TOOK NOTHING: the side it was quoted
+/// against emptied between the quote and the fill - another order took the book, a maker cancelled, a range was
+/// withdrawn. That is a market outcome, not a binding error, and the binding reports it as such: `executed == false`,
+/// this marker, `amountIn(Used)` and `amountOut` 0, and the gas it paid (it was sent). The ledger counts it in `refused`,
+/// never in `refusedAtQuote` (that one was never sent). What a binding must NOT do is report `executed == true` with no
+/// input taken: the engine reverts `SimEngine.FillWithoutInput`, because that is also what a binding that forgot
+/// `amountInUsed` looks like. Written after both arms of a blind run (2026-09-23) aborted a whole simulation on a book
+/// that legitimately filled nothing. `test/sim/FilledNothing.t.sol`.
+bytes4 constant FILLED_NOTHING = bytes4(keccak256("FilledNothing()"));

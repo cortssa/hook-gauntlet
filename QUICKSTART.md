@@ -10,7 +10,7 @@ guess. This page exists so that the next reader does not.
 ## 0. What you need
 
 - Foundry (`forge`, `cast`): supported versions are in `foundry-kit/README.md` (1.8.1 pinned, 1.8.3 CI-proven).
-- `bash` 5, `git`, `rsync`. Linux, or Windows **inside WSL with the project on the Linux side** (`CRLF` breaks a shell
+- `bash` 5, `git`, `rsync`, `python3` (standard library only; `scripts/assert-fresh-build.sh` uses it). Linux, or Windows **inside WSL with the project on the Linux side** (`CRLF` breaks a shell
   script silently).
 - Non-interactive shells (agents, CI, `wsl` from PowerShell) do not read your profile: put `~/.foundry/bin` on `PATH`
   yourself, or `export PATH="$HOME/.foundry/bin:$PATH"` at the top of your script.
@@ -64,7 +64,15 @@ GAUNTLET_SIM=census/sim.tsv forge test --match-path test/sim/Liquidity.t.sol --m
 cd ../..
 ```
 
-Done: a table per scenario and agent with `runs`, P&L, gas cost, net P&L. What the numbers mean and how this judge
+Done: a table per scenario and agent with `runs`, P&L, gas cost, net P&L. Binding YOUR hook: the shipped sandbox tests all target
+`ExampleScenario`, so binding means writing your own scenario (`foundry-kit/v4/README.md`, steps 0-7; the calibration
+test first). In YOUR project the sandbox lives in its own forge profile and directory (`sim/`, `[profile.sim]` with the optimizer on - the kit's own module above runs it under its default profile, which already has the optimizer on: with
+forge's defaults the engine stops at "stack too deep"), because the optimizer changes YOUR hook's bytecode - a stranger
+measured 1374 to 727 bytes - and the default profile, the one the battery, the sizes and the coverage judge, must never
+see it. The layout, measured, is README step 0. The ledger writes to
+`./census`, so your project's `foundry.toml` needs `fs_permissions = [{ access = "read-write", path = "./census" }]`
+under `[profile.sim]` (or under `[profile.default]`, which the sim profile inherits);
+without it the engine stops at init with `LedgerNotWritable` naming that line. What the numbers mean and how this judge
 lies: `doctrine/SIMULATE.md`. It is optional and owner-requested; nothing waits for it.
 
 ## 5. Install the state convention in YOUR project
@@ -73,10 +81,12 @@ The kit keeps nothing about your hook in its own tree. In your project:
 
 ```sh
 mkdir -p .gauntlet/briefs .gauntlet/reports
-cp hook-gauntlet/state/STATE.md hook-gauntlet/state/DECISIONS.md hook-gauntlet/state/LOG.md .gauntlet/
+cp <kit>/state/STATE.md <kit>/state/DECISIONS.md <kit>/state/LOG.md .gauntlet/   # <kit> = where step 1 cloned it
 ```
 
-Then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines. `.gauntlet/` is the default
+Then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines but keep, in `STATE.md`, the section headers (retitled
+to your hook) and the flag block at the top, and in `DECISIONS.md` and `LOG.md` the rules paragraph at the top (their only
+headers are the fictional entries: delete those whole), set to the starting values `doctrine/NEXT.md` gives. `.gauntlet/` is the default
 location; the project root works too - write which in `STATE.md`, it is a decision. Everything the route produces
 for your hook lives beside them: `.gauntlet/SPEC.md`, the filled briefs in `.gauntlet/briefs/`, the round reports in
 `.gauntlet/reports/`. Rules for the three files: `state/README.md` (five of them, one is "reads are not log entries").
@@ -99,6 +109,19 @@ The agent copies `briefs/spec-template.md` to `.gauntlet/SPEC.md` and fills it: 
 applies / does not apply / accepted / prevented, with the predicate, the test and the invariant that would go red.
 Done: every line of the spec could fail. A line that cannot fail is not a promise.
 
+## 7b. The harness the judges need (phases 2 and 3 - the largest job on this page)
+
+Nothing in step 8 measures anything until your project has: unit tests; a handler on the kit's `HandlerBase` with one
+action per capability, the `HostileERC20` switches wired in as actions, and `targetSelector` set; the invariants from
+your spec's section 3 on `InvariantBase`; a smoke test that asserts every action succeeded a few times; `fail_on_revert =
+true` and the census wiring (`writeCensus` in `afterInvariant`, `fs_permissions` for `./census`). How: `doctrine/INVARIANTS.md`
+and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` are the worked examples. A project with no
+`lib/` reaches the kit through two absolute remappings, `gauntlet-kit/=<kit>/foundry-kit/src/` and
+`forge-std/=<kit>/foundry-kit/lib/forge-std/src/` (no `allow_paths` needed; say in the dossier's section 10 that they are
+absolute). Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
+A promise that breaks under a token behaviour the owner has not decided: `doctrine/NEXT.md` row 6b, not a reason to leave
+the action out.
+
 ## 8. The local judges, one command each
 
 Deterministic tools on your machine, no model. Run them on your project directory (`<proj>`), read the outputs:
@@ -106,12 +129,14 @@ Deterministic tools on your machine, no model. Run them on your project director
 | judge | command | done when |
 |---|---|---|
 | build, lints, size | `forge build` in `<proj>`; `scripts/size.sh <proj>` | clean build; runtime AND initcode margins under your chain's limit |
-| tests, sizes, freshness | `scripts/battery.sh <proj>` | `BATTERY PASSED` |
-| long fuzz | `scripts/fuzz-long.sh <proj>` (a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
-| campaign census | `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh <proj>` | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
-| mutation | `scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change; `forge test --mutate` for the score | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
+| tests, sizes, freshness | `scripts/battery.sh <proj>` | `BATTERY PASSED` (forge's `passed N` counts test functions and campaigns, not the invariants inside one contract: read the campaign lines) |
+| static triage | `forge lint src/` (Slither only if the owner allowed the install; write `static triage: forge lint only, Slither not installed` in `STATE.md` `notes:` otherwise) | every warning triaged in `.gauntlet/STATIC-TRIAGE.md`: fixed, or refused with the reason (`doctrine/JUDGES.md` row 1) |
+| branch coverage | `forge coverage --report summary --no-match-coverage '<the regex in doctrine/JUDGES.md row 4>'` (`--ir-minimum` if it will not compile) | branch numbers for `src/` in the dossier, and the uncovered branches named |
+| long fuzz | `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
+| campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
+| mutation | `scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (dependencies outside the project: `COPY_ROOT=<their common parent>`; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
-| simulation (11, optional) | step 4, on your binding | `doctrine/SIMULATE.md` §5 says what goes in the dossier |
+| simulation sandbox (optional) | step 4, on your binding | `doctrine/SIMULATE.md` §5 says what goes in the dossier |
 
 A tool that does not fit your hook is not a reason to skip the question: answer it another way and write down how
 (`AGENTS.md` 6b).
@@ -119,8 +144,12 @@ A tool that does not fit your hook is not a reason to skip the question: answer 
 ## 9. Your first adversarial round
 
 ```sh
-scripts/bench.sh r01 <proj>            # a copy in ~/hg-r01 with dependencies linked (BENCH_ROOT to change the root)
-cp hook-gauntlet/briefs/audit-round.md .gauntlet/briefs/r01.md   # fill the placeholders; do not rewrite the rules
+scripts/bench.sh r01 <proj>            # a copy in $HOME/.gauntlet/bench/r01 (BENCH_ROOT to change the root), dependencies linked;
+                                       # .gauntlet/ stays in the project: the auditor reads SPEC.md and the brief there, not in the bench
+                                       # dependencies outside the project's own lib/: LINK_FROM=<dir with forge-std> scripts/bench.sh r01 <proj>
+                                       # (when foundry.toml already points outside the project - an absolute `libs` path or absolute
+                                       #  remappings - the script says "nothing to link" and LINK_FROM is not needed)
+cp <kit>/briefs/audit-round.md .gauntlet/briefs/r01.md   # fill the placeholders; do not rewrite the rules
 ```
 
 A **fresh** agent - a new session, no memory of writing the hook - runs the brief inside the bench and writes
@@ -135,11 +164,12 @@ black-box round (`briefs/black-box.md`, a bench WITHOUT the source) belongs earl
 ## 10. Where it ends
 
 `NEXT.md` row 18 (full mode: after promotion and rehearsal) or 18b (light mode: the owner declined promotion in
-writing) sends you to the handoff dossier, `briefs/handoff-dossier.md`: what the judges said read from their outputs,
+writing) sends you to the handoff dossier, `briefs/handoff-dossier.md` - and row 9b, when findings are open and the
+owner is not there to triage, sends you to the same file as a skeleton: what the judges said read from their outputs,
 every divergence, and a non-empty list of what was **not** checked. **STOP there.** The next step is a human audit.
 Never `forge script --broadcast`, never `cast send`: the kit has no step that deploys.
 
 ## If something here is wrong
 
-That is a finding about the kit. `LOG.md` in this repository records where the last two readers stalled; open an issue
+That is a finding about the kit: open an issue
 or a pull request with the command you ran and the output you got, not a description of it.

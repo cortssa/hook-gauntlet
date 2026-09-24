@@ -18,6 +18,9 @@ questions below.** Write the list in `SPEC.md` before you write the code.
 3. **The token misbehaving, mid-campaign.** Wire the `HostileERC20` switches into actions, so that a token can
    start lying about a balance, charging a fee, short-delivering or burning gas **between** two honest actions,
    for one wallet or for all. A hostile mode that is only ever set in `setUp` tests one ordering out of millions.
+   Wire them even when the owner has not decided which token behaviours the hook must survive: a promise that breaks
+   under one of them is a FINDING (`NEXT.md` 6b says where the failing invariant waits), not a reason to leave the
+   action out - two of a blind round's findings, one high, sat exactly where a reader had left the switches out.
 4. **The strange actors.** Someone who donates tokens straight to the hook, to the router, to the pool manager.
    Someone who is a contract, not a wallet. Someone who re-enters from inside a transfer callback. Someone who
    is both sides of the same trade. Two operations inside one `unlock`.
@@ -72,8 +75,13 @@ and `fail_on_revert = false` is how a suite lies to you.
 
 - **Depth** (actions per sequence) finds bugs that need history: fill, partially drain, move time, fill again.
   Start at 64.
-- **Runs** (sequences) finds bugs that need an unlucky combination. A few dozen for the everyday battery (the kit's `foundry.toml` uses 64), 1000 for the
+- **Runs** (sequences) finds bugs that need an unlucky combination. A few dozen for the everyday battery (the kit's `foundry.toml` uses 64;
+  forge's own defaults are 256 runs x 500 depth = 128 000 calls, which is already a long campaign by this page's numbers), 1000 for the
   long campaign you run before a gate.
+- **The long campaign must be larger than YOUR everyday one**, whatever that is: `scripts/fuzz-long.sh` measures both
+  budgets (runs x depth) and refuses a `long` profile that is not larger, printing the block to paste. A project on
+  forge's defaults needs a `long` profile above 128 000 calls (the script prints the block: 1024 x 500 for forge's defaults); the kit's own 1000 x 128 is sized
+  for the kit's 64 x 64 everyday battery, not for yours.
 - Seeds are random per run on purpose. A failure that appears on the sixth long campaign was there during the
   first five; keep running the long campaign after every change, not once.
 - **STOP and tell the owner** before a campaign you expect to take more than a few minutes of their machine.

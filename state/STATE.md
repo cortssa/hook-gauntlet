@@ -7,7 +7,7 @@
 ```
 phase:                     4          (sketch | 0-8)
 bytecode_changed_since:    last_battery=no  last_long_fuzz=no  last_other_free_judges=no  last_audit_round=yes  last_promotion=n/a
-battery:                   green
+battery:                   green      (never | green | red)
 blackbox:                  never_run
 open_findings:             high=0 medium=0 low=1 reasoned_high_or_medium=0   (the low is F-24: waiting on the owner, see below)
 last_audit_round:          r05 regression 0H 1M 4L
@@ -15,6 +15,9 @@ last_other_round:          none
 real_manager_battery:      n/a        (n/a | never | stale | current)
 ceiling:                   8 model rounds (adversarial + black-box) agreed in phase 0; 5 used
 waiting_on_owner:          F-24, accept or fix (does not block round 6)
+location:                  .gauntlet/
+dossier:                   none
+notes:                     static triage: Slither 0.10 (owner allowed the install 2026-09-11)
 ```
 
 *These lines are what `doctrine/NEXT.md` reads. With them as they stand: row 1 is false (no high is waiting); row 2 is false (5 of 8 used); row 3 is true (F-24 is with the owner) but nothing below depends on that answer; the next true row is the black-box round (row

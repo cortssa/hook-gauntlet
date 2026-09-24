@@ -105,5 +105,5 @@ pay every round.
 ## 8. What this kit does not know
 
 It does not publish a price per round: the project it was distilled from was not metered. The blind benchmark in
-`README.md` will publish the first measured numbers. Until then, measure your own with the ROUND lines of your `LOG.md`, and treat any
+`README.md` *Status* publishes the measured ones so far (two blind runs: ~269k tokens / 28 min for one round; ~265k and at least ~545k for the light route). Measure your own with the ROUND lines of your `LOG.md`, and treat any
 figure you read elsewhere about this kit as unverified.

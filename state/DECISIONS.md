@@ -2,8 +2,10 @@
 
 *Example file. The project is fictional. Delete this and start yours.*
 
-Append only. One entry per decision the **owner** made. An agent never writes a decision here on the owner's
-behalf; it writes the question in `STATE.md` and waits.
+Append only. One entry per decision the **owner** made. An agent never DECIDES here on the owner's behalf; it writes
+the question in `STATE.md` and waits. Two kinds of entry an agent does write: an answer read from the owner's own
+files when the interview is played from them, marked `source: <file>`, and an assumption the route makes when the
+owner is absent (light mode and its ceiling), marked `source: assumed, owner absent` - both are the owner's to overturn.
 
 ---
 

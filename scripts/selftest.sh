@@ -88,42 +88,78 @@ if [ "$before" = "$after" ]; then echo "  ok    the guard never writes into the 
 "$HERE/release-guard.sh" "$W" > "$TMP/o138" 2>&1; check "missing argument" 4 $? "$TMP/o138"
 
 # ================================================================= assert-fresh-build.sh
-# File times are SET, not waited for: `sleep 1` between writes made this section flaky on a loaded machine.
+# The guard compares CONTENT with forge's own record of what it compiled (cache/solidity-files-cache.json: one contentHash
+# per source). The fixture is a small project BUILT BY FORGE 1.8.1 - its sources in fixtures/fresh-project/, forge's cache
+# of that build in fixtures/fresh-project.cache.json (the hashes are forge's, not this kit's; only the cache's library
+# path was made relative). Its five sources fall in five size classes of the hash, so a hasher that disagrees with forge
+# on any of them turns the "matches" case red. File times are SET, not waited for, and set on PURPOSE against the verdict:
+# an edit dated before the build, a copy dated after it - the time must not decide either way.
 echo "== assert-fresh-build.sh =="
 J="$TMP/project"
-mkdir -p "$J/src"
+cp -R "$FIX/fresh-project" "$J"
+printf '[profile.default]\n' > "$J/foundry.toml"
 T=1700000000
 stamp() { T=$((T + 10)); touch -d "@$T" "$@"; }
-printf 'contract A {}
-' > "$J/src/A.sol"
-printf '[profile.default]
-' > "$J/foundry.toml"
-stamp "$J/src/A.sol" "$J/foundry.toml"
+stamp "$J/src/A.sol" "$J/src/B.sol" "$J/src/C.sol" "$J/test/D.t.sol" "$J/script/E.s.sol" "$J/foundry.toml"
+before_build=$T
 
 "$HERE/assert-fresh-build.sh" "$J" > "$TMP/o6" 2>&1; check "nothing built yet" 2 $? "$TMP/o6"
 
-mkdir -p "$J/out/A.sol"
-printf '{}
-' > "$J/out/A.sol/A.json"; stamp "$J/out/A.sol/A.json"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o7" 2>&1; check "artifacts newer than sources" 0 $? "$TMP/o7"
+mkdir -p "$J/out/C.sol"
+printf '{}\n' > "$J/out/C.sol/C.json"; stamp "$J/out/C.sol/C.json"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o7" 2>&1; check "artifacts but no forge cache: nothing to compare against" 2 $? "$TMP/o7"
 
-printf 'contract A { uint256 x; }
-' > "$J/src/A.sol"; stamp "$J/src/A.sol"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o8" 2>&1; check "source edited after the build" 1 $? "$TMP/o8"
+mkdir -p "$J/cache"; cp "$FIX/fresh-project.cache.json" "$J/cache/solidity-files-cache.json"; stamp "$J/cache/solidity-files-cache.json"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o157" 2>&1; check "every source's content is the one forge compiled (five size classes of its hash)" 0 $? "$TMP/o157"
 
-printf '{}
-' > "$J/out/A.sol/A.json"; stamp "$J/out/A.sol/A.json"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o9" 2>&1; check "rebuilt" 0 $? "$TMP/o9"
+# (b) the case that used to flip: the same bytes copied in again AFTER the build (new mtime, same content)
+cp "$FIX/fresh-project/src/C.sol" "$J/src/C.sol"; cp "$FIX/fresh-project/test/D.t.sol" "$J/test/D.t.sol"; stamp "$J/src/C.sol" "$J/test/D.t.sol"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o158" 2>&1; check "sources copied in after the build, same content (new mtime): FRESH" 0 $? "$TMP/o158"
+if grep -q 'newer than the cache with the same content' "$TMP/o158"; then echo "  ok    and the newer times are printed as evidence, not as a verdict"; else
+  echo "  FAIL  the copied sources' newer times are not reported as evidence"; fails=$((fails + 1)); fi
 
-printf 'optimizer = true
-' >> "$J/foundry.toml"; stamp "$J/foundry.toml"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o10" 2>&1; check "the config counts as a source too" 1 $? "$TMP/o10"
+# (a) an edit that was not built - dated BEFORE the build, so that only its content can give it away
+printf '// edited, not built\n' >> "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o159" 2>&1; check "a source edited without a build (dated before the build): STALE" 1 $? "$TMP/o159"
+if grep -q '^STALE BUILD: src/B.sol ' "$TMP/o159"; then echo "  ok    and the verdict names the edited source"; else
+  echo "  FAIL  the STALE verdict does not name src/B.sol"; fails=$((fails + 1)); fi
+cp "$FIX/fresh-project/src/B.sol" "$J/src/B.sol"; stamp "$J/src/B.sol"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o160" 2>&1; check "the edit undone (the compiled content again, a new mtime): FRESH without a rebuild" 0 $? "$TMP/o160"
 
-# forge rewrites its cache on every build even when it recompiles nothing, so the cache is the honest marker
-mkdir -p "$J/cache"
-printf '{}
-' > "$J/cache/solidity-files-cache.json"; stamp "$J/cache/solidity-files-cache.json"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o11" 2>&1; check "a build that recompiled nothing still counts" 0 $? "$TMP/o11"
+# (c) a new source, never built - also dated before the build
+printf '// a new file\n' > "$J/src/F.sol"; touch -d "@$before_build" "$J/src/F.sol"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o161" 2>&1; check "a new source that was never built: STALE" 1 $? "$TMP/o161"
+if grep -q '^STALE BUILD: src/F.sol is not in the cache' "$TMP/o161"; then echo "  ok    and the verdict says the new source is not in the cache"; else
+  echo "  FAIL  the STALE verdict does not say src/F.sol is missing from the cache"; fails=$((fails + 1)); fi
+rm -f "$J/src/F.sol"
+
+# the config is not in forge's cache, so its content cannot be compared: a NOTE, never a verdict (the header says so)
+printf 'optimizer = true\n' >> "$J/foundry.toml"; stamp "$J/foundry.toml"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o162" 2>&1; check "a config newer than the cache is not decided on (forge's cache does not record it)" 0 $? "$TMP/o162"
+if grep -q '^note: foundry.toml is newer than the cache' "$TMP/o162"; then echo "  ok    and it says so, in a note naming foundry.toml"; else
+  echo "  FAIL  no note about the config the guard cannot check"; fails=$((fails + 1)); fi
+printf '[profile.default]\n' > "$J/foundry.toml"; touch -d "@$before_build" "$J/foundry.toml"
+
+# a cache this guard cannot read (another forge's shape), or no interpreter to hash with: nothing decided, never FRESH
+cp "$J/cache/solidity-files-cache.json" "$TMP/cache.keep"; printf '{"_format": "", "files": {"src/A.sol": {"sourceName": "src/A.sol"}}}\n' > "$J/cache/solidity-files-cache.json"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o163" 2>&1; check "a cache with no contentHash (another shape) decides nothing" 2 $? "$TMP/o163"
+cp "$TMP/cache.keep" "$J/cache/solidity-files-cache.json"
+HASH_PYTHON="$TMP/no-such-python" "$HERE/assert-fresh-build.sh" "$J" > "$TMP/o164" 2>&1; check "no interpreter to hash with decides nothing" 2 $? "$TMP/o164"
+
+# line ends: forge 1.8.1 hashes the text with every CR LF turned into LF, in one pass, and nothing else - a lone CR, a CR CR LF,
+# a missing last newline stay as they are (measured on eight fixtures against its own cache, 2026-09-23). A checkout with
+# CRLF is therefore the text forge compiled, and the guard used to call it STALE on a fresh build. The two cases after it
+# pin the rule from the other side: a guard that dropped EVERY CR, or turned a lone CR into LF, would call them FRESH.
+for f in src/A.sol src/B.sol src/C.sol test/D.t.sol script/E.s.sol; do
+  sed 's/$/\r/' "$FIX/fresh-project/$f" > "$J/$f"; touch -d "@$before_build" "$J/$f"
+done
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o171" 2>&1; check "the five sources with CRLF line ends, same text as forge compiled: FRESH" 0 $? "$TMP/o171"
+for f in src/A.sol src/B.sol src/C.sol test/D.t.sol script/E.s.sol; do cp "$FIX/fresh-project/$f" "$J/$f"; touch -d "@$before_build" "$J/$f"; done
+awk 'NR == 1 { printf "%s\r\r\n", $0; next } { print }' "$FIX/fresh-project/src/B.sol" > "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o172" 2>&1; check "a line ending CR CR LF is not the compiled text (forge folds CR LF once): STALE" 1 $? "$TMP/o172"
+awk 'NR == 1 { printf "%s\r", $0; next } { print }' "$FIX/fresh-project/src/B.sol" > "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
+"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o173" 2>&1; check "a lone CR where an LF was is not the compiled text (forge keeps a lone CR): STALE" 1 $? "$TMP/o173"
+cp "$FIX/fresh-project/src/B.sol" "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
 
 # ================================================================= fetch-bytecode.sh (the refusals; no network is used)
 echo "== fetch-bytecode.sh =="
@@ -307,8 +343,9 @@ expect_out "first error, in a log with none: refused" "" 1 first_error_line "$FI
 # ---- the scripts that read those shapes, fed them through a forge SHIM (no compiler runs): the parser is only half of
 # the guard, the other half is the script acting on its refusal
 FS="$TMP/fshim"; FP="$TMP/fproj"; mkdir -p "$FS" "$FP/src" "$FP/out/A.sol" "$FP/cache"
-printf 'contract A {}\n' > "$FP/src/A.sol"; printf '[profile.default]\n' > "$FP/foundry.toml"
-printf '{}\n' > "$FP/out/A.sol/A.json"; printf '{}\n' > "$FP/cache/solidity-files-cache.json"
+# its sources and cache are the forge-built freshness fixture, so the battery's freshness step reads a real cache
+cp -R "$FIX/fresh-project/." "$FP/"; printf '[profile.default]\n' > "$FP/foundry.toml"
+printf '{}\n' > "$FP/out/A.sol/A.json"; cp "$FIX/fresh-project.cache.json" "$FP/cache/solidity-files-cache.json"
 touch -d "@1700000000" "$FP/src/A.sol" "$FP/foundry.toml"; touch -d "@1700000100" "$FP/out/A.sol/A.json" "$FP/cache/solidity-files-cache.json"
 # the shim answers `forge build --sizes` with $SHIM_SIZES and `forge test` with $SHIM_TEST, and any other build with success
 printf '#!/usr/bin/env bash\ncase " $* " in\n  *" --sizes "*) cat "$SHIM_SIZES" ;;\n  " test "*) cat "$SHIM_TEST" ;;\n  *) echo "Compiler run successful!" ;;\nesac\nexit 0\n' > "$FS/forge"; chmod +x "$FS/forge"
@@ -344,6 +381,51 @@ check "mutate.sh on a copy that does not build: nothing proven" 2 $? "$TMP/o113"
 if grep -q 'first error: Error (6275): Source "../src/InvariantBase.sol" not found' "$TMP/o113"; then
   echo "  ok    and it names the FIRST error, though the log ends in warnings"; else
   echo "  FAIL  mutate.sh did not show the error that stopped the build:"; sed "s/^/        | /" "$TMP/o113" | head -8; fails=$((fails + 1)); fi
+# Where the throwaway copy goes. With a BENCH_ROOT (or TMPDIR) that did not exist, `mktemp -d -p` failed, the copy's path
+# was EMPTY, and the script ran `cp -a <project>/. /` - "cannot create directory '/./src': Permission denied" for a fresh
+# reader, and the project copied into the file system's root for anyone running as root (FR8). A BENCH_ROOT that does not
+# exist is created; a place the copy cannot be made is refused in one line, rc 2, naming the variable and the path. The
+# shim above fails the baseline build, so "does not compile BEFORE" is the proof the copy was made and used.
+PATH="$FS2:$PATH" KEEP=1 BENCH_ROOT="$TMP/mr-new/deep/root" LABEL=m18 OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o193" 2>&1
+check "mutate.sh with a BENCH_ROOT that does not exist yet: it is created and used" 2 $? "$TMP/o193"
+kept193="$(sed -n 's/^copy kept at //p' "$TMP/o193")"
+case "$kept193" in "$TMP/mr-new/deep/root/mutate."*) under193=1 ;; *) under193=0 ;; esac
+if [ "$under193" -eq 1 ] && [ -f "$kept193/src/A.sol" ] && grep -q "does not compile BEFORE" "$TMP/o193" && ! grep -q "'/\./" "$TMP/o193" && ! grep -q "Permission denied" "$TMP/o193"; then
+  echo "  ok    and the copy landed under the created root, not at /"; else
+  echo "  FAIL  the copy did not land under the BENCH_ROOT it was given (kept at: ${kept193:-nothing}):"; sed "s/^/        | /" "$TMP/o193" | head -8; fails=$((fails + 1)); fi
+[ -n "$kept193" ] && [ "$under193" -eq 1 ] && rm -rf "$kept193"
+PATH="$FS2:$PATH" TMPDIR="$TMP/no-such-tmp" LABEL=m19 OUT_DIR="$TMP/mut0" env -u BENCH_ROOT "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o194" 2>&1
+check "mutate.sh with no BENCH_ROOT and a TMPDIR that does not exist is refused" 2 $? "$TMP/o194"
+if [ "$(grep -cF "mutate: cannot make the throwaway copy under TMPDIR=$TMP/no-such-tmp" "$TMP/o194")" = "1" ] && ! grep -q "^cp: \|resolves to \|does not compile" "$TMP/o194"; then
+  echo "  ok    and the refusal is one line naming TMPDIR and its path, before anything is copied"; else
+  echo "  FAIL  the refusal for a missing TMPDIR:"; sed "s/^/        | /" "$TMP/o194" | head -8; fails=$((fails + 1)); fi
+printf 'not a directory\n' > "$TMP/afile"
+PATH="$FS2:$PATH" BENCH_ROOT="$TMP/afile/root" LABEL=m20 OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o195" 2>&1
+check "mutate.sh with a BENCH_ROOT that cannot be created is refused" 2 $? "$TMP/o195"
+if [ "$(grep -cF "mutate: cannot make the throwaway copy under BENCH_ROOT=$TMP/afile/root" "$TMP/o195")" = "1" ] && ! grep -q "^cp: \|resolves to \|does not compile" "$TMP/o195"; then
+  echo "  ok    and the refusal is one line naming BENCH_ROOT and its path, before anything is copied"; else
+  echo "  FAIL  the refusal for a BENCH_ROOT that cannot be made:"; sed "s/^/        | /" "$TMP/o195" | head -8; fails=$((fails + 1)); fi
+# a file that is a RELATIVE link leaving the project: in the copy it points at nothing, and the refusal used to read
+# "src/L.sol resolves to , which is OUTSIDE the throwaway copy" - an empty path and the wrong cause (a symlinked lib/?)
+mkdir -p "$TMP/relout"; printf 'contract L { uint256 x; }\n' > "$TMP/relout/L.sol"; ln -s ../../relout/L.sol "$FP/src/L.sol"
+PATH="$FS2:$PATH" BENCH_ROOT="$TMP/mr-new/deep/root" LABEL=m21 OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/L.sol "uint256 x;" "uint256 y;" > "$TMP/o196" 2>&1
+check "mutate.sh on a relative link whose target is not in the copy: nothing proven" 2 $? "$TMP/o196"
+if ! grep -q "resolves to ," "$TMP/o196" && grep -qF "src/L.sol does not resolve inside the throwaway copy" "$TMP/o196" && grep -qF -- "-> ../../relout/L.sol" "$TMP/o196" && ! grep -q "symlinked lib" "$TMP/o196"; then
+  echo "  ok    and the refusal names the real cause: a link whose target the copy does not hold"; else
+  echo "  FAIL  the refusal for a link that points outside the copy:"; sed "s/^/        | /" "$TMP/o196" | head -8; fails=$((fails + 1)); fi
+rm -f "$FP/src/L.sol"
+# a copy that fails half-way (an unreadable file) must be refused, not built from what arrived. Root reads anything.
+if [ "$(id -u)" != "0" ]; then
+  printf 'secret\n' > "$FP/src/Unreadable.txt"; chmod 000 "$FP/src/Unreadable.txt"
+  PATH="$FS2:$PATH" BENCH_ROOT="$TMP/mr-new/deep/root" LABEL=m22 OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o197" 2>&1
+  check "mutate.sh when the copy of the project fails half-way is refused" 2 $? "$TMP/o197"
+  if grep -qF "mutate: the copy of $FP into $TMP/mr-new/deep/root/mutate." "$TMP/o197" && ! grep -q "does not compile" "$TMP/o197"; then
+    echo "  ok    and it says the copy failed, before building anything"; else
+    echo "  FAIL  a failed copy was not refused:"; sed "s/^/        | /" "$TMP/o197" | head -8; fails=$((fails + 1)); fi
+  chmod 600 "$FP/src/Unreadable.txt"; rm -f "$FP/src/Unreadable.txt"
+fi
+if [ -z "$(ls -A "$TMP/mr-new/deep/root" 2> /dev/null)" ]; then echo "  ok    and no copy was left behind under the root"; else
+  echo "  FAIL  copies were left under the root: $(ls "$TMP/mr-new/deep/root")"; fails=$((fails + 1)); fi
 "$HERE/sim-report.sh" "$FIX/sim-nm-nonnumeric.tsv" > "$TMP/o106" 2>&1; check "sim-report over a ledger with three malformed lines" 0 $? "$TMP/o106"
 if grep -Eq '^nm +honest +2 +40\.0 +39\.0 +1\.0 ' "$TMP/o106" && grep -q "3 line(s) ignored (malformed" "$TMP/o106"; then
   echo "  ok    and the malformed lines are counted out loud, not added up as numbers"; else
@@ -393,6 +475,95 @@ if [ ! -e "$TMP/bb2/wdir/fixtures" ]; then echo "  ok    and the bench-only file
   echo "  FAIL  the behaviour the warning describes did not happen (the header is now wrong)"; fails=$((fails + 1)); fi
 if grep -q "WARNING" "$TMP/o117"; then echo "  FAIL  an exclude of file patterns only (*.hex *.json) warned about a directory"; fails=$((fails + 1)); else
   echo "  ok    an exclude of file patterns only does not warn"; fi
+# BENCH_KEEP: a path the bench keeps across refreshes (the long fuzz's corpus/ and census/). Without it, a refresh with
+# `rsync --delete` removes a directory the project does not have; with it, the bench's files survive and the project's
+# own files under that path are MERGED in (added, never deleting the bench's).
+mkdir -p "$TMP/bb2/two/corpus/invariant" "$TMP/bb2/two/census"
+printf 'seq\n' > "$TMP/bb2/two/corpus/invariant/BENCH1.json"; printf 'run\t1\n' > "$TMP/bb2/two/census/earlier.tsv"
+BENCH_ROOT="$TMP/bb2" "$HERE/bench.sh" two "$BP" > "$TMP/o150" 2>&1; check "a refresh without BENCH_KEEP" 0 $? "$TMP/o150"
+if [ ! -e "$TMP/bb2/two/corpus" ]; then echo "  ok    and without BENCH_KEEP a directory only the bench has is deleted (the default, as documented)"; else
+  echo "  FAIL  a bench-only corpus/ survived a refresh without BENCH_KEEP: the header's default is wrong"; fails=$((fails + 1)); fi
+mkdir -p "$TMP/bb2/two/corpus/invariant" "$TMP/bb2/two/census" "$BP/corpus/invariant"
+printf 'seq\n' > "$TMP/bb2/two/corpus/invariant/BENCH1.json"; printf 'run\t1\n' > "$TMP/bb2/two/census/earlier.tsv"
+printf 'seq-from-project\n' > "$BP/corpus/invariant/PROJECT1.json"
+BENCH_ROOT="$TMP/bb2" BENCH_KEEP="corpus census" "$HERE/bench.sh" two "$BP" > "$TMP/o151" 2>&1; check "a refresh with BENCH_KEEP=\"corpus census\"" 0 $? "$TMP/o151"
+if [ -f "$TMP/bb2/two/corpus/invariant/BENCH1.json" ] && [ -f "$TMP/bb2/two/census/earlier.tsv" ] && [ -f "$TMP/bb2/two/corpus/invariant/PROJECT1.json" ]; then
+  echo "  ok    the bench's corpus and census survived, and the project's corpus file was merged in"; else
+  echo "  FAIL  BENCH_KEEP: BENCH1 $([ -f "$TMP/bb2/two/corpus/invariant/BENCH1.json" ] && echo kept || echo GONE), census $([ -f "$TMP/bb2/two/census/earlier.tsv" ] && echo kept || echo GONE), PROJECT1 $([ -f "$TMP/bb2/two/corpus/invariant/PROJECT1.json" ] && echo merged || echo MISSING)"; fails=$((fails + 1)); fi
+rm -rf "$BP/corpus" "$TMP/bb2/two/corpus" "$TMP/bb2/two/census"
+
+# LINK_FROM: a project with no lib/ of its own (forge-std installed elsewhere). Without LINK_FROM nothing is linked, and
+# the script says so in one line; with it, <dir> becomes the bench's lib/.
+NL="$TMP/nolibproj"; mkdir -p "$NL/src" "$TMP/fstd/forge-std/src"
+printf '[profile.default]\n' > "$NL/foundry.toml"; printf 'contract N {}\n' > "$NL/src/N.sol"; printf '// std\n' > "$TMP/fstd/forge-std/src/Test.sol"
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nl "$NL" > "$TMP/o152" 2>&1; check "a bench of a project with no lib/, no LINK_FROM" 0 $? "$TMP/o152"
+if [ "$(grep -cF 'the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>' "$TMP/o152")" = "1" ] && [ ! -e "$TMP/bb3/nl/lib" ]; then
+  echo "  ok    and it says, in one line, that nothing was linked and how to link"; else
+  echo "  FAIL  no one-line note about the missing lib/ (or a lib/ appeared):"; grep -i lib "$TMP/o152" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+LINK_FROM="$TMP/fstd" BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nl "$NL" > "$TMP/o153" 2>&1; check "the same bench with LINK_FROM=<dir with forge-std>" 0 $? "$TMP/o153"
+if [ -L "$TMP/bb3/nl/lib" ] && [ "$(readlink "$TMP/bb3/nl/lib")" = "$(cd "$TMP/fstd" && pwd -P)" ] && [ -f "$TMP/bb3/nl/lib/forge-std/src/Test.sol" ] && [ ! -e "$NL/lib" ]; then
+  echo "  ok    and <dir> is the bench's lib/ (a link), and the project is untouched"; else
+  echo "  FAIL  LINK_FROM: bench lib $(readlink "$TMP/bb3/nl/lib" 2> /dev/null || echo none), project lib $([ -e "$NL/lib" ] && echo CREATED || echo absent)"; fails=$((fails + 1)); fi
+LINK_FROM="$TMP/no-such-dir" BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nl2 "$NL" > "$TMP/o154" 2>&1; check "LINK_FROM naming a directory that does not exist is refused" 1 $? "$TMP/o154"
+LINK_FROM="$TMP/fstd" BENCH_ROOT="$TMP/bb3" BENCH_EXCLUDE="src" "$HERE/bench.sh" nlbb "$NL" > "$TMP/o155" 2>&1; check "LINK_FROM on a bench that withholds src/" 0 $? "$TMP/o155"
+if [ -d "$TMP/bb3/nlbb/lib" ] && [ ! -L "$TMP/bb3/nlbb/lib" ] && [ -f "$TMP/bb3/nlbb/lib/forge-std/src/Test.sol" ] && grep -q "isolation verified" "$TMP/o155"; then
+  echo "  ok    and there <dir> is COPIED, not linked (a withholding bench holds no symlink)"; else
+  echo "  FAIL  LINK_FROM on a withholding bench: lib $([ -L "$TMP/bb3/nlbb/lib" ] && echo LINK || { [ -d "$TMP/bb3/nlbb/lib" ] && echo dir || echo none; })"; fails=$((fails + 1)); fi
+# the same no-lib/ bench refreshed WITHOUT LINK_FROM: its lib/ is the link the earlier LINK_FROM left, and the run must say
+# so - not call it "the bench's own"
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nl "$NL" > "$TMP/o170" 2>&1; check "a refresh without LINK_FROM of a bench an earlier LINK_FROM linked" 0 $? "$TMP/o170"
+if grep -qF "bench: lib/ is a link left by an earlier LINK_FROM: $(cd "$TMP/fstd" && pwd -P)" "$TMP/o170" && ! grep -q "the bench's own" "$TMP/o170" && [ -L "$TMP/bb3/nl/lib" ]; then
+  echo "  ok    and it says the lib/ is a link left by an earlier LINK_FROM, naming the target (kept)"; else
+  echo "  FAIL  the leftover LINK_FROM link is not reported as such:"; grep -i 'lib/' "$TMP/o170" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+# no lib/, but foundry.toml already says where the dependencies are: an absolute (or ../) `libs` entry, or a remapping to
+# an absolute path. Then there is nothing to link, and advising LINK_FROM sent a fresh reader looking for a directory it
+# did not need (FR7: the toy on forge's defaults, forge-std through an absolute libs, the kit through a remapping).
+NR="$TMP/nolib-deps"; mkdir -p "$NR/abslibs/src" "$NR/remap/src" "$NR/uplibs/src" "$NR/multiline/src" "$NR/inside/src"
+printf '[profile.default]\nlibs = ["%s"]\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/abslibs/foundry.toml"
+printf '[profile.default]\nremappings = ["forge-std/=%s/forge-std/src/"]\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/remap/foundry.toml"
+printf '[profile.default]\nlibs = ["../deps"]\n' > "$NR/uplibs/foundry.toml"
+printf '[profile.default]\nremappings = [\n  "a/=src/",\n  "forge-std/=%s/forge-std/src/",\n]\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/multiline/foundry.toml"
+printf '[profile.default]\nlibs = ["lib"]\nremappings = ["a/=src/"]\n' > "$NR/inside/foundry.toml"
+for p in abslibs remap uplibs multiline; do
+  BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" "nr-$p" "$NR/$p" > "$TMP/o181-$p" 2>&1; check "a bench of a project with no lib/ whose foundry.toml names its dependencies ($p)" 0 $? "$TMP/o181-$p"
+  if [ "$(grep -cxF 'bench: no lib/; dependencies come from foundry.toml (libs / remappings): nothing to link' "$TMP/o181-$p")" = "1" ] && ! grep -q "LINK_FROM" "$TMP/o181-$p" && [ ! -e "$TMP/bb3/nr-$p/lib" ]; then
+    echo "  ok    and it says the dependencies come from foundry.toml, without advising LINK_FROM"; else
+    echo "  FAIL  the no-lib/ note on a project whose foundry.toml names its dependencies ($p):"; grep -i lib "$TMP/o181-$p" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+done
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-inside "$NR/inside" > "$TMP/o182" 2>&1; check "a bench of a project with no lib/ whose libs and remappings stay inside it" 0 $? "$TMP/o182"
+if grep -qF 'the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>' "$TMP/o182" && ! grep -q "dependencies come from foundry.toml" "$TMP/o182"; then
+  echo "  ok    and there it still advises LINK_FROM (nothing in foundry.toml reaches outside)"; else
+  echo "  FAIL  the no-lib/ note on a project whose foundry.toml stays inside:"; grep -i lib "$TMP/o182" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+# ... and remappings.txt, which forge reads as well: a project whose ONLY absolute remapping is there (FR8) got the
+# LINK_FROM advice. With CRLF line ends and a context-scoped line too; relative targets there still advise LINK_FROM.
+mkdir -p "$NR/remaptxt/src" "$NR/remaptxt-inside/src"
+printf '[profile.default]\n' > "$NR/remaptxt/foundry.toml"; printf '[profile.default]\n' > "$NR/remaptxt-inside/foundry.toml"
+printf 'a/=src/\r\nsrc/:forge-std/=%s/forge-std/src/\r\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/remaptxt/remappings.txt"
+printf 'a/=src/\nb/=../b/\n' > "$NR/remaptxt-inside/remappings.txt"
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-remaptxt "$NR/remaptxt" > "$TMP/o183" 2>&1; check "a bench of a project with no lib/ whose remappings.txt names an absolute target" 0 $? "$TMP/o183"
+if [ "$(grep -cxF 'bench: no lib/; dependencies come from remappings.txt (an absolute remapping): nothing to link' "$TMP/o183")" = "1" ] && ! grep -q "LINK_FROM" "$TMP/o183" && [ ! -e "$TMP/bb3/nr-remaptxt/lib" ]; then
+  echo "  ok    and it says the dependencies come from remappings.txt, without advising LINK_FROM"; else
+  echo "  FAIL  the no-lib/ note on a project whose remappings.txt names its dependencies:"; grep -i lib "$TMP/o183" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-remaptxt-inside "$NR/remaptxt-inside" > "$TMP/o184" 2>&1; check "a bench of a project with no lib/ whose remappings.txt stays relative" 0 $? "$TMP/o184"
+if grep -qF 'the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>' "$TMP/o184" && ! grep -q "nothing to link" "$TMP/o184"; then
+  echo "  ok    and there it still advises LINK_FROM (no absolute target in remappings.txt)"; else
+  echo "  FAIL  the no-lib/ note on a project whose remappings.txt is relative:"; grep -i lib "$TMP/o184" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+
+# the marker: every bench this script makes holds .gauntlet-bench, a refresh keeps it, and a directory that exists
+# WITHOUT it is refused - rc 1, one line, nothing touched (a reused name once let a refresh with --delete wipe a working copy)
+if [ -f "$TMP/bb3/nl/.gauntlet-bench" ] && [ -f "$TMP/bb2/two/.gauntlet-bench" ] && [ -f "$TMP/bb3/nlbb/.gauntlet-bench" ]; then
+  echo "  ok    every bench made above holds the .gauntlet-bench marker, after its refreshes too"; else
+  echo "  FAIL  a bench has no .gauntlet-bench marker: nl $([ -f "$TMP/bb3/nl/.gauntlet-bench" ] && echo yes || echo NO), two $([ -f "$TMP/bb2/two/.gauntlet-bench" ] && echo yes || echo NO), nlbb $([ -f "$TMP/bb3/nlbb/.gauntlet-bench" ] && echo yes || echo NO)"; fails=$((fails + 1)); fi
+if [ -e "$NL/.gauntlet-bench" ]; then echo "  FAIL  the marker was written into the PROJECT"; fails=$((fails + 1)); else echo "  ok    and the project holds no marker"; fi
+mkdir -p "$TMP/bb4/wc/src"; printf 'work in progress\n' > "$TMP/bb4/wc/NOTES.txt"; printf 'contract W {}\n' > "$TMP/bb4/wc/src/W.sol"
+BENCH_ROOT="$TMP/bb4" "$HERE/bench.sh" wc "$NL" > "$TMP/o168" 2>&1; check "a directory that exists without the marker is refused" 1 $? "$TMP/o168"
+if [ "$(wc -l < "$TMP/o168" | tr -d ' ')" = "1" ] && grep -q 'gauntlet-bench' "$TMP/o168" && [ -f "$TMP/bb4/wc/NOTES.txt" ] && [ -f "$TMP/bb4/wc/src/W.sol" ] \
+  && [ ! -e "$TMP/bb4/wc/.gauntlet-bench" ] && [ ! -e "$TMP/bb4/wc/src/N.sol" ]; then
+  echo "  ok    in one line naming the marker, and the directory is untouched (its files kept, nothing copied, no marker written)"; else
+  echo "  FAIL  the refusal is not one line, or the directory was touched:"; sed "s/^/        | /" "$TMP/o168"; ls -A "$TMP/bb4/wc" | sed "s/^/        | ls: /"; fails=$((fails + 1)); fi
+BENCH_ROOT="$TMP/bb4" "$HERE/bench.sh" fresh "$NL" > "$TMP/o169" 2>&1; check "a bench under a name that did not exist" 0 $? "$TMP/o169"
+if [ -f "$TMP/bb4/fresh/.gauntlet-bench" ] && [ -f "$TMP/bb4/fresh/src/N.sol" ]; then echo "  ok    and it holds the marker"; else
+  echo "  FAIL  a new bench has no marker"; fails=$((fails + 1)); fi
 
 # ================================================================= round.sh (the ROUND line, written and read back; no forge needed)
 echo "== round.sh =="
@@ -543,6 +714,20 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
     echo "  FAIL  the refusal does not name the resolved path"; fails=$((fails + 1)); fi
 
   "$HERE/battery.sh" "$M" > "$TMP/o26" 2>&1; check "battery on a small green project" 0 $? "$TMP/o26"
+  # the stranger's case, on a cache forge itself just wrote: the sources copied in again after the build (new mtime, same
+  # bytes) are FRESH; an edit is STALE with no build in between; the edit undone is FRESH again, still with no build
+  CB="$TMP/copyback"; mkdir -p "$CB"
+  cp -R "$M/src" "$M/test" "$CB/" && rm -rf "$M/src" "$M/test" && cp -R "$CB/src" "$CB/test" "$M/" && touch "$M/src/A.sol" "$M/test/A.t.sol"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o165" 2>&1; check "freshness after the sources were copied in again (forge's own cache): FRESH" 0 $? "$TMP/o165"
+  cp "$M/src/A.sol" "$TMP/A.sol.keep"; printf '// edited after the build\n' >> "$M/src/A.sol"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o166" 2>&1; check "freshness after an edit with no build (forge's own cache): STALE" 1 $? "$TMP/o166"
+  cp "$TMP/A.sol.keep" "$M/src/A.sol"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o167" 2>&1; check "freshness after the edit was undone, no build (forge's own cache): FRESH" 0 $? "$TMP/o167"
+  # the fresh reader's case: a CRLF checkout, built, checked at once - forge hashed the LF text, the guard must too
+  cp "$M/test/A.t.sol" "$TMP/At.sol.keep"; sed -i 's/$/\r/' "$M/src/A.sol" "$M/test/A.t.sol"
+  (cd "$M" && forge build > "$TMP/o174.build" 2>&1)
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o174" 2>&1; check "a fresh build of sources with CRLF line ends (forge's own cache): FRESH" 0 $? "$TMP/o174"
+  cp "$TMP/A.sol.keep" "$M/src/A.sol"; cp "$TMP/At.sol.keep" "$M/test/A.t.sol"
   TEST_FLAGS="--match-contract NoSuchContractAnywhere" "$HERE/battery.sh" "$M" > "$TMP/o27" 2>&1
   check "battery with a filter that matches NOTHING is not a pass" 1 $? "$TMP/o27"
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract Skipper is Test { function test_skipped() public { vm.skip(true); } }\n' > "$M/test/Skip.t.sol"
@@ -579,6 +764,22 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   check "USE_BENCH=1 on a project that reaches three levels up is refused, in one line" 2 $? "$TMP/o137"
   if [ "$(grep -c "refused" "$TMP/o137")" = "1" ] && [ -z "$(find "$TMP/fzb" -maxdepth 1 -name 'fuzz-long-c-*' -print -quit 2> /dev/null)" ]; then
     echo "  ok    and no bench was made for it"; else echo "  FAIL  the deep project was benched, or refused unclearly"; fails=$((fails + 1)); fi
+  # the long fuzz's corpus and census live in the BENCH: the next run's refresh must keep them (they used to be deleted by
+  # `rsync --delete`, so every long run with a bench started cold), and a corpus the project has of its own is merged in
+  FZ="$(find "$TMP/fzb" -maxdepth 1 -name 'fuzz-long-child-*' -print -quit 2> /dev/null)"
+  if [ -n "$FZ" ] && [ -d "$FZ/child" ]; then
+    mkdir -p "$FZ/child/corpus/invariant" "$FZ/child/census" "$TL/child/corpus/invariant"
+    printf 'seq\n' > "$FZ/child/corpus/invariant/PLANTED.json"; printf 'run\t1\n' > "$FZ/child/census/earlier-run.tsv"
+    printf 'seq-from-project\n' > "$TL/child/corpus/invariant/FROMPROJECT.json"
+    BENCH_ROOT="$TMP/fzb" "$HERE/fuzz-long.sh" "$TL/child" > "$TMP/o156" 2>&1
+    check "a second long fuzz in the same bench" 0 $? "$TMP/o156"
+    if [ -f "$FZ/child/corpus/invariant/PLANTED.json" ] && [ -f "$FZ/child/census/earlier-run.tsv" ] && [ -f "$FZ/child/corpus/invariant/FROMPROJECT.json" ]; then
+      echo "  ok    and the bench's corpus and census survived the refresh, and the project's corpus file was merged in"; else
+      echo "  FAIL  fuzz-long.sh's refresh: PLANTED $([ -f "$FZ/child/corpus/invariant/PLANTED.json" ] && echo kept || echo GONE), census $([ -f "$FZ/child/census/earlier-run.tsv" ] && echo kept || echo GONE), FROMPROJECT $([ -f "$FZ/child/corpus/invariant/FROMPROJECT.json" ] && echo merged || echo MISSING)"; fails=$((fails + 1)); fi
+    rm -rf "$TL/child/corpus"
+  else
+    echo "  FAIL  the bench of the two-level project is not where the case above left it ($TMP/fzb/fuzz-long-child-*)"; fails=$((fails + 1))
+  fi
 
   BENCH_ROOT="$TMP/benches" "$HERE/bench.sh" bb "$M" > "$TMP/o33" 2>&1; check "an ordinary bench" 0 $? "$TMP/o33"
   BENCH_ROOT="$TMP/benches" BENCH_EXCLUDE="src" "$HERE/bench.sh" bb "$M" > "$TMP/o34" 2>&1
@@ -689,6 +890,32 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   cp "$TMP/toml.keep" "$M/foundry.toml"
   USE_BENCH=0 RUNS=1 DEPTH=1 "$HERE/fuzz-long.sh" "$M" > "$TMP/o52" 2>&1
   check "RUNS and DEPTH cannot shrink the long fuzz below the everyday budget" 2 $? "$TMP/o52"
+  # both refusals are ACTIONABLE: they print the everyday budget they measured and a block to paste computed from it
+  # (runs = 4 x the everyday runs, at least 1000; depth = the everyday depth). $M's everyday budget is 4 x 4.
+  if grep -qF "which here is" "$TMP/o31" && grep -qF "4 x 4 = 16 calls" "$TMP/o31" && grep -qx '\[profile.nosuchprofile.invariant\]' "$TMP/o31" \
+    && grep -qx 'runs = 1000' "$TMP/o31" && grep -qx 'depth = 4' "$TMP/o31" && grep -qx 'corpus_dir = "corpus/long"' "$TMP/o31"; then
+    echo "  ok    the missing-profile refusal prints the everyday budget and the block to paste"; else
+    echo "  FAIL  the missing-profile refusal is not actionable:"; grep -A8 "does not exist" "$TMP/o31" | head -10 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  if grep -qF "4 x 4 = 16 calls" "$TMP/o52" && grep -qx '\[profile.long.invariant\]' "$TMP/o52" && grep -qx 'runs = 1000' "$TMP/o52" \
+    && grep -qx 'depth = 4' "$TMP/o52" && grep -qx 'fail_on_revert = true' "$TMP/o52" && grep -qF "must be LARGER than YOUR everyday one" "$TMP/o52"; then
+    echo "  ok    the budget refusal prints the everyday budget, the rule and the block to paste"; else
+    echo "  FAIL  the budget refusal is not actionable:"; grep -A8 "not larger" "$TMP/o52" | head -10 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # forge's DEFAULT everyday budget (no [invariant] section: 256 x 500 = 128 000) against the kit's 1000 x 128: refused,
+  # and the block says 1024 x 500 - the fresh reader's case, where no document said what to pick
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[profile.long.invariant]\nruns = 1000\ndepth = 128\nfail_on_revert = true\n' > "$M/foundry.toml"
+  USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o176" 2>&1
+  check "forge's default everyday budget (256 x 500) against a long profile of 1000 x 128: refused" 2 $? "$TMP/o176"
+  if grep -qF "256 x 500 = 128000 calls" "$TMP/o176" && grep -qx 'runs = 1024' "$TMP/o176" && grep -qx 'depth = 500' "$TMP/o176" && ! grep -q "Ran [0-9]* test" "$TMP/o176"; then
+    echo "  ok    and the block it prints is 1024 x 500, computed from forge's defaults, before any campaign ran"; else
+    echo "  FAIL  the refusal on forge's defaults does not print 1024 x 500:"; grep -A8 "not larger" "$TMP/o176" | head -10 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # the block, pasted as printed into a project with no long profile, gives a long fuzz that runs and passes
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[invariant]\nruns = 4\ndepth = 4\nfail_on_revert = true\n' > "$M/foundry.toml"
+  sed -n '/^\[profile\.nosuchprofile\.invariant\]$/,/^corpus_dir = /p' "$TMP/o31" | sed 's/nosuchprofile/long/' >> "$M/foundry.toml"
+  USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o177" 2>&1
+  check "the printed block, pasted as is: the long fuzz runs and passes" 0 $? "$TMP/o177"
+  if grep -qF "4000 under 'long', 16 under the default profile" "$TMP/o177"; then echo "  ok    and the budget it ran under is the block's (1000 x 4)"; else
+    echo "  FAIL  the pasted block was not the budget that ran: $(grep 'invariant budget' "$TMP/o177")"; fails=$((fails + 1)); fi
+  cp "$TMP/toml.keep" "$M/foundry.toml"; rm -rf "$M/corpus"
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract SkippedInvariant is Test { function setUp() public { vm.skip(true); } function invariant_never_runs() public pure { assertTrue(true); } }\n' > "$M/test/SkipInv.t.sol"
   USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o53" 2>&1
   check "a campaign that SKIPPED itself next to one that ran is not a pass" 2 $? "$TMP/o53"
@@ -766,35 +993,97 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   printf 'Toy\tU=0\tA:deposit=5/4\tA:withdraw=3/0\tB:whole credit=1\n' > "$C"
   printf 'Toy\tU=0\tA:deposit=6/6\tA:withdraw=2/1\n' >> "$C"
   printf 'Toy\tU=0\tA:deposit=1/0\tA:set=x=1/1\tB:whole credit=2\n' >> "$C"
-  "$HERE/census.sh" --aggregate "$C" > "$TMP/o55" 2>&1; check "census of three hand-written runs" 0 $? "$TMP/o55"
+  OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C" > "$TMP/o55" 2>&1; check "census of three hand-written runs with no floor named is NOTHING JUDGED, not a pass" 2 $? "$TMP/o55"
+  if grep -q '^census gate: NOTHING JUDGED - CORE and REACH are both empty' "$TMP/o55"; then
+    echo "  ok    and the last line says so"
+  else
+    echo "  FAIL  the empty-floor gate did not say NOTHING JUDGED"; fails=$((fails+1)); sed 's/^/          | /' "$TMP/o55" | tail -n 4
+  fi
   if grep -Eq '^withdraw +5 +1 +1 +2$' "$TMP/o55" && grep -Eq '^deposit +12 +10 +2 +1$' "$TMP/o55" \
     && grep -Eq '^whole credit +2 +3$' "$TMP/o55" && grep -Eq '^set=x +1 +1 +1 +2$' "$TMP/o55"; then
     echo "  ok    and the sums are right (an action missing from a run counts as zero successes in it)"
   else
     echo "  FAIL  the census arithmetic is wrong:"; sed "s/^/        | /" "$TMP/o55"; fails=$((fails + 1))
   fi
-  CORE="withdraw" MIN_PCT=50 "$HERE/census.sh" --aggregate "$C" > "$TMP/o56" 2>&1; check "a CORE action that worked in 1 run of 3 is below a floor of 50" 1 $? "$TMP/o56"
-  CORE="deposit" MIN_PCT=50 "$HERE/census.sh" --aggregate "$C" > "$TMP/o57" 2>&1; check "a CORE action that worked in 2 runs of 3 is above it" 0 $? "$TMP/o57"
-  CORE="withdraw" "$HERE/census.sh" --aggregate "$C" > "$TMP/o57b" 2>&1; check "and the default floor (25) lets 1 run of 3 through" 0 $? "$TMP/o57b"
-  CORE="nosuchaction" "$HERE/census.sh" --aggregate "$C" > "$TMP/o58" 2>&1; check "a CORE action that never ran at all" 1 $? "$TMP/o58"
+  CORE="withdraw" MIN_PCT=50 OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C" > "$TMP/o56" 2>&1; check "a CORE action that worked in 1 run of 3 is below a floor of 50" 1 $? "$TMP/o56"
+  CORE="deposit" MIN_PCT=50 OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C" > "$TMP/o57" 2>&1; check "a CORE action that worked in 2 runs of 3 is above it" 0 $? "$TMP/o57"
+  CORE="withdraw" OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C" > "$TMP/o57b" 2>&1; check "and the default floor (25) lets 1 run of 3 through" 0 $? "$TMP/o57b"
+  CORE="nosuchaction" OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C" > "$TMP/o58" 2>&1; check "a CORE action that never ran at all" 1 $? "$TMP/o58"
   printf 'Toy\tU=2\tA:deposit=1/1\n' >> "$C"
-  "$HERE/census.sh" --aggregate "$C" > "$TMP/o59" 2>&1; check "a run with an unexplained revert fails the census" 1 $? "$TMP/o59"
-  : > "$TMP/empty.tsv"; "$HERE/census.sh" --aggregate "$TMP/empty.tsv" > "$TMP/o60" 2>&1; check "an empty census measured nothing" 2 $? "$TMP/o60"
+  OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C" > "$TMP/o59" 2>&1; check "a run with an unexplained revert fails the census" 1 $? "$TMP/o59"
+  : > "$TMP/empty.tsv"; OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$TMP/empty.tsv" > "$TMP/o60" 2>&1; check "an empty census measured nothing" 2 $? "$TMP/o60"
 
   # CORE is judged PER SUITE: an action that is dead in one suite must not be rescued by a namesake in another
   C2="$TMP/census2.tsv"
   printf 'Vault\tU=0\tA:deposit=2/2\tB:whole credit=1\nVault\tU=0\tA:deposit=3/3\n' > "$C2"
   printf 'Hook\tU=0\tA:deposit=4/0\nHook\tU=0\tA:deposit=1/0\nHook\tU=0\tA:deposit=2/0\n' >> "$C2"
-  CORE="deposit" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o79" 2>&1; check "a CORE action dead in ONE suite fails, whatever its namesake did" 1 $? "$TMP/o79"
-  CORE="deposit" MIN_PCT=lots "$HERE/census.sh" --aggregate "$C2" > "$TMP/o80" 2>&1; check "a floor that is not a number is refused" 2 $? "$TMP/o80"
-  CORE="deposit" MIN_PCT=0 "$HERE/census.sh" --aggregate "$C2" > "$TMP/o81" 2>&1; check "a floor of zero is refused: it would pass an action that never worked" 2 $? "$TMP/o81"
-  REACH="whole credit" MIN_PCT=50 "$HERE/census.sh" --aggregate "$C2" > "$TMP/o82" 2>&1; check "a REACH boundary met in 1 run of 2 is at a floor of 50" 0 $? "$TMP/o82"
-  REACH="whole credit" MIN_PCT=51 "$HERE/census.sh" --aggregate "$C2" > "$TMP/o83" 2>&1; check "and below a floor of 51" 1 $? "$TMP/o83"
-  REACH="the cap" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o84" 2>&1; check "a REACH boundary that is in no suite at all" 1 $? "$TMP/o84"
+  CORE="deposit" OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o79" 2>&1; check "a CORE action dead in ONE suite fails, whatever its namesake did" 1 $? "$TMP/o79"
+  CORE="deposit" MIN_PCT=lots OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o80" 2>&1; check "a floor that is not a number is refused" 2 $? "$TMP/o80"
+  CORE="deposit" MIN_PCT=0 OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o81" 2>&1; check "a floor of zero is refused: it would pass an action that never worked" 2 $? "$TMP/o81"
+  REACH="whole credit" MIN_PCT=50 OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o82" 2>&1; check "a REACH boundary met in 1 run of 2 is at a floor of 50" 0 $? "$TMP/o82"
+  REACH="whole credit" MIN_PCT=51 OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o83" 2>&1; check "and below a floor of 51" 1 $? "$TMP/o83"
+  REACH="the cap" OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o84" 2>&1; check "a REACH boundary that is in no suite at all" 1 $? "$TMP/o84"
   printf 'Vault\tU=0\tA:broken\tfield=3/1\tA:deposit=1/1\n' >> "$C2"
-  "$HERE/census.sh" --aggregate "$C2" > "$TMP/o85" 2>&1
+  OUT_DIR="$TMP/gate" "$HERE/census.sh" --aggregate "$C2" > "$TMP/o85" 2>&1
   if grep -q "2 field(s) ignored" "$TMP/o85"; then echo "  ok    a field the census cannot read is counted out loud, not dropped"; else
     echo "  FAIL  malformed census fields were ignored in silence"; fails=$((fails + 1)); fi
+  # ---- the GATE (--aggregate) leaves a record and says its verdict: <OUT_DIR>/06-census-gate.txt holds the table and the
+  # verdict, and the last line printed is that verdict. It used to write nothing and print nothing on a pass (rc 0 only).
+  gate_last() { tail -n 1 "$1" | tr -d '\r'; }
+  gate_ok() { # gate_ok <label> <output> <record>: the record exists, holds the table, and ends in the same verdict as the output
+    if [ -f "$3" ] && grep -Eq '^== campaign census: ' "$3" && [ "$(gate_last "$3")" = "$(gate_last "$2")" ]; then
+      echo "  ok    $1: the record holds the table and ends in the verdict printed"; else
+      echo "  FAIL  $1: record $([ -f "$3" ] && echo "ends in '$(gate_last "$3")'" || echo MISSING), output ends in '$(gate_last "$2")'"; fails=$((fails + 1)); fi
+  }
+  C3="$TMP/census3.tsv"
+  printf 'Toy\tU=0\tA:deposit=5/4\tA:withdraw=3/0\tB:whole credit=1\nToy\tU=0\tA:deposit=6/6\tA:withdraw=2/1\nToy\tU=0\tA:deposit=1/0\tB:whole credit=2\n' > "$C3"
+  CORE="deposit withdraw" REACH="whole credit" MIN_PCT=30 OUT_DIR="$TMP/g183" "$HERE/census.sh" --aggregate "$C3" > "$TMP/o183" 2>&1
+  check "the gate passes: 2 CORE actions and 1 REACH boundary at or above 30%" 0 $? "$TMP/o183"
+  if [ "$(gate_last "$TMP/o183")" = "census gate: PASSED - 2 CORE actions and 1 REACH boundaries at or above 30%" ]; then
+    echo "  ok    and its last line says so"; else echo "  FAIL  the passing gate's last line: '$(gate_last "$TMP/o183")'"; fails=$((fails + 1)); fi
+  gate_ok "a passing gate" "$TMP/o183" "$TMP/g183/06-census-gate.txt"
+  CORE="deposit withdraw" MIN_PCT=50 OUT_DIR="$TMP/g184" "$HERE/census.sh" --aggregate "$C3" > "$TMP/o184" 2>&1
+  check "the gate fails: a CORE action below a floor of 50" 1 $? "$TMP/o184"
+  l184="$(gate_last "$TMP/o184")"
+  case "$l184" in "census gate: FAILED - "*'"withdraw"'*"50%"*) echo "  ok    and its last line names the action and the floor";; *)
+    echo "  FAIL  the failing gate's last line does not name the action and the floor: '$l184'"; fails=$((fails + 1));; esac
+  case "$l184" in *'"deposit"'*) echo "  FAIL  and it names deposit, which met the floor: '$l184'"; fails=$((fails + 1));; esac
+  gate_ok "a gate failed on a CORE floor" "$TMP/o184" "$TMP/g184/06-census-gate.txt"
+  REACH="whole credit" MIN_PCT=70 OUT_DIR="$TMP/g185" "$HERE/census.sh" --aggregate "$C3" > "$TMP/o185" 2>&1
+  check "the gate fails: a REACH boundary below a floor of 70" 1 $? "$TMP/o185"
+  case "$(gate_last "$TMP/o185")" in "census gate: FAILED - "*'"whole credit"'*"70%"*) echo "  ok    and its last line names the boundary and the floor";; *)
+    echo "  FAIL  the failing gate's last line does not name the boundary and the floor: '$(gate_last "$TMP/o185")'"; fails=$((fails + 1));; esac
+  gate_ok "a gate failed on a REACH floor" "$TMP/o185" "$TMP/g185/06-census-gate.txt"
+  { cat "$C3"; printf 'Toy\tU=2\tA:deposit=1/1\n'; } > "$TMP/census3u.tsv"
+  CORE="deposit" OUT_DIR="$TMP/g186" "$HERE/census.sh" --aggregate "$TMP/census3u.tsv" > "$TMP/o186" 2>&1
+  check "the gate fails: a run met an unexplained revert" 1 $? "$TMP/o186"
+  case "$(gate_last "$TMP/o186")" in "census gate: FAILED - "*"UNEXPLAINED"*) echo "  ok    and its last line says why";; *)
+    echo "  FAIL  the gate failed on an unexplained revert says: '$(gate_last "$TMP/o186")'"; fails=$((fails + 1));; esac
+  OUT_DIR="$TMP/g187" "$HERE/census.sh" --aggregate "$TMP/empty.tsv" > "$TMP/o187" 2>&1
+  check "the gate over an empty census: nothing measured" 2 $? "$TMP/o187"
+  if [ "$(gate_last "$TMP/o187")" = "census gate: FAILED - NOTHING MEASURED: $TMP/empty.tsv is empty or missing" ] \
+    && [ "$(gate_last "$TMP/g187/06-census-gate.txt" 2> /dev/null)" = "$(gate_last "$TMP/o187")" ]; then
+    echo "  ok    and its last line and its record say NOTHING MEASURED"; else
+    echo "  FAIL  the gate over an empty census: output '$(gate_last "$TMP/o187")', record '$(gate_last "$TMP/g187/06-census-gate.txt" 2> /dev/null)'"; fails=$((fails + 1)); fi
+  if [ "$(gate_last "$TMP/o80")" = "census gate: FAILED - MIN_PCT must be a whole number from 1 to 100 (got 'lots'). NOTHING MEASURED." ]; then
+    echo "  ok    a floor the gate refuses is its verdict too"; else echo "  FAIL  the refused floor's last line: '$(gate_last "$TMP/o80")'"; fails=$((fails + 1)); fi
+  # where the record goes, resolved as run mode resolves it: OUT_DIR (relative to the project), else <project>/.gauntlet/
+  # reports - and with no project given the project is the directory it ran from, which is NOT the bench the tsv is in,
+  # so the gate says where it wrote
+  mkdir -p "$TMP/gbench/census" "$TMP/gcwd" "$TMP/gproj"; cp "$C3" "$TMP/gbench/census/long.tsv"
+  (cd "$TMP/gcwd" && env -u OUT_DIR CORE="deposit" "$HERE/census.sh" --aggregate "$TMP/gbench/census/long.tsv") > "$TMP/o188" 2>&1
+  check "the gate with no project and no OUT_DIR, the tsv in another directory" 0 $? "$TMP/o188"
+  g188="$(cd "$TMP/gcwd" && pwd -P)/.gauntlet/reports/06-census-gate.txt"
+  if grep -qxF "census gate: record written to $g188 (the census is in $(cd "$TMP/gbench/census" && pwd -P); give the project as the third argument to write it there)" "$TMP/o188"; then
+    echo "  ok    and it says where it wrote, and that the census lives elsewhere"; else
+    echo "  FAIL  the gate does not say where it wrote:"; grep -a "census gate" "$TMP/o188" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  gate_ok "the record of a gate run with no project" "$TMP/o188" "$g188"
+  env -u OUT_DIR CORE="deposit" "$HERE/census.sh" --aggregate "$TMP/gbench/census/long.tsv" "$TMP/gproj" > "$TMP/o189" 2>&1
+  check "the gate with the project given as the third argument" 0 $? "$TMP/o189"
+  gate_ok "the record in the project given" "$TMP/o189" "$TMP/gproj/.gauntlet/reports/06-census-gate.txt"
+  CORE="deposit" OUT_DIR="rel-reports" "$HERE/census.sh" --aggregate "$TMP/gbench/census/long.tsv" "$TMP/gproj" > "$TMP/o190" 2>&1
+  check "the gate with a relative OUT_DIR and a project" 0 $? "$TMP/o190"
+  gate_ok "a relative OUT_DIR is under the project, as in run mode" "$TMP/o190" "$TMP/gproj/rel-reports/06-census-gate.txt"
   "$HERE/census.sh" "$M" > "$TMP/o61" 2>&1; check "a suite that never calls writeCensus measured nothing" 2 $? "$TMP/o61"
 
   K="$TMP/kitcopy"; mkdir -p "$K"; cp -R "$KIT/src" "$KIT/test" "$KIT/foundry.toml" "$K/"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$K/lib"
@@ -809,6 +1098,10 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   if [ "$rc62" -ne 0 ]; then grep -E "^==|^deposit|^withdraw|floor|FAILED|measured" "$TMP/o62" | head -12 | sed "s/^/        | /"; fi
   if grep -Eq '^== campaign census: ToyVault - [0-9]+ runs ==$' "$TMP/o62"; then echo "  ok    one line per run reached the file"; else
     echo "  FAIL  no census table came out of the kit's own campaign"; tail -5 "$TMP/o62" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # run mode is the smoke check, not the gate: it keeps its 06-census.txt and writes no gate record, prints no gate verdict
+  if [ -s "$K/.gauntlet/reports/06-census.txt" ] && [ ! -e "$K/.gauntlet/reports/06-census-gate.txt" ] && ! grep -aq '^census gate:' "$TMP/o62"; then
+    echo "  ok    and run mode keeps 06-census.txt, with no gate record and no gate verdict"; else
+    echo "  FAIL  run mode's report: 06-census.txt $([ -s "$K/.gauntlet/reports/06-census.txt" ] && echo there || echo MISSING), gate record $([ -e "$K/.gauntlet/reports/06-census-gate.txt" ] && echo WRITTEN || echo absent), verdict line $(grep -ac '^census gate:' "$TMP/o62")"; fails=$((fails + 1)); fi
   # ... and a SECOND draw, with a different pinned seed, over the same floor: one seed that clears the floor could be the
   # lucky one; two different draws that both clear it are the guard against that. The two tables must differ, or the
   # seed was not what chose the draw.
@@ -825,11 +1118,68 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   check "long fuzz on the kit's vault, over a stale census file" 0 $? "$TMP/o86"
   if grep -q "UNEXPLAINED revert: 0" "$TMP/o86"; then echo "  ok    and the stale line did not reach its table"; else
     echo "  FAIL  fuzz-long.sh added an old campaign's lines to the new one"; fails=$((fails + 1)); fi
+  # the census path, in one line to paste into the gate (QUICKSTART: "the path fuzz-long.sh printed"); and fuzz-long's
+  # own table is not the gate: no gate verdict, no gate record
+  if grep -qxF "census: $(cd "$K" && pwd -P)/census/long.tsv" "$TMP/o86" && [ -s "$K/census/long.tsv" ]; then
+    echo "  ok    and it prints the census path, absolute, in one line"; else
+    echo "  FAIL  fuzz-long.sh does not print the census path: $(grep -a '^census' "$TMP/o86" | head -2 | tr '\n' ' ')"; fails=$((fails + 1)); fi
+  if ! grep -aq '^census gate:' "$TMP/o86" && [ ! -e "$K/.gauntlet/reports/06-census-gate.txt" ]; then
+    echo "  ok    and its own census table carries no gate verdict and writes no gate record"; else
+    echo "  FAIL  fuzz-long.sh's census printed a gate verdict or wrote a gate record"; fails=$((fails + 1)); fi
   # a campaign that is RED next to one that wrote a census: the census must not turn the failure into a pass
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract T87 { uint256 public n; function poke() external { n++; } }\ncontract RedOnPurposeInvariants is Test { T87 t; function setUp() public { t = new T87(); targetContract(address(t)); }\nfunction invariant_red_on_purpose() public view { assertEq(t.n(), type(uint256).max, "red on purpose"); } }\n' > "$K/test/RedOnPurpose.t.sol"
   MATCH="--match-contract (ToyVaultInvariants|RedOnPurposeInvariants)" MIN_PCT=25 "$HERE/census.sh" "$K" > "$TMP/o87" 2>&1; rc87=$?
   if [ "$rc87" -ne 0 ] && [ "$rc87" -ne 2 ] && grep -q "campaign itself FAILED" "$TMP/o87"; then echo "  ok    a red campaign fails census.sh even when the census table is clean (rc=$rc87)"; else
     echo "  FAIL  census.sh answered $rc87 over a red campaign"; fails=$((fails + 1)); fi
+  # ... and the long fuzz of that red campaign, in a bench: it FAILS, and still prints the census path - the bench's
+  # census/long.tsv, which exists - and that pasted path is what the gate reads
+  BENCH_ROOT="$TMP/fzk" RUNS=65 DEPTH=64 MATCH="--match-contract (ToyVaultInvariants|RedOnPurposeInvariants)" "$HERE/fuzz-long.sh" "$K" > "$TMP/o191" 2>&1; rc191=$?
+  FZK="$(find "$TMP/fzk" -maxdepth 1 -name 'fuzz-long-kitcopy-*' -print -quit 2> /dev/null)"
+  p191="$(grep -a '^census: /' "$TMP/o191" | head -1 | sed 's/^census: //')"
+  if [ "$rc191" -ne 0 ] && [ "$rc191" -ne 2 ] && grep -q "LONG FUZZ FAILED" "$TMP/o191" && [ -n "$FZK" ] \
+    && [ "$(grep -ac '^census: /' "$TMP/o191")" = "1" ] && [ "$p191" = "$(cd "$FZK" && pwd -P)/census/long.tsv" ] && [ -s "$p191" ]; then
+    echo "  ok    a long fuzz that FAILED in a bench prints the census path too: the bench's census/long.tsv (rc=$rc191)"; else
+    echo "  FAIL  the failed long fuzz (rc=$rc191) and its census path: '$p191' (bench ${FZK:-none})"; grep -a -e 'LONG FUZZ' -e '^census' "$TMP/o191" | head -4 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  CORE="deposit" MIN_PCT=1 OUT_DIR="$TMP/g191" "$HERE/census.sh" --aggregate "$p191" > "$TMP/o192" 2>&1
+  check "the gate over the path the failed long fuzz printed, pasted as is" 0 $? "$TMP/o192"
+  gate_ok "the gate over the pasted path" "$TMP/o192" "$TMP/g191/06-census-gate.txt"
+  # a handler with NO targetSelector: the fuzzer calls every non-view function it has, HandlerBase's `writeCensus(string)`
+  # included, with labels of its own making. The fuzzer's calls arrive as their own transactions (msg.sender == tx.origin)
+  # and `writeCensus` ignores those, so the census holds one line per run, all under the suite's own label - it used to
+  # hold the fuzzer's labels too (bytes nobody can read) and extra lines under the real one.
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/InvariantBase.sol";\ncontract NSHandler is HandlerBase { uint256 public n; constructor() { _addActor(address(0xA1)); } function poke(uint256) external countedSetter("poke") { n++; } }\ncontract NoSelectorInvariants is Test { NSHandler h; function setUp() public { h = new NSHandler(); targetContract(address(h)); }\nfunction invariant_n() public view { assertGe(h.n(), 0); }\nfunction afterInvariant() public { h.writeCensus("NoSelector"); } }\n' > "$K/test/NoSelector.t.sol"
+  MATCH="--match-contract NoSelectorInvariants" CORE="poke" FOUNDRY_FUZZ_SEED=0x6b37 "$HERE/census.sh" "$K" > "$TMP/o175" 2>&1
+  check "a handler without targetSelector: the census is still the suite's own" 0 $? "$TMP/o175"
+  # 65, not 64: forge 1.8.1 calls afterInvariant once more than `runs` (measured on a toy, 64 runs: 65 lines with a
+  # targetSelector and 65 without, two seeds each); the fuzzer's own writes used to add dozens more, under every label
+  if [ "$(grep -ac '^== campaign census:' "$TMP/o175")" = "1" ] && grep -aEq '^== campaign census: NoSelector - 6[45] runs ==$' "$TMP/o175"; then
+    echo "  ok    and it holds one label, one line per run: nothing the fuzzer wrote"; else
+    echo "  FAIL  the fuzzer's own calls reached the census:"; grep -a '^== campaign census:' "$TMP/o175" | head -5 | cat -v | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # ... but the calls are SPENT, so they are counted and shown: a boundary row in the table, and one line under it
+  if grep -aEq '^handler unrestricted: bookkeeping selectors were fuzzed +[1-9][0-9]* +[1-9][0-9]*$' "$TMP/o175" \
+    && grep -aqxF "the fuzzer reached HandlerBase's own functions: restrict the handler with targetSelector (doctrine/INVARIANTS.md)" "$TMP/o175"; then
+    echo "  ok    and the unrestricted handler is flagged: a boundary row, and the line under the table"; else
+    echo "  FAIL  the unrestricted handler is not flagged in the census:"; grep -a -A8 '^== campaign census:' "$TMP/o175" | head -10 | cat -v | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  if ! grep -aq "handler unrestricted\|the fuzzer reached HandlerBase" "$TMP/o62" "$TMP/o133"; then
+    echo "  ok    and the kit's own vault suite (restricted with targetSelector) is not flagged"; else
+    echo "  FAIL  a restricted handler was flagged as unrestricted:"; grep -a "handler unrestricted\|the fuzzer reached" "$TMP/o62" "$TMP/o133" | head -3 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # an ENVIRONMENT failure (no fs_permissions for ./census) is persisted by forge under cache/invariant/failures/<suite>/
+  # and replayed first on the next run, silently (measured: one extra census line per run for as long as it stays).
+  # The fix hint has to name that directory, exactly, and it has to be one that exists.
+  cp "$K/foundry.toml" "$TMP/kit-toml.keep"; grep -v '^fs_permissions' "$TMP/kit-toml.keep" > "$K/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/InvariantBase.sol";\ncontract EnvHandler is HandlerBase { uint256 public n; constructor() { _addActor(address(0xA1)); } function poke(uint256) external countedSetter("poke") { n++; } }\ncontract EnvFailInvariants is Test { EnvHandler h; function setUp() public { h = new EnvHandler(); targetContract(address(h)); bytes4[] memory s = new bytes4[](1); s[0] = EnvHandler.poke.selector; targetSelector(FuzzSelector({addr: address(h), selectors: s})); }\nfunction invariant_n() public view { assertGe(h.n(), 0); }\nfunction afterInvariant() public { h.writeCensus("EnvFail"); } }\n' > "$K/test/EnvFail.t.sol"
+  rm -rf "$K/cache/invariant/failures/EnvFailInvariants"
+  MATCH="--match-contract EnvFailInvariants" "$HERE/census.sh" "$K" > "$TMP/o178" 2>&1; rc178=$?
+  if [ "$rc178" -ne 0 ] && [ "$rc178" -ne 1 ]; then echo "  ok    a campaign that cannot write its census fails census.sh (rc=$rc178)"; else
+    echo "  FAIL  census.sh answered $rc178 on a campaign with no fs_permissions"; fails=$((fails + 1)); fi
+  persisted="$(cd "$K" && pwd -P)/cache/invariant/failures/EnvFailInvariants"
+  if [ -d "$persisted" ] && grep -aqF "rm -rf $persisted" "$TMP/o178"; then
+    echo "  ok    and the hint names forge's record of the failure, the exact directory, which exists"; else
+    echo "  FAIL  the hint does not name the persisted failure ($([ -d "$persisted" ] && echo exists || echo 'not there')):"; grep -a -A4 "no census line" "$TMP/o178" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  cp "$TMP/kit-toml.keep" "$K/foundry.toml"; rm -rf "$persisted"
+  MATCH="--match-contract EnvFailInvariants" "$HERE/census.sh" "$K" > "$TMP/o179" 2>&1
+  check "the config fixed and the directory deleted as the hint says: the census passes" 0 $? "$TMP/o179"
+  rm -f "$K/test/NoSelector.t.sol" "$K/test/EnvFail.t.sol"
 else
   echo "  SKIPPED - forge, or $KIT/lib, is not available here. mutate.sh, size.sh, battery.sh, fuzz-long.sh and the"
   echo "            black-box mode of bench.sh are NOT proven on this machine."

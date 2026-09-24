@@ -89,8 +89,9 @@ than a class of its own. Source: aeon's public `hook-checklist.md`, classes 4 an
   once for the rest of the transaction (the public incident the source names is exactly this); and a legitimate
   nested action on pool B inside pool A's callback either is refused (liveness) or, with a set-then-clear flag,
   clears the guard on its way out and leaves the rest of A's action unguarded. (Placed on class 8, not class 4: the
-  defect is in the guard, not in state keyed by `PoolId`.) Fix: one slot per `PoolId` or a depth counter, and no
-  function other than enter/exit may write it. Test to write: an action on pool B nested inside pool A's callback,
+  defect is in the guard, not in state keyed by `PoolId`.) Fix: the lock's scope is the BALANCE's scope - one lock for the whole hook when it holds one shared balance (a per-pool
+  lock is still drained through a second pool: seen in a blind round), one slot per `PoolId` only when every balance is
+  per pool - or a depth counter; and no function other than enter/exit may write it. Test to write: an action on pool B nested inside pool A's callback,
   then a re-entry into A; and every helper that touches the slot, called mid-callback. Goes red the moment either
   reaches state that should have been unreachable.
 - **Class 24, the layer in front of the hook - canonical hook enforced on the deploy paths.** Knowing which router

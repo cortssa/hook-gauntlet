@@ -1,0 +1,168 @@
+{
+  "_format": "",
+  "paths": {
+    "artifacts": "out",
+    "build_infos": "out/build-info",
+    "sources": "src",
+    "tests": "test",
+    "scripts": "script",
+    "libraries": []
+  },
+  "files": {
+    "script/E.s.sol": {
+      "lastModificationDate": 1790188152550,
+      "contentHash": "b5efc094e49671cc",
+      "interfaceReprHash": null,
+      "sourceName": "script/E.s.sol",
+      "imports": [
+        "src/B.sol",
+        "src/C.sol"
+      ],
+      "versionRequirement": "^0.8.26",
+      "artifacts": {
+        "EScript": {
+          "0.8.26": {
+            "default": {
+              "path": "E.s.sol/EScript.json",
+              "build_id": "0e42b14a0df0665f"
+            }
+          }
+        }
+      },
+      "seenByCompiler": true
+    },
+    "src/A.sol": {
+      "lastModificationDate": 1790188152550,
+      "contentHash": "8b24fecafea1215d",
+      "interfaceReprHash": "523ca4f9dafd90d5",
+      "sourceName": "src/A.sol",
+      "imports": [],
+      "versionRequirement": null,
+      "artifacts": {},
+      "seenByCompiler": true
+    },
+    "src/B.sol": {
+      "lastModificationDate": 1790188152550,
+      "contentHash": "60a50ce0a581a6a0",
+      "interfaceReprHash": "8deb6382e2ab2f93",
+      "sourceName": "src/B.sol",
+      "imports": [],
+      "versionRequirement": "^0.8.26",
+      "artifacts": {
+        "B": {
+          "0.8.26": {
+            "default": {
+              "path": "B.sol/B.json",
+              "build_id": "0e42b14a0df0665f"
+            }
+          }
+        }
+      },
+      "seenByCompiler": true
+    },
+    "src/C.sol": {
+      "lastModificationDate": 1790188152550,
+      "contentHash": "904f53a1c6250950",
+      "interfaceReprHash": "5b8855145c4f447f",
+      "sourceName": "src/C.sol",
+      "imports": [
+        "src/B.sol"
+      ],
+      "versionRequirement": "^0.8.26",
+      "artifacts": {
+        "C": {
+          "0.8.26": {
+            "default": {
+              "path": "C.sol/C.json",
+              "build_id": "0e42b14a0df0665f"
+            }
+          }
+        }
+      },
+      "seenByCompiler": true
+    },
+    "test/D.t.sol": {
+      "lastModificationDate": 1790188152550,
+      "contentHash": "aaec8ce1f5bdd73f",
+      "interfaceReprHash": null,
+      "sourceName": "test/D.t.sol",
+      "imports": [
+        "src/B.sol",
+        "src/C.sol"
+      ],
+      "versionRequirement": "^0.8.26",
+      "artifacts": {
+        "DTest": {
+          "0.8.26": {
+            "default": {
+              "path": "D.t.sol/DTest.json",
+              "build_id": "0e42b14a0df0665f"
+            }
+          }
+        },
+        "VmContractHelper3": {
+          "0.8.26": {
+            "default": {
+              "path": "D.t.sol/VmContractHelper3.json",
+              "build_id": "0e42b14a0df0665f"
+            }
+          }
+        }
+      },
+      "seenByCompiler": true
+    }
+  },
+  "builds": [
+    "0e42b14a0df0665f"
+  ],
+  "profiles": {
+    "default": {
+      "solc": {
+        "optimizer": {
+          "enabled": false,
+          "runs": 200
+        },
+        "metadata": {
+          "useLiteralContent": false,
+          "bytecodeHash": "ipfs",
+          "appendCBOR": true
+        },
+        "outputSelection": {
+          "*": {
+            "*": [
+              "abi",
+              "evm.bytecode.object",
+              "evm.bytecode.sourceMap",
+              "evm.bytecode.linkReferences",
+              "evm.deployedBytecode.object",
+              "evm.deployedBytecode.sourceMap",
+              "evm.deployedBytecode.linkReferences",
+              "evm.deployedBytecode.immutableReferences",
+              "evm.methodIdentifiers",
+              "metadata"
+            ]
+          }
+        },
+        "evmVersion": "osaka",
+        "viaIR": false,
+        "viaSSACFG": false,
+        "experimental": false,
+        "libraries": {}
+      },
+      "vyper": {
+        "evmVersion": "osaka",
+        "outputSelection": {
+          "*": {
+            "*": [
+              "abi",
+              "evm.bytecode",
+              "evm.deployedBytecode"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "preprocessed": true,
+  "mocks": []
+}

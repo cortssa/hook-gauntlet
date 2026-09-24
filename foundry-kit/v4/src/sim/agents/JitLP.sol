@@ -22,7 +22,7 @@ import {
 /// against the victim - the victim gets a BETTER execution (more liquidity), the passive LP pays for it. Whether it
 /// is profitable is the same question as always: fee earned against the inventory it is left holding at a price
 /// the swap moved; the published rule of thumb is that it pays only when fee minus hedging cost is positive and
-/// the swap is large (`_research`, the Uniswap Labs JIT post).
+/// the swap is large (the Uniswap Labs post on JIT liquidity).
 contract JitLP is ISimAgent, ISimSearcher {
     string private _name;
     int256 public immutable liquidity;

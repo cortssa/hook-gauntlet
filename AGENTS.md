@@ -72,9 +72,9 @@ model rounds, and nothing leaves it without passing through phase 1. `doctrine/C
 
 | # | phase | you produce | gate to pass (all of it, measured) |
 |---|---|---|---|
-| 0 | **Owner interview** | scope, threat model, non-goals | the owner has answered every question in `briefs/owner-interview.md` - including the self-score against the Uniswap Foundation's security framework (`doctrine/UPSTREAM.md`) - and the answers are written in `DECISIONS.md` |
-| 1 | **Falsifiable spec** | `SPEC.md` | every class in `doctrine/HOOK-ATTACKS.md` is decided (applies / does not apply, with its predicate / accepted / prevented by an admission rule); the assumptions the spec stands on are listed; the "what a hostile actor can do -> what the contract answers" table covers every external entry point; invariants are written in words; out-of-scope is explicit; the owner has read it |
-| 2 | **Foundry sketch** | a compiling hook | `forge build` clean; runtime size measured and under the target chain's code-size limit (24,576 bytes on Ethereum, EIP-170 - check your chain's current limit, and the EIPs in flight), AND initcode size under the initcode limit (49,152 bytes on Ethereum, EIP-3860: a hook is deployed by CREATE2 from initcode that carries its constructor arguments), both margins written down; built on the official `v4-template` layout |
+| 0 | **Owner interview** | scope, threat model, non-goals | the owner has answered every question in `briefs/owner-interview.md` - an explicit dated "undecided" is an answer, listed as a blocker for the phase that needs it - including the self-score against the Uniswap Foundation's security framework (`doctrine/UPSTREAM.md`; offline, `UNVERIFIED` and the route continues, `QUICKSTART.md` step 6) - and the answers are written in `DECISIONS.md` |
+| 1 | **Falsifiable spec** | `SPEC.md` | every class in `doctrine/HOOK-ATTACKS.md` is decided (applies / does not apply, with its predicate / accepted / prevented by an admission rule); the assumptions the spec stands on are listed; the "what a hostile actor can do -> what the contract answers" table covers every external entry point; invariants are written in words; out-of-scope is explicit; the owner has read it (absent: `waiting_on_owner`, as in phase 0) |
+| 2 | **Foundry sketch** | a compiling hook | `forge build` compiles (forge's lint warnings are row 7's static triage, not a build failure); runtime size measured and under the target chain's code-size limit (24,576 bytes on Ethereum, EIP-170 - check your chain's current limit, and the EIPs in flight), AND initcode size under the initcode limit (49,152 bytes on Ethereum, EIP-3860: a hook is deployed by CREATE2 from initcode that carries its constructor arguments), both margins written down; built on the official `v4-template` layout (a hook on no v4 manager: its own layout, named in `DECISIONS.md` - that is not a divergence) |
 | 3 | **Battery** | unit + fork + invariant tests | 100% green, not 99%; at least one fork test against the real tokens and periphery of the target chain - the kit ships no fork suite, so this is written for the hook, and if the owner has no endpoint it is "not done" in the dossier with that reason; invariant suite running against the hostile-token mock; **`fail_on_revert = true` AND the census, as a pair** - the first without the second is the false green `JUDGES.md` warns about, because the way to satisfy it is a handler that swallows everything; **invariants and fuzz actions derived for THIS hook** (`doctrine/INVARIANTS.md`, `doctrine/FUZZ-ACTIONS.md`) - the ones that ship are the floor; every action shown to SUCCEED in the census, not merely to be called |
 | 4 | **Adversarial loop** | one report per round | **a DISCOVERY round with zero high and zero medium findings, and no REASONED high or medium left open**. See `doctrine/LOOP.md` |
 | 5 | **Black-box** | a divergence report | every promise in the spec has been tested from outside; every divergence is either fixed or written into the spec |
@@ -99,15 +99,16 @@ describe a fictional hook:
 
 ```
 mkdir -p .gauntlet/briefs .gauntlet/reports
-cp hook-gauntlet/state/STATE.md hook-gauntlet/state/DECISIONS.md hook-gauntlet/state/LOG.md .gauntlet/
+cp <kit>/state/STATE.md <kit>/state/DECISIONS.md <kit>/state/LOG.md .gauntlet/
 
 STATE.md        current phase, what is open, what blocks it
 DECISIONS.md    one entry per owner decision, dated, with the reason
 LOG.md          one entry per change, never for reads
 ```
 
-Everything the route produces for the hook lives beside them: `.gauntlet/SPEC.md` (phase 1), the filled briefs in
-`.gauntlet/briefs/` (`00-interview.md`, `r01.md`, …), the round reports in `.gauntlet/reports/`. The commands for every
+Everything the route produces for the hook lives beside them: `.gauntlet/SPEC.md` (phase 1; a project that already has
+its own `SPEC.md` keeps it, and the route's spec links to it rather than copying), the filled briefs in
+`.gauntlet/briefs/` (`00-interview.md`, `r01.md`, …), the round reports in `.gauntlet/reports/`, the dossier or its skeleton at `.gauntlet/DOSSIER.md`. The commands for every
 judge, with what "done" looks like, are in `QUICKSTART.md` step 8.
 
 Any agent that arrives with no context reads those three files and continues. If they disagree with the repository,
@@ -156,7 +157,9 @@ Everything else, you do.
 2. **One bench per agent.** Never compile in another agent's directory; the build tool will clear its artifacts.
 3. **Every claim carries its evidence** (`doctrine/EVIDENCE.md`). What can be tested is a test that has been SEEN RED
    on broken code and now passes - no red tests in reports: a test that proves a bug asserts the wrong behaviour,
-   and is named so that it is obvious. What cannot be compiled is written as an argument, labelled REASONED, and is
+   and is named so that it is obvious. When the fix lands, that test is inverted into the regression test - it now
+   asserts the promise, and it must be seen RED on the old code before it counts. What cannot be compiled is written
+   as an argument, labelled REASONED, and is
    not dropped.
 4. **Measure, do not infer.** A probe that falsifies a proposed fix does not validate your diagnosis of the cause.
    When a fix can be written more than one way, build each variant and read the bytes and the gas before you
@@ -257,6 +260,7 @@ doctrine/JUDGES.md      the questions every step answers, the usual tool for eac
 doctrine/RETROFIT.md    arriving at a hook that already exists: mapping it onto the kit without modifying it
 doctrine/CHANGES.md     sketch mode, measuring variants before deciding, comparing two revisions, reopening a release
 doctrine/SIMULATE.md    the simulation sandbox: when to run it, the rules that make a number mean something, how it lies
+doctrine/ORCHESTRATION.md one strong model running cheaper agents: briefs, benches, isolation, who certifies, refusals
 briefs/                 one template per role; fill the placeholders
 state/                  the convention to install in the owner's project
 foundry-kit/            hostile token, invariant skeleton + census, toy example
@@ -273,10 +277,14 @@ the thin layer that does, and they are the part that ages.
 
 ## 8. Honest limits, so you do not oversell the result
 
-- The kit has been through ONE small blind benchmark (n = 1, one round, one model family) and one independent audit of
-  itself, which found three false greens in its own scripts. It is distilled from one real hardening effort. None of
-  that validates the route as a whole: `README.md`, *Status*.
-- It needs a strong orchestrator model. A weak one produces rounds that opine instead of measuring.
+- The kit has been through two blind runs on one small target (run 1: one audit round; run 2: the full light route,
+  one strong and one cheaper model; n = 1 each, one model family) and several independent reviews of itself. It is
+  distilled from one real hardening effort. That is evidence about a method, not a validation of it: `README.md`, *Status*.
+- Running the route with agents meets two refusals that are not the kit's: a harness that will not let a subagent write
+  report files, and a model provider's safety classifier that may stop an agent asked to author an offensive artefact.
+  The route avoids needing one; `doctrine/ORCHESTRATION.md` §4 says how, and what to write when a step is stopped.
+- Decisions need the strongest model available (`doctrine/ORCHESTRATION.md` §5). A route run only by a weak model
+  produces rounds that opine instead of measuring.
 - Models from one family share blind spots. Run **at least one round** - the verifier or the black-box - on a model
   from a different vendor.
 - Passing every gate means "ready for humans to audit". It does not mean "safe".

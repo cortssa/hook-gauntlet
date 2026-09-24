@@ -45,6 +45,12 @@ import {SimLedger} from "./SimLedger.sol";
 /// agents sent 841 swaps quoted 0 on a fork: every one came back empty at ~250 000 gas and read as a market refusing.
 /// (`test/sim/RefusedAtQuote.t.sol` proves the POLICY - what the engine does with a quote of 0 - on a stub market. Whether
 /// a given binding's quote of 0 is right is that binding's question, not this test's.)
+///
+/// A SWAP THAT WAS SENT AND TOOK NOTHING DID NOT EXECUTE. A book whose side empties between the quote and the fill (another
+/// order took it, a maker cancelled) fills nothing, legitimately. The binding reports that as `executed == false` with
+/// `revertSelector == FILLED_NOTHING`: settled like any refusal, its gas on the books, counted in `refused`. A fill
+/// reported as EXECUTED with no input taken is refused loudly (`FillWithoutInput`, whose `rule` says the above), because
+/// it is also what a binding that forgot `Fill.amountInUsed` looks like (`test/sim/FilledNothing.t.sol`).
 abstract contract SimEngine is Test {
     enum Ordering {
         FCFS,
@@ -67,8 +73,15 @@ abstract contract SimEngine is Test {
     uint256 internal seq;
     uint256 public step;
 
-    /// @notice a swap fill reported as executed without the input it took (`Fill.amountInUsed`)
-    error FillWithoutInput(uint256 intentIndex);
+    /// @notice a swap fill reported as EXECUTED with no input taken (`Fill.amountInUsed == 0`). Either the binding forgot to
+    /// report the input (every partial fill would then look whole), or the swap really took nothing - a book side that
+    /// emptied between the quote and the fill - and then it did not execute: the binding reports `executed = false` with
+    /// `revertSelector = FILLED_NOTHING`, and the ledger counts it as refused. `rule` says so in the revert itself.
+    error FillWithoutInput(uint256 intentIndex, string rule);
+
+    string internal constant FILLED_NOTHING_RULE =
+        "a swap that took no input did not execute: report executed=false, revertSelector=FILLED_NOTHING (counted as refused); an executed swap reports amountInUsed";
+
     string internal label = "scenario";
 
     // ------------------------------------------------------------------ the five verbs a project binds
@@ -80,9 +93,20 @@ abstract contract SimEngine is Test {
     function _referencePriceX96() internal view virtual returns (uint256);
 
     // ------------------------------------------------------------------ setup
+    /// @notice the file the ledger writes its lines to: `GAUNTLET_SIM`, or "" for none. Probed once by `_initEngine`
+    /// (`SimLedger.LedgerNotWritable`). Virtual only so that a test can name an unwritable path without setting a
+    /// process-wide variable that every test running in parallel would see; a binding has no reason to override it.
+    function _ledgerPath() internal view virtual returns (string memory) {
+        return vm.envOr("GAUNTLET_SIM", string(""));
+    }
+
     function _initEngine() internal {
         if (cadence.l2BlockMillis == 0) cadence = SimClock.ethereumL1();
         ledger = new SimLedger();
+        // the ledger file is checked NOW, not at the first write after the last step: a project whose foundry.toml does not
+        // let tests write there used to run a whole scenario and then fail with forge's generic error
+        string memory path = _ledgerPath();
+        if (bytes(path).length != 0) ledger.probeWritable(path);
         _applyClock(0);
     }
 
@@ -207,7 +231,9 @@ abstract contract SimEngine is Test {
         executedOrder[i] = ++executedCount;
         f = _execute(queue[i]);
         // a binding that forgot to report the input taken would make every partial fill look whole: refuse loudly
-        if (f.executed && queue[i].kind == 0 && queue[i].amountIn > 0 && f.amountInUsed == 0) revert FillWithoutInput(i);
+        if (f.executed && queue[i].kind == 0 && queue[i].amountIn > 0 && f.amountInUsed == 0) {
+            revert FillWithoutInput(i, FILLED_NOTHING_RULE);
+        }
         ledger.noteFill(queue[i], f);
         ISimAgent(queue[i].agent).settle(queue[i], f);
     }

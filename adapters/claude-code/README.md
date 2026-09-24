@@ -26,7 +26,7 @@ the ROUND lines of `LOG.md` and you will want it to be honest.
 
 1. **Write the brief to a file** in the owner's project, from the template in `briefs/`. Do not improvise it in
    the prompt. The brief is the artifact that makes a round reproducible and comparable.
-2. **Create the bench** (`scripts/` has the helper): a copy of the project at `~/hg-<round>`, dependencies
+2. **Create the bench** (`scripts/` has the helper): a copy of the project at `$HOME/.gauntlet/bench/<round>` (`BENCH_ROOT` to change it), dependencies
    symlinked from a shared directory, never the shared working tree itself.
    For a black-box round, build the bench **without the implementation source** and check it by listing the bench
    before you launch.

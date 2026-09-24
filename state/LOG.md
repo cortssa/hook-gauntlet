@@ -10,15 +10,15 @@ not verified**.
 
 ## 2026-03-09 (orchestrator) - round 5 launched
 
-- Brief `briefs/r05.md` from `hook-gauntlet/briefs/audit-round.md`. Bench `~/hg-a05`, dependencies symlinked.
+- Brief `briefs/r05.md` from `<kit>/briefs/audit-round.md`. Bench `$HOME/.gauntlet/bench/a05`, dependencies symlinked.
   Aimed at the r04 change to the budget accounting and at the two trade-offs nobody had re-measured.
 - Baseline given to the auditor, all read from `runs/r04/battery.txt`: 83 passing, hook 20 986 bytes, fork gas for
   the capped swap 149 302.
 - Not verified: that the auditor's bench reproduces the baseline. That is its first task and its report must say so.
 
-## 2026-03-13 (executor) - r05 findings applied
+ROUND r05 | phase 4 | regression | vendor-a/large | bench $HOME/.gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min | reports/r05.md
 
-ROUND r05 | phase 4 | regression | vendor-a/large | bench ~/hg-a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min | reports/r05.md
+## 2026-03-13 (executor) - r05 findings applied
 
 - **`F-21` (medium) fixed at the cause.** The per-block budget was reset by comparing a stored block number, and
   the comparison was done in two places that could disagree. Replaced with a single read. This also closed `F-09`

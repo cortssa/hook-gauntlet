@@ -12,7 +12,7 @@ import {ISimAgent, ISimSearcher, SimView, Intent, Fill, VENUE_UNDER_TEST} from "
 /// model is worth to it - on a first-come-first-served sequencer, nothing.
 ///
 /// Sizing here is the crudest possible (a fixed multiple); real bots search the front-run size against the pool
-/// state (`_research`: binary search is what implementations converge on). That search is a straightforward
+/// state (binary search is what public implementations converge on). That search is a straightforward
 /// addition - and a hook whose fee rises with same-block volume is the thing that makes it stop early.
 contract Sandwicher is ISimAgent, ISimSearcher {
     string private _name;

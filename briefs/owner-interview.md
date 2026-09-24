@@ -8,7 +8,7 @@ these answers, and an answer you guessed will aim it wrongly for twenty rounds.
 words and let them correct you; the corrections are the valuable part. When they say "I don't know yet", write
 **"undecided"** with a date - do not fill it in for them. When an answer contradicts an earlier one, say so.
 
-Record every answer in `DECISIONS.md`, one entry per decision, dated, with the reason. Then write `STATE.md` and
+Record every answer in `DECISIONS.md`, one dated entry per answered question (an undecided item gets its own entry with the date), with the reason. Then write `STATE.md` and
 move to phase 1.
 
 This phase works fine in a chat tool with no terminal. It is the only one that does.
@@ -86,8 +86,9 @@ produces a spec that is wrong by Friday.
 
 - `DECISIONS.md` with one dated entry per answered question, and one entry per **undecided** item with the date it
   was deferred.
-- `STATE.md` at phase 0, listing the undecided items as blockers for phase 1.
+- `STATE.md` at phase 0, listing each undecided item as a blocker for the phase that needs it (not every item blocks phase 1: `waiting_on_owner:` names them).
 - A first `LOG.md` entry, with its ROUND line, for the interview itself.
 
 **Gate to phase 1:** every question above has an answer or an explicit "undecided", and the owner has read the
-scope and the non-goals back and confirmed them.
+scope and the non-goals back and confirmed them (owner absent: `waiting_on_owner: read-back of scope` in `STATE.md`;
+the route continues, and nothing in phases 6-8 closes without it).

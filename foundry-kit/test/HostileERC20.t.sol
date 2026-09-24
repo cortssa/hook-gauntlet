@@ -67,6 +67,25 @@ contract Victim {
     }
 }
 
+/// @notice a depositor that CHECKS the boolean, in the shape `if (!token.transferFrom(...)) revert` - a branch that only
+/// a token returning `false` can reach. With every other switch of the kit it is dead code, and a test suite built on the
+/// kit alone could delete it and stay green.
+contract CheckedDepositor {
+    HostileERC20 public immutable token;
+    mapping(address => uint256) public credit;
+
+    error TransferReturnedFalse();
+
+    constructor(HostileERC20 t) {
+        token = t;
+    }
+
+    function deposit(uint256 amount) external {
+        if (!token.transferFrom(msg.sender, address(this), amount)) revert TransferReturnedFalse();
+        credit[msg.sender] += amount;
+    }
+}
+
 /// @dev one test per switch: each proves the switch does exactly what its natspec claims, and nothing else.
 contract HostileERC20Test is Test {
     HostileERC20 t;
@@ -337,6 +356,67 @@ contract HostileERC20Test is Test {
             address(this).call(abi.encodeCall(this.typedTransferFrom, (alice, bob, 1 * E)));
         assertFalse(typedOk, "the typed call must fail on the missing return value");
         assertEq(typedRet.length, 0, "and it fails with NO revert data: that is a decoder failure");
+    }
+
+    /// Both entry points answer `false` without reverting, and NOTHING happens: no balance moves, no allowance is spent,
+    /// no event is emitted. Per sender, and it can be turned off.
+    function test_switch_returnsFalse() public {
+        t.setReturnsFalse(alice, true);
+        vm.prank(alice);
+        t.approve(carol, 5 * E);
+
+        vm.recordLogs();
+        vm.prank(carol);
+        bool okFrom = t.transferFrom(alice, bob, 5 * E);
+        vm.prank(alice);
+        bool okTransfer = t.transfer(bob, 1 * E);
+        assertFalse(okFrom, "transferFrom returns false");
+        assertFalse(okTransfer, "transfer returns false");
+        assertEq(vm.getRecordedLogs().length, 0, "and emits nothing");
+        assertEq(t.trueBalanceOf(alice), 100 * E, "the sender kept everything");
+        assertEq(t.trueBalanceOf(bob), 100 * E, "the recipient got nothing");
+        assertEq(t.allowance(alice, carol), 5 * E, "and the allowance was not spent");
+        assertFalse(t.hasMoved(alice), "a refused move is not a move");
+
+        assertTrue(t.transferFrom(bob, alice, 1 * E), "per wallet: bob's transfers are honest");
+        assertEq(t.trueBalanceOf(alice), 101 * E);
+
+        t.setReturnsFalse(alice, false);
+        vm.prank(carol);
+        assertTrue(t.transferFrom(alice, bob, 5 * E), "and it can be turned off");
+        assertEq(t.trueBalanceOf(bob), 104 * E);
+        assertEq(t.allowance(alice, carol), 0);
+    }
+
+    /// `false` wins over the global switches: a paused token and a token that returns no data both still say `false`.
+    function test_switch_returnsFalse_wins_over_paused_and_omitReturnValue() public {
+        t.setReturnsFalse(alice, true);
+        t.setPaused(true);
+        t.setOmitReturnValue(true);
+        (bool ok, bytes memory data) =
+            address(t).call(abi.encodeWithSelector(HostileERC20.transferFrom.selector, alice, bob, 1 * E));
+        assertTrue(ok, "no revert, although paused");
+        assertEq(data.length, 32, "a real boolean on the wire, although omitReturnValue is on");
+        assertFalse(abi.decode(data, (bool)), "and it is false");
+        assertEq(t.trueBalanceOf(bob), 100 * E, "nothing moved");
+    }
+
+    /// The branch the switch exists for: a caller that checks the boolean refuses the deposit and credits nothing.
+    /// Seen red (scripts/mutate.sh, 2026-09-24): remove the check from `CheckedDepositor` and this test fails - the
+    /// depositor credits 1e18 that it never received.
+    function test_switch_returnsFalse_reaches_the_check_on_the_boolean() public {
+        CheckedDepositor d = new CheckedDepositor(t);
+        vm.prank(alice);
+        t.approve(address(d), type(uint256).max);
+        t.setReturnsFalse(alice, true);
+
+        vm.prank(alice);
+        try d.deposit(1 * E) {} catch {}
+        assertEq(d.credit(alice), t.trueBalanceOf(address(d)), "credit is backed by what the depositor holds");
+
+        vm.prank(alice);
+        vm.expectRevert(CheckedDepositor.TransferReturnedFalse.selector);
+        d.deposit(1 * E);
     }
 
     /// @dev the typed call has to live one frame down, so the decoder's revert is the call that reverts.

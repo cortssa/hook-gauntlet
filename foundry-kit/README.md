@@ -73,7 +73,9 @@ lies to one named caller and tells everyone else the truth; reverts once the wal
 overstates the wallet's balance after a move, so the drop looks smaller; understates it, so the drop looks
 bigger.
 
-**On the write side**: returns true and moves nothing; eats the whole gas frame, moves nothing, returns true;
+**On the write side**: returns `false` and does nothing - no revert, no move, no allowance spent (the only switch
+that reaches a caller's `if (!token.transfer(...)) revert` branch; it wins over the pause and over "returns no data");
+returns true and moves nothing; eats the whole gas frame, moves nothing, returns true;
 a global fee on transfer; delivers a fraction of what was asked while spending the full allowance; pays the
 recipient a bonus; refunds part of it to the sender; takes more from the sender than it delivers; blocks a
 recipient; a global pause; a global "returns no data at all", which is what the largest stablecoin by volume
@@ -352,7 +354,11 @@ yet, in rough order of how often they bite:
 - **a per-wallet transfer fee** - `feeBps` is global;
 - **revert on zero-value transfer**, **revert on approve from non-zero to non-zero**, **`type(uint256).max` meaning
   "my whole balance"**;
-- **sender blocklists** - only the recipient side (`blockIncoming`) and the global `paused` exist.
+- **sender blocklists** - only the recipient side (`blockIncoming`) and the global `paused` exist;
+- **`false` AFTER the tokens moved** - `returnsFalse` answers `false` and moves nothing, which is what a token that
+  reports failure with a boolean does. The opposite lie (moved, then said `false`) and the shape of the return data
+  (a `balanceOf` that returns nothing, too much, or reverts with no data) are not switches: `ReturnDataToken` in
+  `test/examples/ToyVault.boundaries.t.sol` is the fixture that covers them for the example.
 
 If your hook's spec names one of these as in scope, add the switch and its test before you trust a green campaign.
 Contributions of switches, each with its one test, are the most useful kind.

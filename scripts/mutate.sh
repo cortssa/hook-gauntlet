@@ -26,6 +26,8 @@
 #                      regression test first, see it red, then compare candidate fixes". The variant must still be all green.
 #          COPY_ROOT   a parent directory to copy instead of the project alone, for a project that imports from
 #                      outside itself (a remapping like ../src/). The project must be inside it.
+#          BENCH_ROOT  where the throwaway copy is made (created if it does not exist); without it TMPDIR, then /tmp.
+#                      A place the copy cannot be made is refused in one line naming the variable and the path (rc=2).
 # Exit:    0 the outcome matched EXPECT      (red: the mutant was KILLED;  green: the variant PASSED)
 #          1 the outcome did not match       (red: the mutant SURVIVED;   green: the variant FAILED)
 #          2 nothing was proven              (bad arguments, no unique match, the change does not compile, the UNCHANGED
@@ -57,8 +59,27 @@ case "$EXPECT" in red | green) ;; *) echo "mutate: EXPECT must be red or green";
 
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/$LABEL.txt"
-COPY="$(mktemp -d)"
-cleanup() { if [ "${KEEP:-0}" = "1" ]; then echo "copy kept at $COPY"; else rm -rf "$COPY"; fi; }
+# The throwaway copy goes under BENCH_ROOT when there is one (so every write stays where the brief says), else TMPDIR, else
+# /tmp. A BENCH_ROOT that does not exist yet is created. The copy's path is checked before anything is written into it:
+# with a root that did not exist, `mktemp` failed, the path came back EMPTY, and this script ran `cp -a <project>/. /` - a
+# fresh reader saw "cannot create directory '/./src': Permission denied", and as root it would have copied the project
+# into the file system's root (FR8, 2026-09-24).
+if [ -n "${BENCH_ROOT:-}" ]; then COPY_VAR="BENCH_ROOT"; COPY_PARENT="$BENCH_ROOT"
+elif [ -n "${TMPDIR:-}" ]; then COPY_VAR="TMPDIR"; COPY_PARENT="$TMPDIR"
+else COPY_VAR=""; COPY_PARENT="/tmp"; fi
+case "$COPY_PARENT" in /*) ;; *) COPY_PARENT="$PWD/$COPY_PARENT" ;; esac   # absolute: the script cd's into the copy later
+copy_refused() { # copy_refused <why>: one line, naming the variable that chose the place and the place itself
+  if [ -n "$COPY_VAR" ]; then where="$COPY_VAR=$COPY_PARENT"; else where="$COPY_PARENT (neither BENCH_ROOT nor TMPDIR is set)"; fi
+  echo "mutate: cannot make the throwaway copy under $where: $1. NOTHING PROVEN - set BENCH_ROOT to a directory you can write to."
+  exit 2
+}
+if [ "$COPY_VAR" = "BENCH_ROOT" ] && [ ! -d "$COPY_PARENT" ]; then
+  mkdir -p "$COPY_PARENT" 2> /dev/null || copy_refused "it does not exist and cannot be created"
+fi
+[ -d "$COPY_PARENT" ] || copy_refused "it is not a directory (it does not exist?)"
+COPY="$(mktemp -d -p "$COPY_PARENT" mutate.XXXXXX 2> /dev/null)" || COPY=""
+if [ -z "$COPY" ] || [ ! -d "$COPY" ]; then COPY=""; copy_refused "mktemp could not create a directory in it"; fi
+cleanup() { if [ "${KEEP:-0}" = "1" ]; then echo "copy kept at $COPY"; else rm -rf "${COPY:?}"; fi; }
 trap cleanup EXIT
 
 # -a keeps symlinks as symlinks, so a lib/ that points at a shared directory is not duplicated
@@ -69,9 +90,13 @@ if [ -n "${COPY_ROOT:-}" ]; then
     "$ROOT"/*) REL="${PROJECT#"$ROOT"}"; REL="${REL#/}"; [ -n "$REL" ] || REL="." ;;
     *) echo "mutate: the project $PROJECT is not inside COPY_ROOT $ROOT"; exit 2 ;;
   esac
-  cp -a "$ROOT/." "$COPY/"
+  COPY_SRC="$ROOT"
 else
-  cp -a "$PROJECT/." "$COPY/"
+  COPY_SRC="$PROJECT"
+fi
+# a copy that failed half-way (an unreadable file, a full disk) is not the project: building it proves nothing about it
+if ! cp -a "$COPY_SRC/." "$COPY/"; then
+  echo "mutate: the copy of $COPY_SRC into $COPY failed (the cp errors are above). NOTHING PROVEN."; exit 2
 fi
 WORK="$COPY/$REL"
 
@@ -86,7 +111,16 @@ real_path() {
   printf '%s/%s\n' "$(cd -P "$(dirname "$1")" 2> /dev/null && pwd -P)" "$(basename "$1")"
 }
 work_real="$(cd -P "$WORK" && pwd -P)"
-file_real="$(real_path "$WORK/$FILE")"
+file_real="$(real_path "$WORK/$FILE" 2> /dev/null)"
+if [ -z "$file_real" ] || [ ! -e "$WORK/$FILE" ]; then
+  # it resolves to NOTHING in the copy. The refusal used to read "resolves to , which is OUTSIDE the throwaway copy
+  # (a symlinked lib/?)": an empty path and a guessed cause. The one way here is a link whose target the copy lacks.
+  if [ -L "$WORK/$FILE" ]; then what="it is a symlink (-> $(readlink "$WORK/$FILE")) whose target is not in the copy"
+  else what="it is not in the copy at all"; fi
+  echo "mutate: $FILE does not resolve inside the throwaway copy $work_real: $what. NOTHING PROVEN."
+  echo "        Mutate a file that lives in the project (replace the link with a copy of its target), not a link out of it."
+  exit 2
+fi
 case "$file_real" in
   "$work_real"/*) ;;
   *)

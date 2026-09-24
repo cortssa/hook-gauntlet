@@ -1,6 +1,6 @@
 # Brief template: audit round (phase 4)
 
-Copy, fill every `{{PLACEHOLDER}}`, delete the notes in *italics*, keep the rules. Target length: about 40 lines.
+Copy, fill every `{{PLACEHOLDER}}`, delete the notes in *italics*, keep the rules. The `doctrine/...` paths below are relative to the kit checkout, `{{KIT}}`. The rules are the length; what you add is the placeholders, nothing more.
 Give it to an agent with a **fresh context**. Do not paste the previous report into the brief; point at it.
 
 ---
@@ -41,8 +41,8 @@ list you will pay for rediscoveries.*
 
 1. **{{PRESSURE_1}}** *- what the architect has least confidence in.*
 2. **{{PRESSURE_2}}**
-3. **The closing question: can a counterparty deny service or drain value?** {{N}} rounds say no. Try again with
-   what you learn from the changes above, and say in the report **how many distinct routes you tried**.
+3. **The closing question: can a counterparty deny service or drain value?** {{N}} rounds say no (round 1: 0). Try again with
+   what you learn (regression: from the changes above; discovery: from your own first routes), and say in the report **how many distinct routes you tried**.
 4. **The open trade-offs.** Confirm each is still exactly as the spec describes, with your own number. One that is
    **worse** than documented is a finding.
 5. **The spec as a document.** It ships with the code. Any line of it that does not reproduce is a finding.
@@ -51,19 +51,21 @@ list you will pay for rediscoveries.*
 
 - Work **only** in `{{BENCH}}`. Never compile in another agent's bench or in the shared one. Dependencies by
   symlink.
-- Read-only on the repository except your own scratch directory `{{SCRATCH}}` and your report `{{REPORT}}`.
+- Read-only on the bench (the copy of the project you were given) except your own scratch directory `{{SCRATCH}}` and your report `{{REPORT}}`. `{{SCRATCH}}` is `test/audit/<round>/` INSIDE the bench: forge compiles `test/`, so your tests run with plain `forge test --match-path 'test/audit/<round>/*'`; nothing under `.gauntlet/` is in the bench, and the project's own `test/` is not yours to change.
 - No mainnet writes, no keys, no broadcast, no installs, no browser.
 - **Reproduce the baseline before attacking anything**: `{{BASELINE_TESTS}}` tests pass, `{{BASELINE_SIZES}}`,
-  `{{BASELINE_GAS}}`. If you cannot reproduce it, your bench is wrong and your findings are worthless - stop and
+  `{{BASELINE_GAS}}` (from the fork when the project has one; otherwise the gas of the hook's hot path in the battery's own tests, labelled `local`). If you cannot reproduce it, your bench is wrong and your findings are worthless - stop and
   report that.
 - **Every claim is a Foundry test that PASSES.** No red tests in the report. A test that proves a bug asserts the
   wrong behaviour and is named so that this is obvious.
-- Measured numbers only. Gas from the fork, not from the mock; the mock is inflated and is never a reason to
+- Measured numbers only. Gas from the fork when there is one, never from the mock; the mock is inflated and is never a reason to
   change the contract.
 - Where economics decide exploitability or severity: gas costs converted to money at two gas prices, so that "cost to attacker vs cost to victim" is a decision and
   not an intuition.
 - **Severity:** a finding that needs the **asset's own code** to be hostile and only closes **that asset's own
-  market** is **low**. Medium and high are for a counterparty that denies or drains, or for third parties paying.
+  market** is **low**. Medium and high are for a counterparty that denies or drains, or for third parties paying - and
+  a hook that POOLS every holder of one token makes that token's market everyone's money: a shortfall the last claimer
+  eats is high whoever profited (`doctrine/SEVERITY.md`, "a loss with no beneficiary is still a loss").
   {{SEVERITY_ADAPTATION}}
 - **Write the report incrementally**, from the first minute, with `LEDGER` and `ASSUMPTIONS` at the top. If you
   die on a rate limit, nothing is lost. Retry once on a rate limit.
@@ -92,7 +94,7 @@ test: <name>, in {{SCRATCH}}, and it PASSES
 raw: <pasted output, not summarised>
 ```
 
-Label every finding with its evidence (`doctrine/EVIDENCE.md`). A bug you reproduced with a test that passes on the current code is TESTED (MODEL-TESTED if it runs inside a model harness), never PROVED - that word is reserved for formal proofs. A finding you could not turn into a test is labelled
+Label every finding with its evidence (`doctrine/EVIDENCE.md`). A bug you reproduced with a test that passes on the current code is TESTED - and TESTED alone is the weakest label with a test: it becomes MODEL-TESTED only when an independently written reference model agrees, PROPERTY-TESTED when a fuzz campaign holds it, never PROVED, a word reserved for formal proofs. A finding you could not turn into a test is labelled
 **REASONED**: give the argument in a form someone else can attack - economic and ordering attacks often cannot be
 compiled, and dropping them because they would not compile is the worst outcome of a round. A REASONED high or
 medium keeps the loop open until it is tested, answered by the owner in writing, or handed to the human audit by name.

@@ -21,6 +21,11 @@
 #          USE_BENCH  1 to run in a bench copy (default: 1). A project whose foundry.toml or remappings.txt reach
 #                     outside it (`../src`, as the v4 module does) is benched from the parent they reach - one or two
 #                     levels up - and run at its own place inside that bench; deeper than two levels is refused.
+#                     The bench keeps the campaign's corpus/ and census/ from one run to the next (bench.sh BENCH_KEEP):
+#                     a refresh never deletes them, and a corpus/ the project has is merged in. census/long.tsv is THIS run's
+#                     census and starts empty; another run's census under another name (GAUNTLET_CENSUS) stays.
+#                     Whenever the campaign wrote one - passed or failed - its absolute path is printed alone on a line,
+#                     `census: <path>`: the file the gate reads (scripts/census.sh --aggregate <path>).
 #          OUT_DIR    where to write the log (default: <project>/.gauntlet/reports)
 #          FORGE_FLAGS  extra flags for forge test (e.g. --offline)
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
@@ -58,7 +63,13 @@ if [ "$USE_BENCH" = "1" ]; then
   for _ in $(seq 1 "$ups"); do REL_IN="$(basename "$BENCH_FROM")${REL_IN:+/$REL_IN}"; BENCH_FROM="$(dirname "$BENCH_FROM")"; done
   # one bench per PROJECT: two long campaigns sharing a bench delete each other's files
   bench_name="fuzz-long-$(basename "$SRC")-$(printf '%s' "$SRC" | sha256sum | cut -c1-8)"
-  bench_out="$("$HERE/bench.sh" "$bench_name" "$BENCH_FROM")" || { printf '%s\n' "$bench_out" | tail -3; echo "fuzz-long: the bench could not be made. NOTHING PROVEN."; exit 2; }
+  # the campaign's corpus/ and census/ live in the BENCH and must survive its refresh: without BENCH_KEEP the refresh's
+  # `rsync --delete` removed both (the project has neither), and every long run with a bench started from an empty corpus.
+  # A corpus the project has of its own is merged in, never replacing the bench's.
+  keep="${REL_IN:+$REL_IN/}corpus ${REL_IN:+$REL_IN/}census"
+  cdir="${FOUNDRY_INVARIANT_CORPUS_DIR:-}"; cdir="${cdir#./}"   # a corpus directory set elsewhere, relative, is kept too
+  case "/$cdir/" in //* | */../* | */./* | /corpus/*) ;; *) keep="$keep ${REL_IN:+$REL_IN/}$cdir" ;; esac
+  bench_out="$(BENCH_KEEP="${BENCH_KEEP:+$BENCH_KEEP }$keep" "$HERE/bench.sh" "$bench_name" "$BENCH_FROM")" || { printf '%s\n' "$bench_out" | tail -3; echo "fuzz-long: the bench could not be made. NOTHING PROVEN."; exit 2; }
   RUN_IN="$(printf '%s\n' "$bench_out" | tail -1)${REL_IN:+/$REL_IN}"
   [ -n "$REL_IN" ] && echo "fuzz-long: the project reaches $ups level(s) up, so the bench is of $BENCH_FROM and the campaign runs in <bench>/$REL_IN"
 fi
@@ -83,24 +94,48 @@ cd "$RUN_IN" || exit 1
 # under the label "long" is worse than no run. Check before spending the time.
 # The output is CAPTURED and then matched, never piped into `grep -q`: under `pipefail` grep closes the pipe at the first
 # hit, forge dies of SIGPIPE, the pipeline is "false" and the check it guards never fires. It was written that way once.
+# The everyday budget is read FIRST, because both refusals below print it, with a block to paste computed from it. A
+# project on forge's defaults (no [invariant] section) runs 256 x 500 = 128 000 calls on every edit - as many as the
+# kit's own `long` profile (1000 x 128) - and a refusal that only said "not larger" left a fresh reader to guess.
+inv_of() { # inv_of <forge config output> <runs|depth>: that key of its [invariant] section, 0 when absent
+  printf '%s\n' "$1" | awk -v key="$2" '/^\[invariant\]/ {f = 1; next} /^\[/ {f = 0} f && $1 == key {v = $3} END {print v + 0}'
+}
+default_cfg="$(env -u FOUNDRY_INVARIANT_RUNS -u FOUNDRY_INVARIANT_DEPTH FOUNDRY_PROFILE=default forge config 2>&1)"
+default_runs="$(inv_of "$default_cfg" runs)"; default_depth="$(inv_of "$default_cfg" depth)"
+default_budget=$((default_runs * default_depth))
+suggest_block() { # the rule, the everyday budget, and a profile to paste: 4 x the everyday runs (at least 1000), the everyday depth
+  local r=$((default_runs * 4))
+  [ "$r" -lt 1000 ] && r=1000
+  echo "           The rule: the long budget (runs x depth) must be LARGER than YOUR everyday one, which here is"
+  echo "           $default_runs x $default_depth = $default_budget calls (the default profile's [invariant]; forge's own defaults are 256 x 500)."
+  echo "           Put this in foundry.toml, in place of any [profile.$FOUNDRY_PROFILE.invariant] it has ($r x $default_depth = $((r * default_depth)) calls):"
+  echo
+  echo "[profile.$FOUNDRY_PROFILE.invariant]"
+  echo "runs = $r"
+  echo "depth = $default_depth"
+  echo "fail_on_revert = true"
+  echo "corpus_dir = \"corpus/long\""
+  echo
+}
 cfg="$(forge config 2>&1)"
 case "$cfg" in
   *"does not exist"*)
-    echo "fuzz-long: profile '$FOUNDRY_PROFILE' does not exist in this project's foundry.toml. Add [profile.$FOUNDRY_PROFILE.invariant]"
-    echo "           (runs, depth, fail_on_revert = true) or set FOUNDRY_PROFILE. NOTHING PROVEN."
+    echo "fuzz-long: profile '$FOUNDRY_PROFILE' does not exist in this project's foundry.toml. NOTHING PROVEN."
+    suggest_block
+    echo "           (Or set FOUNDRY_PROFILE to a profile you have.)"
     exit 2 ;;
 esac
 
 # A profile called "long" is not a long budget. `[profile.long.fuzz]` with no `[profile.long.invariant]` exists, warns
 # about nothing, and runs the everyday campaign under this script's label. So the budget is READ, and compared with the
 # default profile's: it has to be larger, or nothing was added to what the battery already does.
-budget_of() { printf '%s\n' "$1" | awk '/^\[invariant\]/ {f = 1; next} /^\[/ {f = 0} f && $1 == "runs" {r = $3} f && $1 == "depth" {d = $3} END {print (r + 0) * (d + 0)}'; }
-long_budget="$(budget_of "$cfg")"
-default_budget="$(budget_of "$(env -u FOUNDRY_INVARIANT_RUNS -u FOUNDRY_INVARIANT_DEPTH FOUNDRY_PROFILE=default forge config 2>&1)")"
+long_runs="$(inv_of "$cfg" runs)"; long_depth="$(inv_of "$cfg" depth)"
+long_budget=$((long_runs * long_depth))
 echo "invariant budget (runs x depth): $long_budget under '$FOUNDRY_PROFILE', $default_budget under the default profile"
 if [ "$long_budget" -le "$default_budget" ] && [ "${ALLOW_SMALL_BUDGET:-0}" != "1" ]; then
-  echo "fuzz-long: the budget of this run is not larger than the everyday one. Is [profile.$FOUNDRY_PROFILE.invariant] missing, or"
-  echo "           did RUNS / DEPTH shrink it? NOTHING PROVEN. (ALLOW_SMALL_BUDGET=1 to replay one seed on purpose.)"
+  echo "fuzz-long: the budget of this run, $long_runs x $long_depth = $long_budget, is not larger than the everyday one. NOTHING PROVEN."
+  suggest_block
+  echo "           (RUNS / DEPTH, when set, override the profile: unset them. ALLOW_SMALL_BUDGET=1 to replay one seed on purpose.)"
   exit 2
 fi
 
@@ -127,8 +162,13 @@ fi
 echo
 echo "invariant campaigns: $campaigns, fuzzed calls in total: $calls"
 if [ -s "$GAUNTLET_CENSUS" ]; then
-  # printed and kept, never a gate here: which actions are CORE is the project's call (scripts/census.sh, CORE=...)
-  CORE="" "$HERE/census.sh" --aggregate "$GAUNTLET_CENSUS" | tee "$OUT_DIR/06-census.txt"
+  # printed and kept, never a gate here: which actions are CORE is the project's call (scripts/census.sh, CORE=...).
+  # CENSUS_TABLE_ONLY: the table without a gate verdict, which here would be "PASSED" over nothing judged
+  CORE="" CENSUS_TABLE_ONLY=1 "$HERE/census.sh" --aggregate "$GAUNTLET_CENSUS" | tee "$OUT_DIR/06-census-long.txt"
+  # the path the gate reads, absolute and alone on its line (QUICKSTART: "the path fuzz-long.sh printed"). It is in the
+  # bench when there is one, and it used to be named nowhere: a fresh reader had to find the bench directory and guess.
+  case "$GAUNTLET_CENSUS" in /*) census_abs="$GAUNTLET_CENSUS" ;; *) census_abs="$(pwd -P)/${GAUNTLET_CENSUS#./}" ;; esac
+  echo "census: $census_abs"
 else
   echo "no census was written: the suite does not call writeCensus() from afterInvariant(), or foundry.toml lacks the"
   echo "fs_permissions line for ./census. What this campaign REACHED is unmeasured - the log above shows one run of it."

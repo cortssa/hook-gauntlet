@@ -11,8 +11,16 @@
 # them up. The question it answers, per action: IN HOW MANY RUNS did it succeed at least once? A run in which the
 # action that matters never succeeded tested an empty contract, however green it was.
 #
-# Usage:   scripts/census.sh [project-dir]          run the invariant campaigns, then print the census
-#          scripts/census.sh --aggregate <file>     add up a census file that already exists (fuzz-long.sh does this)
+# Usage:   scripts/census.sh [project-dir]          run the invariant campaigns, then print the census - a smoke check of
+#                                                   the everyday campaign; the report is <OUT_DIR>/06-census.txt
+#          scripts/census.sh --aggregate <file> [project-dir]
+#                                                   THE GATE: judge a census file that already exists (the long campaign's
+#                                                   <bench>/census/long.tsv, the path fuzz-long.sh prints). It writes the
+#                                                   table and the verdict to <OUT_DIR>/06-census-gate.txt, says where, and
+#                                                   prints the verdict as its LAST line: "census gate: PASSED - ..." or
+#                                                   "census gate: FAILED - <what>". OUT_DIR is resolved as in run mode, against
+#                                                   the project given - or, with none, the directory it runs from (which is not
+#                                                   the bench the file is in: the line that says where it wrote says so too)
 # Env:     MATCH        forge filter                 (default: --match-contract Invariant)
 #          FORGE_FLAGS  extra flags for forge test   (e.g. --offline)
 #          CORE         action names, space separated, that MUST have succeeded in at least MIN_PCT per cent of the runs
@@ -26,22 +34,32 @@
 #                       thing. The default is deliberately low because a campaign's reach is a sample - the kit's own vault
 #                       example measured between 42 and 80 per cent on sixteen campaigns of the same tree - and a gate that
 #                       sits inside the noise is a gate that fails by luck. Set yours below your measured range, not in it.
-#          OUT_DIR      where the report goes        (default: <project>/.gauntlet/reports)
+#          OUT_DIR      where the report goes        (default: <project>/.gauntlet/reports; a relative one is under <project>)
+#          CENSUS_TABLE_ONLY  1: --aggregate prints the table and nothing else - no gate record, no verdict line. For a
+#                       caller that judges nothing (fuzz-long.sh prints the long campaign's table with no CORE, and a
+#                       "PASSED - 0 CORE actions" under it would read as a gate that was never run).
 # Exit:    0 printed (and every CORE / REACH name met the floor); 1 a name is below the floor or in no suite at all, or a
 #          run met an unexplained revert; 2 NOTHING MEASURED - no census line was written (the suite does not call
 #          writeCensus from afterInvariant, or foundry.toml lacks fs_permissions for ./census), or MIN_PCT is not a
 #          number from 1 to 100; otherwise forge's exit code when the campaign itself failed.
+#          The gate (--aggregate) exits the same way (0, 1 or 2); its last line says which, and why.
 
 set -uo pipefail
 
 MIN_PCT="${MIN_PCT:-25}"
 # a floor that is not a number counts as 0 inside awk, and a floor of 0 passes an action that never worked once
-case "$MIN_PCT" in '' | *[!0-9]*) echo "census: MIN_PCT must be a whole number from 1 to 100 (got '$MIN_PCT'). NOTHING MEASURED."; exit 2 ;; esac
-if [ "$MIN_PCT" -lt 1 ] || [ "$MIN_PCT" -gt 100 ]; then echo "census: MIN_PCT must be from 1 to 100 (got $MIN_PCT). NOTHING MEASURED."; exit 2; fi
+# (refused below, once the mode is known: the gate records the refusal as its verdict)
+floor_error=""
+case "$MIN_PCT" in
+  '' | *[!0-9]*) floor_error="MIN_PCT must be a whole number from 1 to 100 (got '$MIN_PCT')." ;;
+  *) if [ "$MIN_PCT" -lt 1 ] || [ "$MIN_PCT" -gt 100 ]; then floor_error="MIN_PCT must be from 1 to 100 (got $MIN_PCT)."; fi ;;
+esac
 
 aggregate() { # aggregate <file>
   [ -s "$1" ] || return 2
-  CORE="${CORE:-}" REACH="${REACH:-}" MIN_PCT="$MIN_PCT" awk -F '\t' '
+  CORE="${CORE:-}" REACH="${REACH:-}" MIN_PCT="$MIN_PCT" GATE_WHY="${GATE_WHY:-}" awk -F '\t' -v sq="'" -v unrestricted="handler unrestricted: bookkeeping selectors were fuzzed" '
+    # the gate verdict: every reason it failed, one per line, into the file GATE_WHY names (the gate joins them)
+    function why(s) { if (ENVIRON["GATE_WHY"] != "") print s > (ENVIRON["GATE_WHY"]) }
     {
       sub(/\r$/, "")
       label = $1
@@ -71,7 +89,7 @@ aggregate() { # aggregate <file>
         label = labels[li]; n = runs[label]
         printf "== campaign census: %s - %d runs ==\n", label, n
         printf "runs in which the handler met an UNEXPLAINED revert: %d\n", surprised[label] + 0
-        if (surprised[label] + 0 > 0) bad = 1
+        if (surprised[label] + 0 > 0) { bad = 1; why(sprintf("%d run(s) of %s met an UNEXPLAINED revert", surprised[label], label)) }
         printf "%-28s %10s %10s %18s %18s\n", "action", "calls", "successes", "runs with >= 1 ok", "runs with ZERO ok"
         for (j = 1; j <= aN[label]; j++) {
           name = aOrder[label, j]; k = label SUBSEP name
@@ -84,6 +102,10 @@ aggregate() { # aggregate <file>
         }
         print ""
       }
+      # a handler with no targetSelector: HandlerBase.writeCensus counted the calls the fuzzer made to it (spent
+      # there, not on your actions) and wrote this boundary. Printed, never a gate: the census itself is still clean.
+      for (li = 1; li <= nl; li++) if ((labels[li] SUBSEP unrestricted) in bTotal) flagged = 1
+      if (flagged) print "the fuzzer reached HandlerBase" sq "s own functions: restrict the handler with targetSelector (doctrine/INVARIANTS.md)"
       if (ignored > 0) printf "NOTE: %d field(s) ignored - not U=, A:<name>=<calls>/<successes> or B:<name>=<count>. A tab inside a name?\n", ignored
       floor = ENVIRON["MIN_PCT"] + 0
       # PER SUITE: judged in every label that has the name, failed if ANY of them is below the floor
@@ -96,10 +118,10 @@ aggregate() { # aggregate <file>
           found = 1; pct = 100 * (aRunsOk[k] + 0) / runs[label]
           if (pct < floor) {
             printf "CORE action \"%s\" succeeded in only %d of %d runs of %s (%.0f%%, floor %d%%): most runs did not test it.\n", name, aRunsOk[k] + 0, runs[label], label, pct, floor
-            bad = 1
+            bad = 1; why(sprintf("CORE \"%s\" succeeded in %d of %d runs of %s (%.0f%%), below the %d%% floor", name, aRunsOk[k] + 0, runs[label], label, pct, floor))
           }
         }
-        if (!found) { printf "CORE action \"%s\" is not in the census at all: it never ran.\n", name; bad = 1 }
+        if (!found) { printf "CORE action \"%s\" is not in the census at all: it never ran.\n", name; bad = 1; why(sprintf("CORE \"%s\" is in no suite: it never ran", name)) }
       }
       nr = split(ENVIRON["REACH"], reach, ";")
       for (c = 1; c <= nr; c++) {
@@ -111,22 +133,73 @@ aggregate() { # aggregate <file>
           found = 1; pct = 100 * bRuns[k] / runs[label]
           if (pct < floor) {
             printf "REACH boundary \"%s\" was reached in only %d of %d runs of %s (%.0f%%, floor %d%%).\n", name, bRuns[k], runs[label], label, pct, floor
-            bad = 1
+            bad = 1; why(sprintf("REACH \"%s\" reached in %d of %d runs of %s (%.0f%%), below the %d%% floor", name, bRuns[k], runs[label], label, pct, floor))
           }
         }
-        if (!found) { printf "REACH boundary \"%s\" is not in the census at all: no run of any suite reached it.\n", name; bad = 1 }
+        if (!found) { printf "REACH boundary \"%s\" is not in the census at all: no run of any suite reached it.\n", name; bad = 1; why(sprintf("REACH \"%s\" is in no suite: no run reached it", name)) }
       }
       exit bad
     }' "$1"
 }
 
-if [ "${1:-}" = "--aggregate" ]; then
-  [ -n "${2:-}" ] || { echo "usage: census.sh --aggregate <file>"; exit 2; }
+if [ "${1:-}" = "--aggregate" ] && [ "${CENSUS_TABLE_ONLY:-0}" = "1" ]; then
+  [ -n "${2:-}" ] || { echo "usage: census.sh --aggregate <file> [project-dir]"; exit 2; }
+  [ -z "$floor_error" ] || { echo "census: $floor_error NOTHING MEASURED."; exit 2; }
   aggregate "$2"; rc=$?
   [ "$rc" -eq 2 ] && echo "census: $2 is empty or missing. NOTHING MEASURED."
   exit "$rc"
 fi
 
+# THE GATE. It used to write no file and print no verdict on a pass (rc 0 only): a fresh reader could not tell a gate that
+# passed from one that printed a table, and the dossier had nothing to cite. Now it leaves a record, and says the verdict
+# last. The exit code is what it always was.
+if [ "${1:-}" = "--aggregate" ]; then
+  [ -n "${2:-}" ] || { echo "usage: census.sh --aggregate <file> [project-dir]"; echo "census gate: FAILED - no census file given"; exit 2; }
+  TSV="$2"; GPROJECT="${3:-.}"
+  proj_abs="$(cd "$GPROJECT" 2> /dev/null && pwd -P)" || { echo "census gate: FAILED - cannot enter the project $GPROJECT"; exit 2; }
+  gate_out="${OUT_DIR:-.gauntlet/reports}"; case "$gate_out" in /*) ;; *) gate_out="$proj_abs/$gate_out" ;; esac
+  mkdir -p "$gate_out" || { echo "census gate: FAILED - cannot create $gate_out"; exit 2; }
+  record="$gate_out/06-census-gate.txt"
+  tsv_dir="$(cd "$(dirname "$TSV")" 2> /dev/null && pwd -P)"
+  tsv_abs="${tsv_dir:+$tsv_dir/}$(basename "$TSV")"
+  printf 'census gate over %s: CORE="%s" REACH="%s" MIN_PCT=%s (%s)\n\n' "$tsv_abs" "${CORE:-}" "${REACH:-}" "$MIN_PCT" \
+    "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$record" || { echo "census gate: FAILED - cannot write $record"; exit 2; }
+  if [ -n "$floor_error" ]; then
+    echo "census: $floor_error NOTHING MEASURED." | tee -a "$record"; rc=2
+    verdict="FAILED - $floor_error NOTHING MEASURED."
+  else
+    GATE_WHY="$(mktemp)" || { echo "census gate: FAILED - mktemp"; exit 2; }
+    GATE_WHY="$GATE_WHY" aggregate "$TSV" | tee -a "$record"; rc=${PIPESTATUS[0]}
+    if [ "$rc" -eq 0 ]; then
+      n_core="$(printf '%s\n' "${CORE:-}" | wc -w | tr -d ' ')"
+      n_reach="$(printf '%s\n' "${REACH:-}" | tr ';' '\n' | grep -c .)"
+      if [ "$n_core" -eq 0 ] && [ "$n_reach" -eq 0 ]; then
+        # nothing was judged but unexplained reverts: a gate with no floor is not a pass (Fable, after K9)
+        verdict="NOTHING JUDGED - CORE and REACH are both empty; only unexplained reverts were checked. Name the actions and boundaries that matter (doctrine/JUDGES.md row 4)"
+        rc=2
+      else
+        verdict="PASSED - $n_core CORE actions and $n_reach REACH boundaries at or above $MIN_PCT%"
+      fi
+    elif [ "$rc" -eq 2 ]; then
+      echo "census: $TSV is empty or missing. NOTHING MEASURED." | tee -a "$record"
+      verdict="FAILED - NOTHING MEASURED: $TSV is empty or missing"
+    else
+      reasons="$(awk 'NR > 1 { printf "; " } { printf "%s", $0 }' "$GATE_WHY")"
+      verdict="FAILED - ${reasons:-rc $rc, read the table above}"
+    fi
+    rm -f "$GATE_WHY"
+  fi
+  echo "census gate: $verdict" >> "$record"
+  if [ -z "${3:-}" ] && [ -n "$tsv_dir" ] && case "$tsv_dir/" in "$proj_abs"/*) false ;; *) true ;; esac; then
+    echo "census gate: record written to $record (the census is in $tsv_dir; give the project as the third argument to write it there)"
+  else
+    echo "census gate: record written to $record"
+  fi
+  echo "census gate: $verdict"
+  exit "$rc"
+fi
+
+[ -z "$floor_error" ] || { echo "census: $floor_error NOTHING MEASURED."; exit 2; }
 PROJECT="${1:-.}"
 MATCH="${MATCH:---match-contract Invariant}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
@@ -142,6 +215,9 @@ fi
 export GAUNTLET_CENSUS="census/runs.tsv"
 rm -f "$GAUNTLET_CENSUS"
 
+# the moment the campaign started: forge's records of the failures THIS run persisted are the ones newer than it
+started_at="$OUT_DIR/.census-started"; : > "$started_at"
+
 # shellcheck disable=SC2086
 forge test $FORGE_FLAGS $MATCH > "$OUT_DIR/06-census-run.txt" 2>&1
 rc_forge=$?
@@ -154,6 +230,23 @@ rc=${PIPESTATUS[0]}
 if [ "$rc" -eq 2 ]; then
   echo "census: no census line was written. Call handler.writeCensus(\"<name>\") from afterInvariant() and give foundry.toml"
   echo "        fs_permissions = [{ access = \"read-write\", path = \"./census\" }]. NOTHING MEASURED."
+  # A campaign that failed on its ENVIRONMENT (the write refused, or census/ missing) is still a failure to forge: it
+  # persists the sequence under <failure_persist_dir>/failures/<suite>/ and replays it FIRST on every later run, saying
+  # nothing (measured, forge 1.8.1: after the config was fixed the replay passed, silently, and every census from then on
+  # had one run more than a fresh one - 258 lines against 257 on 256 runs). Named here, never deleted by this script:
+  # forge's record carries no reason (measured: `call_sequence`, `settings`, `assertion_failure` and nothing else), so
+  # nothing in it proves the sequence is the environment error and not a counterexample replayed from an earlier run.
+  if [ "$rc_forge" -ne 0 ] && grep -aq '^\[FAIL: vm\.writeLine' "$OUT_DIR/06-census-run.txt"; then
+    persist="$(forge config 2> /dev/null | awk '/^\[invariant\]/ {f = 1; next} /^\[/ {f = 0} f && $1 == "failure_persist_dir" {v = $3} END {gsub(/"/, "", v); print v}')"
+    persist="${persist:-cache/invariant}"; case "$persist" in /*) ;; *) persist="$(pwd -P)/$persist" ;; esac
+    # the FILES this run wrote (a suite's directory keeps its old time when a record inside it is rewritten), by suite
+    recorded="$(find "$persist/failures" -type f -newer "$started_at" 2> /dev/null | sed "s#^\($persist/failures/[^/]*\)/.*#\1#" | sort -u)"
+    if [ -n "$recorded" ]; then
+      echo "        forge PERSISTED that environment failure and will replay it first on the next run, silently. After fixing"
+      echo "        the config, delete its record:"
+      printf '%s\n' "$recorded" | while IFS= read -r d; do echo "          rm -rf $d"; done
+    fi
+  fi
   exit 2
 fi
 [ "$rc_forge" -ne 0 ] && exit "$rc_forge"

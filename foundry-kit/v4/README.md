@@ -69,6 +69,11 @@ v4 bench then needed a network install). `SRC_DIRS` on the battery adds the root
 which otherwise only watches this project's own; `src` and `test` now cover the example too, since it lives inside
 them.
 
+A project with **no `lib/` of its own** (forge-std installed somewhere else) gets nothing linked, and `bench.sh` says so
+in one line: `the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>`. `LINK_FROM=<dir>` makes
+`<dir>` the bench's `lib/` - linked, or copied through its links in a bench that withholds (`BENCH_EXCLUDE`); the root
+`lib/` only, never over a `lib/` directory the bench already has, and ignored with a note when the project has a `lib/`.
+
 A bench that must keep what was fetched INTO it (a manager fixture, a `v4/lib` installed there because the project
 has none): `BENCH_EXCLUDE="*.hex *.json"`. A matching path the project does not have is the bench's own and survives
 every refresh; one the project does have is withheld. The bench directory itself is never deleted - it used to be, on
@@ -80,19 +85,24 @@ every refresh with `BENCH_EXCLUDE` set, and the fixtures this paragraph promised
 ```sh
 BENCH_ROOT=$HOME/mybenches scripts/fuzz-long.sh foundry-kit/v4        # the `long` profile: 1000 runs x 128 depth
 CORE="swap swapBurst dustAheadOfVictim" REACH="fee at the cap;victim traded after dust in its block" \
-  scripts/census.sh --aggregate $HOME/mybenches/fuzz-long-v4-*/v4/census/long.tsv   # the gate; fuzz-long only prints
+  scripts/census.sh --aggregate $HOME/mybenches/fuzz-long-v4-*/v4/census/long.tsv foundry-kit/v4   # the gate: record in .gauntlet/reports/06-census-gate.txt, verdict on the last line; fuzz-long only prints the table
 ```
 
 What a stranger hits, measured on 2026-09-23 (forge 1.8.1, `src/examples/SPEC.md` section 7 has the numbers). It
 takes about **two and a half minutes** here (134 s, one worker at about 900 calls a second), not a night. It benches
 `foundry-kit`, not `foundry-kit/v4` (the parent it remaps to), into `$BENCH_ROOT/fuzz-long-v4-<hash>`; `BENCH_ROOT`
 defaults to `~/.gauntlet/bench`, so set it if your benches live elsewhere. The log and the census table land in YOUR
-tree, `foundry-kit/v4/.gauntlet/reports/05-fuzz-long.txt` and `06-census.txt`; the census file and the corpus stay in the
-BENCH (`<bench>/v4/census/long.tsv`, `<bench>/v4/corpus/invariant`). **The next run of `fuzz-long.sh` deletes both**:
-it refreshes the bench from the project with `rsync --delete`, and the project has no `corpus/` or `census/` of its own
-(measured: 34 corpus files and 1 001 census lines before a refresh, none after) - so each long run starts from an
-empty corpus, and a census you want to keep has to be copied out first. The table it prints is not a gate (`CORE` is
-empty inside the script); the second command above is. The census has 1 001 lines for 1 000 runs (the root README says
+tree, `foundry-kit/v4/.gauntlet/reports/05-fuzz-long.txt` and `06-census-long.txt` (the everyday `census.sh` writes `06-census.txt`, so neither overwrites the other); the census file and the corpus stay in the
+BENCH (`<bench>/v4/census/long.tsv`, `<bench>/v4/corpus/invariant`). **The next run keeps both directories**: the
+bench's refresh never deletes `corpus/` or `census/` (`fuzz-long.sh` passes them to `bench.sh` as `BENCH_KEEP`), and a
+`corpus/` the project has of its own is merged in, never replacing the bench's entries - so the first run's corpus is
+there for the second (that forge then replays it is forge's behaviour, not measured here). Until 2026-09-23 the
+refresh's `rsync --delete` removed both (measured then: 34 corpus files and 1 001 census lines before a refresh, none
+after); `scripts/selftest.sh` now plants a corpus file and a census file in a long-fuzz bench, runs again, and checks
+both survive and a project corpus file arrives. `census/long.tsv` itself is THIS run's census and starts empty (a stale
+line would be added to the new table); copy it out, or set `GAUNTLET_CENSUS=census/<name>.tsv`, to keep a run's census
+next to the next one's. The table it prints is not a gate (`CORE` is empty inside the script); the second command
+above is. The census has 1 001 lines for 1 000 runs (the root README says
 why), and the block forge prints at `-vv` is one run of them.
 
 ---
@@ -128,6 +138,32 @@ behaviour, the upstream one is right.
 | `test/Harness.t.sol` | the fixtures' own smoke test |
 | `STATIC-TRIAGE.md` | the example hook's `forge lint` warnings (5 `unsafe-typecast`), each answered with a verdict and a test |
 | `fixtures/` | where fetched bytecode lands. Empty in git, on purpose |
+
+**Coverage of YOUR project counts files that are not yours unless you keep them out.** forge reports a file by the
+path it was reached through: from the project's root when it is inside (`src/Gate.sol`, `vendor/kit/InvariantBase.sol`),
+absolute or `../...` when a remapping or a `libs` entry reaches outside. Measured (forge 1.8.1, 2026-09-23, a toy gate on
+forge's defaults with a `HandlerBase` handler, seven layouts): with forge-std reached through a `libs` entry outside the
+project and the kit remapped by its path, the table listed `InvariantBase.sol` and eleven forge-std files and the total
+read 4.24 % of branches (18/425), where `src/` and `test/` make 81.82 % (9/11). `--no-match-coverage 'foundry-kit/'`
+only drops a path that contains that name: with the kit copied to a directory of another name it dropped nothing
+(36.36 %), and it dropped forge-std only where forge-std happened to sit under a `foundry-kit/`. forge 1.8.1 has no
+`--match-coverage` (rc 2, "unexpected argument"). What keeps everything outside your `src/` and `test/` out, wherever
+the kit and forge-std live:
+
+```sh
+forge coverage --report summary --no-match-coverage '^([^st]|s($|[^r])|sr($|[^c])|src($|[^/])|t($|[^e])|te($|[^s])|tes($|[^t])|test($|[^/]))'
+```
+
+(forge's regex has no look-ahead, so "not under `src/` or `test/`" is spelled out letter by letter.) Measured on all
+seven layouts - forge-std and the kit outside by absolute paths, by relative paths, both through `lib/`, the kit copied
+INSIDE the project under `vendor/`, a `script/` contract next to them, and under `--ir-minimum` - the table held
+`src/Gate.sol` and the handler and nothing else, 81.82 % of branches (63.64 % under `--ir-minimum`). A project whose
+code lives in other directories writes their names into the same pattern. The shorter `'^(/|\.\./)'` keeps out only
+what lies outside the project: it let `vendor/kit/InvariantBase.sol` in. **A handler counts as your code**, wherever in
+`test/` it is: in a file of its own (`test/GateHandler.sol`, 75 % of branches) and also INSIDE a `*.t.sol` file - moved
+into `test/Gate.invariants.t.sol`, that file got a row of its own (68.75 % of lines, 3/4 branches); forge leaves out
+only the test contracts themselves. The sandbox in the step 0 layout never enters the default profile's coverage
+(measured: identical before and after).
 
 ---
 
@@ -473,15 +509,68 @@ is SUPPORTED (`doctrine/EVIDENCE.md`) and never more: it only measures the attac
 | `src/sim/agents/HonestTrader.sol` | the population's floor: fixed size every N steps, alternating, a slippage rule, a latency |
 | `test/sim/Calibration.t.sol` | THE MANDATORY FIRST RUN: one honest agent, zero latency, alone - quote equals execution to the wei, ledger equals wallet, nothing refused. If this is red the sandbox is wrong and no number it produces counts |
 | `test/sim/PartialFill.t.sol` | the calibration's blind spot: all the liquidity in one narrow range, so a swap bigger than the range walks out of it and the pool takes LESS than the input offered. The ledger must charge `Fill.amountInUsed`, not `Intent.amountIn`. Written because a mutant that charged the offered input SURVIVED the calibration - on a full-range pool every swap takes its whole input |
+| `test/sim/FilledNothing.t.sol` | a side that EMPTIES between the quote and the fill: on a scripted book two agents are quoted the whole side and the second takes nothing - recorded `executed == false`, `FILLED_NOTHING`, in `refused`, gas charged, not a revert; the same on a v4 pool whose only range is withdrawn after the quote; and a binding that reports nothing taken as executed gets `FillWithoutInput(i, rule)`, compared byte for byte |
+| `test/sim/LedgerWritable.t.sol` | a `GAUNTLET_SIM` path the project may not write is named at `_initEngine()` (`LedgerNotWritable(path)`), a writable one passes and the probe leaves no file |
 | `scripts/sim-report.sh` | adds the ledger lines up over runs: a result is "over N runs", never one line read off a log |
 
 What a binding must do (a project's own copy of `ExampleScenario.sol`), in order:
+
+0. **Bring the sandbox in - into its own directory and its own forge profile, never the default one.** The sandbox
+   needs the optimizer (with forge's defaults the engine stops at `Stack too deep`), and the optimizer changes YOUR
+   hook's bytecode: a fresh reader who put the sandbox under `test/sim/` and `optimizer = true` in `[profile.default]`
+   saw the hook's runtime go from 1 374 to 727 bytes with no edit under `src/`, six sandbox contracts in the sizes table,
+   plain `forge coverage` stop at "stack too deep" and `--ir-minimum` coverage fall to 13.5 %. So:
+
+   - copy the engine, the ledger, the clock, `ISimAgent.sol`, the gas meter and `agents/` (without `JitLP.sol` in a
+     project with no v4-core) into **`<project>/sim/`** - not `src/`, not `test/`. Your scenario (a copy of
+     `ExampleScenario.sol` rewritten for your venue, or one of your own) and its tests live there too;
+   - give the project's `foundry.toml` a profile of its own, which only the sandbox runs under:
+
+     ```toml
+     [profile.sim]
+     test = "sim"
+     out = "out-sim"            # its own artifacts and cache: sharing out/ overwrites the default build's artifacts
+     cache_path = "cache-sim"
+     optimizer = true           # or via_ir = true
+     fs_permissions = [{ access = "read-write", path = "./census" }]
+     ```
+
+   - run it as `mkdir -p census && FOUNDRY_PROFILE=sim GAUNTLET_SIM=census/sim.tsv forge test`, and read it with
+     the kit's `scripts/sim-report.sh census/sim.tsv` (neither needs anything else for this layout).
+
+   Measured on forge 1.8.1 (2026-09-23) on a toy project with forge's defaults (a 2 632-byte gate, one unit test, the
+   sandbox with a binding and a calibration test in `sim/`): the default profile's `forge build --sizes` lists the gate
+   alone, 2 632 B runtime, identical (bytes and hash) before and after `sim/` and `[profile.sim]` were added, and after a
+   sandbox run; `forge coverage` identical line for line; `forge lint`, `forge fmt --check` and `scripts/battery.sh` do
+   not see `sim/` (battery PASSED before and after); forge compiles nothing from `sim/` under the default profile. Under
+   `[profile.sim]` the gate is 1 428 B and the calibration passes. Without `out`/`cache_path` the sim build wrote its
+   1 428 B gate over the default's `out/`, where anything that reads the artifact without rebuilding would take it for
+   yours. `[profile.sim]` with no optimizer and no IR: `Stack too deep`; with `via_ir = true` instead: builds, calibrates.
+   `fs_permissions` under `[profile.default]` is inherited by `[profile.sim]` and works too; in neither, `_initEngine()`
+   stops at `LedgerNotWritable` and says where the line goes.
+
+   **What the sandbox measures is the hook compiled under `[profile.sim]`, whose bytecode is not the one you audit.**
+   Its numbers are ECONOMICS - who gains, who loses, how far execution drifts from the quote - and never the gas of the
+   audited artefact: `SimGasMeter` already reports a lower bound, and here it is a lower bound of another compilation of
+   your code. Gas and size of the audited hook come from the default profile only (`forge build --sizes`, the battery).
+
+   The sandbox tests this module ships (`test/sim/*.t.sol`) all target `ExampleScenario` - the example hook on a v4
+   pool - and prove the ENGINE, not your binding: none of them runs against your hook. Binding means writing your own
+   scenario, steps 1-7 below, in `sim/`, and **the calibration test first** (`test/sim/Calibration.t.sol` is the model:
+   one honest agent, latency 0, alone - quote equals execution to the wei, ledger equals wallet). Until it is green no
+   number the sandbox gives you counts.
 
 1. Override the five verbs: `_quote`, `_execute`, `_sqrtPriceNow`, `_balances`, `_referencePriceX96`.
 2. Call `_initEngine()` once its system is deployed.
 3. **Price gas: `ledger.setGasPrice(quotePerGasE18)`** right after `_initEngine()` - raw quote per unit of gas x 1e18,
    0 for a chain whose gas nobody pays, but SAID. `run` refuses to start (`SimLedger.GasUnpriced`) until it is.
-4. Report `Fill.amountInUsed` on every executed swap (the engine refuses a fill without it).
+4. Report `Fill.amountInUsed` on every executed swap (the engine refuses a fill without it). A swap that was SENT and
+   **took nothing** - the side it was quoted against emptied before it arrived: another order took the book, a maker
+   cancelled, a range was withdrawn - did not execute: report `executed = false` with `revertSelector = FILLED_NOTHING`
+   (`ISimAgent.sol`) and the gas it paid. The ledger counts it in `refused`, and the run goes on. Reported as executed
+   with nothing taken, it stops the run with `FillWithoutInput(i, rule)`, whose `rule` says exactly this.
+   `ExampleScenario` does it for a v4 pool emptied between quote and fill, and rolls the empty swap's price move back
+   (`test/sim/FilledNothing.t.sol`: a scripted book whose side two agents are quoted, and the pool case).
 5. Honour `Intent.amountInQuote` - convert a quote-sized currency0 input at its reference price - or refuse it loudly.
    The four cases, normative (currency1 is the quote; the same table is next to the field in `ISimAgent.sol`, and
    `test/sim/BindingContract.t.sol` holds the example binding to every row):
@@ -500,6 +589,62 @@ What a binding must do (a project's own copy of `ExampleScenario.sol`), in order
    `SimGasMeter.sol` (cold first touches: forge 1.8.1's `vm.cool` is not usable for it; the L1 fee; storage priced
    against the test's start). On forge 1.8.1 the typed `vm.lastCallGas()` REVERTS against forge-std 1.16.2 (forge
    returns five words, forge-std's `Gas` declares six): the library reads the record by a raw call, and so must a test.
+7. **Let the ledger write.** The project's own `foundry.toml` needs, under `[profile.sim]` (step 0; `[profile.default]`
+   works too, since a profile inherits it):
+
+   ```toml
+   fs_permissions = [{ access = "read-write", path = "./census" }]
+   ```
+
+   (or that entry added to the `fs_permissions` list it already has), `GAUNTLET_SIM` pointing inside it
+   (`GAUNTLET_SIM=census/sim.tsv`), and the directory made (`mkdir -p census`; forge does not create it). This module's
+   `foundry.toml` has the line, so everything here works; a binding in ANOTHER project does not inherit it. When
+   `GAUNTLET_SIM` is set, `_initEngine()` probes the path once and reverts `SimLedger.LedgerNotWritable(path)`, with forge's
+   reason and this line logged (at `-vv`), before the first step - it used to run the whole scenario and fail at the last write
+   with forge's generic "not allowed to be accessed for write operations" (`test/sim/LedgerWritable.t.sol`).
+
+**A venue with a bid and an ask has no single price.** `_sqrtPriceNow` returns one number per venue and `_quote` one
+amount per intent; a pool has one price, a book has two sides and a gap between them. The binding of a book says,
+in its own documentation and in the dossier, WHICH price `_sqrtPriceNow` reports - the best bid, the best ask, or the
+reference price when that lies inside the spread - and it quotes and fills only against what could actually fill: the
+resting size on the side the intent takes, at the prices it rests at, never a midpoint nobody offers and never size
+beyond the top of the book that is not there. An agent that reads the venue price and a ledger that values holdings at
+`_referencePriceX96()` then mean something the reader can check; a binding that reports the mid as "the price" and
+fills at it invents liquidity. A side that empties between quote and fill is step 4's `FILLED_NOTHING`, not a revert.
+
+**What a binding of a different manager reuses.** Arm A of the second blind run bound a hook that ran on its own mock
+manager, not on v4's. The sandbox splits along that line, and in the step 0 layout everything below goes into
+`<project>/sim/`, flat (`sim/SimEngine.sol`, `sim/agents/...`), so the copies import each other by `./` exactly as they
+do here:
+
+- **Venue-agnostic - copy as is:** `SimEngine.sol` (the loop, the queue, FCFS / BUNDLE, refused-at-quote, the five
+  verbs as the only contact with a venue), `SimLedger.sol` (books, gas, P&L, the dump line, `sim-report.sh`),
+  `SimClock.sol`, `ISimAgent.sol` (`Intent`, `Fill`, the markers), and `SimGasMeter.sol` (it meters whatever call you
+  name). Measured (2026-09-23, forge 1.8.1): these five and the agents below, in `sim/` of a project with no v4-core
+  and only forge-std, next to a binding of a toy constant-product gate of about 50 lines, compile under `[profile.sim]` and
+  its calibration passes (40 of 40 executed, quote equal to execution, ledger equal to wallet). The engine's own tests
+  run on stub markets, never on v4 - `RefusedAtQuote.t.sol`, `LedgerWritable.t.sol`, and `EngineFilledNothing` in
+  `FilledNothing.t.sol` (whose other half needs `ExampleScenario`) - and their imports name this module's
+  `../../src/sim/`: copied into `sim/` those become `./`. Not measured in that layout.
+- **Assume the v4 manager - rewrite for yours:** `ExampleScenario.sol` (the pool keys, `MinimalRouter`,
+  `LiquidityHelper`, the snapshot-and-revert quote through the v4 swap, the `Swap` event read for the fee, the
+  `sqrtPriceX96` read from the manager's slot0, `V4Harness`) and the venues it builds - the hook's v4 pool and the main
+  market (`_addMainMarket`, a hookless v4 pool). The agents in `agents/` speak `Intent` and `Fill`, and all but one
+  compile with nothing but `ISimAgent.sol` and forge-std: **`JitLP.sol` imports v4-core** (`TickMath.getTickAtSqrtPrice`,
+  to place its narrow range around the price), so it does not compile - and does not run - on a binding whose project
+  has no v4-core. Measured on forge 1.8.1, each agent alone with `ISimAgent.sol` against forge-std only, with and without
+  the optimizer: `Arbitrageur`, `HonestTrader`, `PassiveLP`, `RandomTrader`, `Sandwicher` build; `JitLP` stops at
+  `Source "v4-core/src/libraries/TickMath.sol" not found`. Leave `JitLP.sol` out of such a project (or install v4-core
+  for it). The liquidity agents (`PassiveLP`, `JitLP`) also emit v4-shaped liquidity intents (ticks and a liquidity
+  delta): a manager with another liquidity model maps those in its `_execute` or does not use them.
+- **Written against `ExampleScenario` - a model, not a test of your hook:** `Calibration.t.sol`, `BindingContract.t.sol`,
+  `PartialFill.t.sol`, `Ordering.t.sol`, `Liquidity.t.sol` and the other scenario tests of `test/sim/`. Nothing shipped
+  runs against your binding: you write its tests in `sim/`, on your scenario, with these as the model - the calibration
+  first.
+
+**Incompatible change (2026-09-23).** `SimEngine.FillWithoutInput` has a second field (`rule`), so a test that matched
+the old one-field error no longer matches; `_initEngine()` reverts `LedgerNotWritable` when `GAUNTLET_SIM` names a path
+the project cannot write, where it used to fail at the end of the run. Nothing else changes for a binding.
 
 **Incompatible change (2026-09-22).** A binding written before this date stops at its first `run` with
 `GasUnpriced` until it adds step 3; the ledger's dump line has two more columns at the end (`gasCost`, `pnlNet`), which
@@ -530,12 +675,17 @@ Amounts are raw units of the quote currency (18 decimals); `gas/run` is metered 
 Step 1, the calibration and the stale quote (deterministic, one run each):
 
 ```
-scenario               agent    runs  decided  executed  shortfall/run  windfall/run  worst ever    gas/run      pnl/run   gasCost/run       net/run
-calibration            honest      1     40.0      40.0              0             0           0    8505526    -3.95e15             0      -3.95e15
-calibration-gas-priced honest      1     40.0      40.0              0             0           0    8505526    -3.95e15   2.552e19      -2.552e19
-latency-one            honest      1     41.0      41.0              0       7.97e15           0    8693265    -1.92e15             0      -1.92e15
-latency-one            late        1     41.0      40.0        3.11e14       3.48e12     2.49e14    8322417    -9.94e15             0      -9.94e15
+scenario       agent         runs   decided  executed  refused  shortfall/run   windfall/run     worst ever      gas/run    pnl/run  priced  gasCost/run    net/run atQ runs atQuote/run
+calibration-gas-priced honest           1      40.0      40.0      0.0              0              0              0      8505526 -3950038008590954       1 25516578000000000000 -25520528038008590336        1         0.0
+calibration    honest           1      40.0      40.0      0.0              0              0              0      8505526 -3950038008590954       1            0 -3950038008590954        1         0.0
+latency-one    honest           1      41.0      41.0      0.0              0 7968272823946840              0      8693265 -1917594464333915       1            0 -1917594464333915        1         0.0
+latency-one    late             1      41.0      40.0      0.0 310652317197111  3483779825495 249003066423052      8322417 -9936354757654142       1            0 -9936354757654142        1         0.0
 ```
+
+That is the report as the kit's `scripts/sim-report.sh` printed it (forge 1.8.1, 2026-09-23, from the first command
+above alone): rows in the order the ledger received them, whole numbers through awk's `%.0f`, so a value beyond 2^53
+keeps only its leading digits exact (the gas-priced `net/run` is -25 520 528 038 008 590 954 raw units, printed
+...590336).
 
 `calibration-gas-priced` is the one example whose ledger charges gas (`test_calibration_with_gas_priced_charges_every_fill`):
 the same forty swaps at a price the test states as an assumption - 1 gwei, and 3 000 quote units per ETH, so

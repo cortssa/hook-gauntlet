@@ -67,7 +67,9 @@ probe), in section 6 (accepted) or in section 7 (does not apply to this hook, an
 The last two columns are what makes this table checkable instead of persuasive. A row says the contract survives
 something; the fourth column names the handler action that can actually PRODUCE that something, in both directions
 of the call, and the boundary in the campaign census (`scripts/census.sh`) that shows it happened; the fifth names
-the broken version of the code that the test was watched failing on. **An empty cell is a statement**: that row is
+the broken version of the code that the test was watched failing on. The floors the census gate judges - `CORE`,
+`REACH`, `MIN_PCT` - are written under this table once measured (`QUICKSTART.md` step 8): the spec, not the shell history,
+says what the campaign must reach. **An empty cell is a statement**: that row is
 defended by text. This kit's own example shipped a threat-model line that no action could reach, and then a second
 one whose defence did not do what the line said - both found by reviewers, both invisible in a three-column table.
 Carry the table into the handoff dossier as it stands, empty cells included: it tells the auditor where not to look.

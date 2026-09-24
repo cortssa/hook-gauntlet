@@ -14,7 +14,7 @@ import {V4Harness} from "../V4Harness.sol";
 import {HookMiner} from "../HookMiner.sol";
 import {SwapEventReader} from "../SwapEventReader.sol";
 import {CappedDynamicFeeHook} from "../examples/CappedDynamicFeeHook.sol";
-import {ISimAgent, ISimSearcher, Intent, Fill, VENUE_MAIN, KIND_SWAP} from "./ISimAgent.sol";
+import {ISimAgent, ISimSearcher, Intent, Fill, VENUE_MAIN, KIND_SWAP, FILLED_NOTHING} from "./ISimAgent.sol";
 import {SimEngine} from "./SimEngine.sol";
 import {SimGasMeter} from "./SimGasMeter.sol";
 import {MinimalRouter} from "../MinimalRouter.sol";
@@ -26,8 +26,8 @@ import {LiquidityHelper} from "../LiquidityHelper.sol";
 ///
 /// ADAPT: a project with its own router binds `_execute` to it; a project with an on-chain quoter or a lens binds
 /// `_quote` to that instead of the snapshot-and-revert used here. Keep the verbs' contracts (a quote of 0 means
-/// "would not execute"; a Fill with `executed = false` carries the revert selector) and the ledger and the report
-/// keep working unchanged.
+/// "would not execute"; a Fill with `executed = false` carries the revert selector, `FILLED_NOTHING` when a swap that was
+/// sent took nothing) and the ledger and the report keep working unchanged.
 abstract contract ExampleScenario is V4Harness, SimEngine {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for *;
@@ -107,6 +107,15 @@ abstract contract ExampleScenario is V4Harness, SimEngine {
         // `gasleft()` window in this frame, which would charge the agent the test's own memory growth
         (PoolKey memory k, SwapParams memory p) = _swapCall(it);
         f.gasUsed = SimGasMeter.lastCall(abi.encodeCall(MinimalRouter.swap, (k, p, bytes(""))));
+        if (ok && used == 0) {
+            // the pool had nothing left on this side when the swap arrived (a range withdrawn after the quote): v4 walks
+            // the empty ticks to the price limit and takes nothing. That did not trade: not executed, FILLED_NOTHING,
+            // counted as refused - and the empty walk's price move is rolled back, as a router's revert would
+            vm.revertToState(snap);
+            f.executed = false;
+            f.revertSelector = FILLED_NOTHING;
+            return f;
+        }
         if (ok && got < it.minOut) {
             // a router with a slippage check would have reverted; this one is minimal, so the check is here
             vm.revertToState(snap);

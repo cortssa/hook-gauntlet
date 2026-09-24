@@ -27,6 +27,8 @@ This file is the only place these numbers live.
 | `InvariantBase.sol`, as the audit found it | 335 | 321 | 252 | **69** | 14 | 78.5 % | 2 m 33 s |
 | `InvariantBase.sol`, after the tests below | 370 | 362 | **329** | 33 | 8 | **90.9 %** | 3 m 25 s |
 | `HostileERC20.sol`, as the audit found it | 393 | 379 | 325 | **54** | 14 | 85.8 % | 2 m 2 s |
+
+(Counts above predate the `returnsFalse` switch of 2026-09-24 and the `fuzzedBookkeepingCalls` counter in `InvariantBase.sol` of 2026-09-23; the files changed, the scores were not re-run. The next mutation run replaces this table.)
 | `HostileERC20.sol`, after the tests below | 393 | 379 | **342** | 37 | 14 | **90.2 %** | 2 m 33 s |
 | `InvariantBase.sol`, after the second review (the file grew again: `countedSetter`, the net under `_unexpectedRevert`, `writeCensus`) | 411 | 403 | **365** | 38 | 8 | **90.6 %** | 3 m 44 s |
 | `HostileERC20.sol`, after the second review (one test, for the survivor this file used to confess) | 393 | 379 | **343** | 36 | 14 | **90.5 %** | 2 m 38 s |

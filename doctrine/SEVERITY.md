@@ -33,6 +33,12 @@ The line that does the most work, and that belongs in every brief:
 Adapt the nouns to your hook. The structure is what matters: name the class of finding that your design has
 *decided* to tolerate, and fix its severity by decree, so that rounds argue about facts instead of labels.
 
+**A loss with no beneficiary is still a loss.** When a hostile asset makes the contract end short - the hook owes
+more than it holds, and the last party to claim cannot - the severity is set by who is left unpaid, not by whether
+anyone profited. If the shortfall lands on parties other than the one who brought the asset, it is **high**: the
+fee sink of a fee-on-transfer token profiting instead of an attacker changes nothing for the maker who cannot claim.
+(A blind-test auditor rated exactly this medium, "nobody profits"; the answer key said high.)
+
 **Who can trigger it is part of the severity.** A state that only a privileged party's own mistake can create, and
 whose damage is bounded to the thing they created (a pool that can be initialised and then never trades), is low -
 nobody is robbed and nobody else is locked out. It still needs a written decision: a low finding nobody decided is

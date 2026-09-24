@@ -498,6 +498,26 @@ contract HandlerBaseTest is Test {
         h.writeCensus("Demo");
         assertEq(h.callsTotal(), 1);
     }
+
+    /// @dev a call that arrives as its own transaction - the fuzzer's, on a handler with no `targetSelector` - writes
+    /// nothing, but it is COUNTED, and the census line then carries a boundary that says so. The suite's own call (from
+    /// a contract, as `afterInvariant` makes it) is not counted.
+    function test_a_fuzzer_call_to_writeCensus_is_counted_and_flagged_in_the_census_line() public {
+        h.succeed();
+        h.writeCensus("Demo");
+        assertEq(h.fuzzedBookkeepingCalls(), 0, "the suite's own call is not the fuzzer's");
+        assertEq(h.censusLine("Demo"), "Demo\tU=0\tA:succeed=1/1", "a restricted handler's line has no flag");
+        vm.prank(address(0xF22), address(0xF22));
+        h.writeCensus("\x01junk");
+        vm.prank(address(0xF23), address(0xF23));
+        h.writeCensus("Demo");
+        assertEq(h.fuzzedBookkeepingCalls(), 2, "each call as its own transaction counts once");
+        assertEq(
+            h.censusLine("Demo"),
+            "Demo\tU=0\tA:succeed=1/1\tB:handler unrestricted: bookkeeping selectors were fuzzed=2",
+            "and the line says so, after the suite's own boundaries"
+        );
+    }
 }
 
 contract InvariantAssertsTest is Test {
