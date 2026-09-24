@@ -305,3 +305,49 @@ holds it. Evidence label: **TESTED**, on one pin.
    payment; `mint` does not have that problem.
 4. Near the price edges amounts pass 2^96 in one swap. A narrow cast truncates silently, as it would at any price for
    an 18-decimal token with a trillion-unit supply.
+
+## A payer that pays first, on a pool that fills short - measured (added 2026-09-24, K15c)
+
+- **25. A router that pays BEFORE the swap has paid for the swap it asked for, not the one the pool filled.** `sync`,
+  transfer, swap, `settle`: the `settle` credits the whole prepayment, the swap debits only what the pool filled, and
+  on a pool with no liquidity (or a price limit) the difference is the ROUTER's own open credit. A router that does not
+  `take` it back leaves its own delta open and the manager refuses the whole transaction (`CurrencyNotSettled`) - with
+  every token honest and the hook's books square. Caught by the `DeltaFeeHook` campaign in CI, not by any unit test or
+  local draw: the only provider withdrew its whole position, then a prepaid exact-in swap of 128 wei ran on the empty
+  pool (`Swap` with `amount0: 0, amount1: 0`, the hook booking nothing) - the kit's own `PrepayRouter`, which the
+  handler trusted to close its books, did not. The fix is in the payer: take back `settle`'s return plus the pool's
+  delta in the paid currency when that is positive (`test_ci_replay_a_prepaid_swap_on_a_pool_emptied_of_liquidity`).
+  The lesson for a handler: "with every switch off, `CurrencyNotSettled` can only be the hook" is a claim about EVERY
+  party in the unlock, the test's own routers included - a surprise names a suspect, and the trace names the culprit.
+  *(Invariant: after any swap through any router, the payer's balance moved by exactly the caller delta the manager
+  returned - P1 from true balances, which a refund that did not happen fails.)*
+
+## A handler's forecast of a guard, and a refund that only a partial fill can test - measured (added 2026-09-24, K15d)
+
+- **26. A pool's liquidity says nothing about how much of ONE currency it holds.** `L` is the same number whether the
+  price sits in the middle of the range or next to one end; near an end, the pool holds almost none of the currency
+  that end runs out of. The `DeltaFeeHook` handler filed a P9 refusal (`RebateOnPartialFill`) on a swap with no price
+  limit as a surprise whenever the pool's liquidity was >= 1e18, on the premise that such a pool fills any swap of at
+  most 5e17. The verifier's replays refuted it: a burst on an almost empty pool pushed the price far to one side,
+  liquidity came back, and an exact-out swap asked for more of the scarce currency than the whole range could deliver
+  (the verifier's numbers: 4.5e17 of currency0 asked, 1.9e17 held, liquidity 1.0e18). The pool filled short, the hook
+  refused the rebated swap - correctly - and the handler went red. The forecast is now the guard's own arithmetic, made
+  before the swap: the rebate the hook will pay (nominal, cut to the block's budget, the pool's reserve and what the
+  hook's transfer delivers), the amount the pool must then fill (`|amountSpecified| + rebate` of input exact-in,
+  `|amountSpecified| - rebate` of output exact-out), and what the range can fill from the price now to its end in the
+  swap's direction (`SqrtPriceMath.getAmount0Delta`/`getAmount1Delta` over the range's liquidity, the LP fee on top for
+  an input). The manager's balance is not that number either: it also holds donations and the providers' fees, which no
+  swap reaches. The rule, for any handler that classifies a guard's refusal: **predict it from the quantity the guard
+  compares, never from a proxy, and hold the prediction to the calls that STOOD as well** - a forecast that says "it
+  will be refused" too often is the blanket excuse it replaced, so a swap forecast short that stands, or a rebate other
+  than the forecast one, is itself a failure. *(Invariant: `forecastWrong == 0` inside
+  `invariant_no_unexplained_reverts`; a hook whose delta moves the fill - rebate sign flipped, rebate in the other slot
+  - still dies on "P9 refused an UNLIMITED swap the pool could fill whole".)*
+- **27. A refund that is right when the pool uses all or nothing is not yet tested.** Item 25's router hands back
+  `settle`'s credit plus the pool's delta. A mutant that hands back the whole credit instead agrees with it whenever the
+  pool uses all of the prepayment (nothing to return) or none of it (the credit IS the rest), and the campaign's prepaid
+  swaps, all unlimited, only ever produced those two cases: the mutant survived the whole suite (found by the verifier).
+  A price limit near the pool's price makes the pool use part of the prepayment, and there the mutant leaves the router
+  owing and the unlock refuses. *(Test: `test_a_prepaid_swap_stopped_by_its_price_limit_pays_exactly_what_the_pool_used`,
+  the payer's balance equal to the one a router that pays afterwards leaves on the same state; the campaign's
+  `swapPrepaidLimited`.)*

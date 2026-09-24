@@ -42,7 +42,13 @@ contract PrepayRouter is IUnlockCallback {
         );
         require(ok, "PrepayRouter: transferFrom");
         BalanceDelta d = manager.swap(c.key, c.params, "");
-        manager.settle();
+        uint256 credited = manager.settle();
+        // A router that pays BEFORE the swap has paid for the swap it asked for, not the one the pool filled: a pool
+        // with no liquidity (or a price limit) fills less, and what it did not use is this router's own credit.
+        // Left there, the unlock cannot close (`CurrencyNotSettled`, caught by the DeltaFeeHook campaign in CI on a
+        // pool whose only provider had withdrawn). It goes back to the payer.
+        int256 unused = int256(credited) + d.amount0();
+        if (unused > 0) manager.take(c.key.currency0, c.payer, uint256(unused));
         if (d.amount1() > 0) manager.take(c.key.currency1, c.payer, uint256(uint128(d.amount1())));
         return abi.encode(d);
     }

@@ -1115,7 +1115,9 @@ What its tests found in it before it was finished, in the order it happened:
    a rebate, tripped P9, and the campaign stayed green in all nine invariants - only the smoke test's census
    (`action barely exercised: swap`) said anything. Now a P9 refusal on a swap with no price limit, in a pool no single
    swap can exhaust, is a surprise: both mutants die in the campaign
-   (`P9 refused an UNLIMITED swap in a liquid pool - the hook's own delta moved the fill`).
+   (`P9 refused an UNLIMITED swap in a liquid pool - the hook's own delta moved the fill`). "A pool no single swap can
+   exhaust" was measured by liquidity (>= 1e18), and that was the handler's second false premise - see "the handler's
+   own forecast" below; the check is now P9's own arithmetic, and the tables below keep the message as it was measured.
 
 **P11, the price of P9: liveness** (a limit, stated in the hook's header; found by the verifier V13, 2026-09-24).
 "A partial fill with no rebate still goes through" is true and it is the small half. While the rebate budget of the
@@ -1185,6 +1187,68 @@ The naive suite let eight of nine through. What the unit suite has that it lacks
 "Sign and side, measured": the four orientations, a price far from 1 (at price 4 a fee on the wrong side is four times
 off), a funded hook, and equality with the manager's own numbers. The class is `HOOK-ATTACKS.md` class 5 (delta
 accounting); class 36 (gate unit-confusion) is its neighbour.
+
+**What the campaign found after the example was finished: its own test router** (CI, 2026-09-24). The same tree went
+green in one CI run and red in the next, twice; seeds are random per run on purpose, so this was the campaign drawing a
+sequence no local draw had. Every invariant failed on `swap: CurrencyNotSettled with every switch off - somebody's delta
+was left open`, and both runs shrank to the same three calls: `removeLiquidity` takes the only provider's WHOLE position
+out, `fund` gives another actor tokens, `swapPrepaid` sends a small exact-in swap through `PrepayRouter`. Replayed as
+unit tests (`test_ci_replay_a_prepaid_swap_on_a_pool_emptied_of_liquidity`, and `..._second_run` with the other run's
+numbers), red:
+
+```
+[FAIL: the handler met a failure it did not predict: swap: CurrencyNotSettled with every switch off - somebody's delta was left open: 1 != 0] test_ci_replay_a_prepaid_swap_on_a_pool_emptied_of_liquidity() (gas: 1470626)
+```
+
+The trace names the culprit, and it was not the hook: on a pool with no liquidity the swap fills nothing (`Swap` with
+`amount0: 0, amount1: 0`), the hook returns 0 from both callbacks and books nothing, and the router's `settle()` credits
+it the 128 wei it had prepaid - a credit nobody takes back, so `unlock` refuses the whole transaction. A router that
+pays BEFORE the swap pays for the swap it asked for, not the one the pool filled; `PrepayRouter` now takes back
+`settle`'s credit plus the pool's `amount0` when that is positive (a price limit fills short the same way). The
+handler's premise - with every switch off, `CurrencyNotSettled` can only be the hook - holds only while both routers
+close their own books, and its comment now says so; a prepaid swap that fills short is a named boundary
+(`prepaid swap filled short, the unused prepayment returned`) and P1 checks the refund from the payer's true balance.
+Not a limit of the hook, so nothing is added to its header. Measured after the fix, forge 1.8.1, source manager, fresh
+corpus per seed: ten pinned seeds of the campaign green, among them seed 1337, which was red on the old router with
+the same shape (whole position out, then a prepaid swap); the two CI seeds did not reproduce the failure locally on
+either router, which is why the replays exist.
+
+**Then the handler's own forecast** (the verifier, on the tree with the router fixed, 2026-09-24). A second red, as
+deterministic as the first, and again not the hook: `swap: P9 refused an UNLIMITED swap in a liquid pool - the hook's
+own delta moved the fill`. The handler filed a P9 refusal on a swap with no price limit as a surprise whenever the
+pool's liquidity was >= 1e18 - the check that kills a hook whose rebate moves the pool's fill (item 2 above). But
+liquidity does not say how much of ONE currency the pool holds. Both shrunk sequences drain the pool to almost nothing,
+push the price far to one side with a burst, bring liquidity back, and send a burst of exact-out swaps for the scarce
+currency: with a liquidity of 1 000 999 000 000 008 189 the whole range could deliver 189 548 627 326 005 160 of
+currency0, and each swap of the burst asked for more. The pool fills short, the hook refuses the rebated swap -
+correctly - and the handler went red. Pinned as `test_replay_P9_an_unlimited_exact_out_the_pool_cannot_fill_is_a_predicted_refusal`
+(seven calls) and `test_replay_P9_the_same_refusal_after_the_router_fix` (nine), red on the old handler:
+
+```
+[FAIL: an earlier handler call met a failure nothing predicted: swap: P9 refused an UNLIMITED swap in a liquid pool - the hook's own delta moved the fill] test_replay_P9_an_unlimited_exact_out_the_pool_cannot_fill_is_a_predicted_refusal() (gas: 8225625)
+```
+
+The forecast is now P9's own arithmetic, made before each swap (`_forecastFill`): the rebate the hook will pay, the
+amount the pool must then fill, and what the pool's one range can fill from the price now to its end in the swap's
+direction. A refusal it predicted is expected and counted (`P9 refused an unlimited swap: predicted`); one within 1 000
+wei of the capacity, where the pool's step-by-step rounding decides, is expected and counted separately (`... at the
+pool's edge (within rounding)`); a refusal where the range could fill the swap whole, or where no rebate was due, is
+still a surprise. And the forecast is held to every swap that STOOD (`forecastWrong`, asserted in
+`invariant_no_unexplained_reverts`): a swap it called short must not stand, and the rebate paid must be the one it
+computed - otherwise "predicted" could grow into the blanket excuse item 2 removed. Measured with the new handler: the
+rebate-sign mutant and the wrong-slot mutant (M3 and M4 of the table below) still die in the campaign, two seeds each,
+on `P9 refused an UNLIMITED swap the pool could fill whole`, and turn the smoke test red.
+
+The same verifier found a mutant of the router fix that survived: hand back `settle`'s whole credit instead of the
+unused part. Every prepaid swap in the campaign was unlimited, so the pool used all of the prepayment or none of it,
+and there the two answers coincide. `swapPrepaidLimited` sends the prepaid swap with a price limit 0.4 % to 6e-8 of the
+sqrt price below the pool's, the pool uses PART of it (`prepaid swap stopped by its price limit: part used, exactly the
+rest returned`), and the mutant now dies in the campaign (`CurrencyNotSettled with every switch off`, two seeds, the
+shrunk sequence starts with `swapPrepaidLimited`) and in a unit test:
+
+```
+[FAIL: CurrencyNotSettled()] test_a_prepaid_swap_stopped_by_its_price_limit_pays_exactly_what_the_pool_used() (gas: 1272618)
+```
 
 ---
 

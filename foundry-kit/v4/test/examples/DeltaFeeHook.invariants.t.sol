@@ -8,8 +8,9 @@ import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {SqrtPriceMath} from "v4-core/src/libraries/SqrtPriceMath.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
+import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
@@ -62,6 +63,17 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
     uint256 private constant CALL_GAS = 4_000_000;
     uint256 private constant MAX_SWAP = 5e17;
     uint256 private constant MAX_MINT = 1_000e18;
+    /// @notice wei either side of the pool's capacity where the forecast below does not commit: the pool walks its one
+    /// range in up to ~60 steps (one per bitmap word) and rounds each in its own favour, the forecast in one step
+    uint256 private constant FILL_EDGE = 1_000;
+
+    /// @notice what the handler predicts of P9 for a swap with no price limit, BEFORE it is sent
+    enum Fill {
+        NoRebate, // no rebate will be paid (budget spent, reserve empty, or a payment in flight - P7): P9 cannot fire
+        Whole, // a rebate, and the pool's one range can fill the rebated swap: a P9 refusal is the hook's delta
+        Short, // a rebate, and the pool cannot fill it (the scarce side runs out before the range ends): P9 predicted
+        Edge // within FILL_EDGE wei of the capacity: rounding decides, the forecast does not
+    }
 
     // ---------------------------------------------------------------- the per-swap checks: every one must stay 0
     /// @notice per currency, swapper + hook + manager + fee sink + token reserve moved by other than 0, or the manager
@@ -77,6 +89,8 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
     uint256 public capBroken;
     /// @notice a rebate paid on a swap whose specified side was not exactly `amountSpecified` (P9)
     uint256 public freeRebate;
+    /// @notice the handler's own P9 forecast was wrong about a swap that stood (the check on the classifier itself)
+    uint256 public forecastWrong;
     uint256 public lastBrokenAt;
     string public lastBroken;
 
@@ -92,7 +106,9 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
     uint256 public exactOutOk;
     uint256 public rebatesSeen;
     /// @notice false once any hostile switch is turned on, true again after `calmDown`. With every switch off, a swap
-    /// the manager refuses as `CurrencyNotSettled` can only be the hook leaving its own books open.
+    /// the manager refuses as `CurrencyNotSettled` can only be the hook leaving its own books open - PROVIDED both
+    /// routers close their own: the prepaying one did not, on a swap the pool filled short, until CI caught it
+    /// (`test_ci_replay_a_prepaid_swap_on_a_pool_emptied_of_liquidity`). A surprise here names a suspect, not a culprit.
     bool public calm = true;
 
     uint256 public minted0;
@@ -211,24 +227,51 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
     /// synced, and the hook must pay no rebate (its own `sync` would reset the router's checkpoint). The swap must
     /// stand, the rebate must be 0, and the books are checked like any other swap's.
     function swapPrepaid(uint256 actorSeed, uint256 amount) public counted("swapPrepaid") {
-        address a = _actor(actorSeed);
         SwapParams memory p = _paramsFor(bound(amount, 1, MAX_SWAP), true, true, false);
+        if (_prepaid(_actor(actorSeed), p)) _noteSuccess("swapPrepaid");
+    }
+
+    /// @notice the same router with a PRICE LIMIT below the pool's price: the pool stops at the limit having used part
+    /// of the prepayment, and the router must hand back exactly the rest (not all it was credited, not nothing). With
+    /// only unlimited prepaid swaps the campaign saw "used all" and "used nothing", where both answers coincide: a
+    /// router returning its whole credit instead of the unused part survived it (found by the verifier).
+    function swapPrepaidLimited(uint256 actorSeed, uint256 amount, uint256 limitWord)
+        public
+        counted("swapPrepaidLimited")
+    {
+        SwapParams memory p = _paramsFor(bound(amount, 1e12, MAX_SWAP), true, true, false);
+        (uint160 sqrtP,,,) = manager.getSlot0(key.toId());
+        uint160 step = sqrtP >> bound(limitWord, 8, 24); // 0.4 % to 6e-8 of the sqrt price below it
+        if (step == 0) step = 1;
+        p.sqrtPriceLimitX96 = sqrtP - step > TickMath.MIN_SQRT_PRICE ? sqrtP - step : TickMath.MIN_SQRT_PRICE + 1;
+        if (_prepaid(_actor(actorSeed), p)) _noteSuccess("swapPrepaidLimited");
+    }
+
+    /// @dev exact-in zeroForOne through the router that pays first; true if the swap stood
+    function _prepaid(address a, SwapParams memory p) internal returns (bool ok) {
         uint256 reserveBefore = ghostFees[0] - ghostRebates[0];
         uint256 rebatesBefore = hook.rebatesPaid(Currency.wrap(address(token0)));
         Pre memory pre = _snap(a);
         vm.recordLogs();
         vm.prank(a);
         try prepay.swap{gas: CALL_GAS}(key, p) returns (BalanceDelta d) {
+            ok = true;
             swapsOk += 1;
             if (hook.rebatesPaid(Currency.wrap(address(token0))) != rebatesBefore) {
                 rebateWrong += 1;
                 _broken("P7: a rebate was paid while the router's payment was in flight");
             }
             if (rebatesBefore > 0) _noteReached("prepaid swap with a rebate budget");
+            // the pool filled less than was prepaid (no liquidity left, or the price limit): the router must have
+            // handed the rest back, which P1 below checks from the payer's true balance
+            if (d.amount0() != p.amountSpecified) _noteReached("prepaid swap filled short, the unused prepayment returned");
+            if (d.amount0() != p.amountSpecified && d.amount0() != 0) {
+                _noteReached("prepaid swap stopped by its price limit: part used, exactly the rest returned");
+            }
             _checkSwap(a, p, d, pre, 0, reserveBefore);
-            _noteSuccess("swapPrepaid");
         } catch (bytes memory err) {
-            _classifyPoolFailure(err, false);
+            // a payment in flight: the hook pays no rebate (P7), so P9 has nothing to refuse
+            _classifyPoolFailure(err, false, Fill.NoRebate);
         }
     }
 
@@ -278,6 +321,7 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
         uint256 sc = exactIn == zeroForOne ? 0 : 1; // index of the specified currency
         uint256 reserveBefore = ghostFees[sc] - ghostRebates[sc];
         Pre memory pre = _snap(a);
+        Forecast memory f = _forecastFill(p, sc);
 
         vm.recordLogs();
         vm.prank(a);
@@ -286,9 +330,91 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
             swapsOk += 1;
             if (!exactIn) exactOutOk += 1;
             _checkSwap(a, p, d, pre, sc, reserveBefore);
+            if (!limited) _checkForecast(f, sc);
         } catch (bytes memory err) {
-            _classifyPoolFailure(err, limited);
+            _classifyPoolFailure(err, limited, f.fill);
         }
+    }
+
+    struct Forecast {
+        Fill fill;
+        uint256 rebate; // the rebate P9's arithmetic says the hook will pay
+        uint256 paidBefore; // the hook's `rebatesPaid` of the specified currency before the swap
+    }
+
+    /// @notice the forecast is held to every swap that STOOD, so it cannot drift into an excuse: a swap it called
+    /// "short" must not stand, and the rebate the hook paid must be the one it computed. Without this a forecast that
+    /// said "short" too often would turn every P9 refusal back into "expected" - the blind spot it replaced.
+    function _checkForecast(Forecast memory f, uint256 sc) internal {
+        uint256 paid = hook.rebatesPaid(Currency.wrap(address(sc == 0 ? token0 : token1))) - f.paidBefore;
+        if (f.fill == Fill.Short || paid != f.rebate) {
+            forecastWrong += 1;
+            _broken("the P9 forecast disagreed with a swap that stood (the pool filled a swap called short, or another rebate was paid)");
+        }
+    }
+
+    /// @notice P9's own arithmetic, done by the handler before the swap. The hook refuses a rebated swap unless the pool
+    /// fills exactly `amountSpecified - rebate`: exact-in, the pool must TAKE `|amountSpecified| + rebate` of the input;
+    /// exact-out, it must DELIVER `|amountSpecified| - rebate` of the output. Whether it can is a question about ONE
+    /// currency: how far the pool's single range (every position in this suite is the same full range) lets the price
+    /// travel in the swap's direction, and what that travel is worth in the specified currency. Liquidity alone does
+    /// not answer it - a pool of 1e18 liquidity whose price sits near one end holds almost none of one side (the
+    /// verifier's case: an exact-out of 4.5e17 of currency0 from a pool holding 1.9e17 of it). Nor does the manager's
+    /// balance: it also holds donations and the providers' fees, which no swap can reach, and it bounds only outputs.
+    function _forecastFill(SwapParams memory p, uint256 sc) internal view returns (Forecast memory f) {
+        PoolId id = key.toId();
+        Currency specified = Currency.wrap(address(sc == 0 ? token0 : token1));
+        f.paidBefore = hook.rebatesPaid(specified);
+        uint256 specAbs = p.amountSpecified < 0 ? uint256(-p.amountSpecified) : uint256(p.amountSpecified);
+        // the rebate the hook will compute: nominal, cut to the block's budget and the pool's reserve (nothing is
+        // synced before a MinimalRouter swap, so P7 does not apply here)
+        uint256 rebate = hook.nominalRebateOf(specAbs);
+        uint256 left = hook.rebateBudgetLeft(id, specified);
+        if (rebate > left) rebate = left;
+        uint256 poolReserve = hook.poolReserveOf(id, specified);
+        if (rebate > poolReserve) rebate = poolReserve;
+        // the hook's own transfers set to deliver short (`setShortDeliver` on the hook): the manager is credited, and
+        // the rebate IS, only what arrived - and P9 compares the fill with that
+        (,,, uint256 div,,,) = (sc == 0 ? token0 : token1).moveSwitch(address(hook));
+        if (div > 1) rebate = rebate / div;
+        f.rebate = rebate;
+        if (rebate == 0) return f; // Fill.NoRebate
+        f.fill = _fillOf(p, specAbs, rebate);
+    }
+
+    /// @dev can the pool's one range fill the rebated swap, from the price now to the range's end
+    function _fillOf(SwapParams memory p, uint256 specAbs, uint256 rebate) internal view returns (Fill) {
+        PoolId id = key.toId();
+
+        // the range's liquidity (not the active liquidity: the price may sit outside the range) and the price, clamped
+        // to the range: a swap walks through the empty part for free and then through the range
+        (, int128 net) = manager.getTickLiquidity(id, tickLower);
+        uint128 liq = net > 0 ? uint128(net) : 0;
+        uint160 lo = TickMath.getSqrtPriceAtTick(tickLower);
+        uint160 hi = TickMath.getSqrtPriceAtTick(tickUpper);
+        (uint160 sp,,,) = manager.getSlot0(id);
+        if (sp < lo) sp = lo;
+        if (sp > hi) sp = hi;
+        uint160 end = p.zeroForOne ? lo : hi;
+
+        uint256 need;
+        uint256 cap;
+        if (p.amountSpecified < 0) {
+            need = specAbs + rebate;
+            uint256 inNet = p.zeroForOne
+                ? SqrtPriceMath.getAmount0Delta(end, sp, liq, true)
+                : SqrtPriceMath.getAmount1Delta(sp, end, liq, true);
+            uint256 fee = key.fee;
+            cap = inNet + (inNet * fee + (1e6 - fee) - 1) / (1e6 - fee); // the LP fee on top, rounded up as the pool does
+        } else {
+            need = specAbs - rebate;
+            cap = p.zeroForOne
+                ? SqrtPriceMath.getAmount1Delta(end, sp, liq, false)
+                : SqrtPriceMath.getAmount0Delta(sp, end, liq, false);
+        }
+        if (need + FILL_EDGE < cap) return Fill.Whole;
+        if (need > cap + FILL_EDGE) return Fill.Short;
+        return Fill.Edge;
     }
 
     function _checkSwap(address a, SwapParams memory p, BalanceDelta d, Pre memory pre, uint256 sc, uint256 reserveBefore)
@@ -375,7 +501,7 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
     /// (P9). Unexpected: the manager rejecting what the hook RETURNED, a panic or a guard of the hook's own firing on a
     /// real swap, and - while every hostile switch is off - `CurrencyNotSettled`, which then can only be the hook
     /// leaving its own delta open (with a switch on, the router's own payment can arrive short and cause it).
-    function _classifyPoolFailure(bytes memory err, bool limited) internal {
+    function _classifyPoolFailure(bytes memory err, bool limited, Fill forecast) internal {
         if (err.length >= 4) {
             bytes4 sel = bytes4(err);
             if (sel == Hooks.InvalidHookResponse.selector || sel == Hooks.HookDeltaExceedsSwapAmount.selector) {
@@ -393,12 +519,27 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
                     if (inner == DeltaFeeHook.RebateOnPartialFill.selector) {
                         // P9 is a GUARD of the hook's, and a guard can hide a bug: a hook whose own delta is wrong (a
                         // flipped sign, the wrong slot) moves the pool's specified amount and trips P9 on every swap
-                        // with a rebate. A swap with no price limit, in a pool whose liquidity no 5e17 swap can
-                        // exhaust, is filled whole unless the hook's delta is wrong: THAT refusal is a surprise.
-                        // (Measured: with this line "expected", a sign-flipped rebate survived the whole campaign.)
-                        if (!limited && manager.getLiquidity(key.toId()) >= 1e18) {
-                            _unexpectedRevert("swap: P9 refused an UNLIMITED swap in a liquid pool - the hook's own delta moved the fill");
-                            return;
+                        // with a rebate. (Measured: with every P9 refusal "expected", a sign-flipped rebate survived
+                        // the whole campaign.) So a swap with no price limit is held to the forecast made before it
+                        // was sent (`_forecastFill`, P9's own arithmetic against what the pool's range can fill):
+                        // refused where the pool could fill it whole, or where no rebate was due at all, is a
+                        // surprise. The forecast used to be "liquidity >= 1e18 fills any swap", which is false when
+                        // the price sits near one end of the range (the verifier's red, pinned as
+                        // `test_replay_P9_an_unlimited_exact_out_the_pool_cannot_fill_is_a_predicted_refusal`).
+                        if (!limited) {
+                            if (forecast == Fill.Whole) {
+                                _unexpectedRevert("swap: P9 refused an UNLIMITED swap the pool could fill whole - the hook's own delta moved the fill");
+                                return;
+                            }
+                            if (forecast == Fill.NoRebate) {
+                                _unexpectedRevert("swap: P9 refused a swap on which no rebate was due");
+                                return;
+                            }
+                            _noteReached(
+                                forecast == Fill.Short
+                                    ? "P9 refused an unlimited swap: predicted"
+                                    : "P9 refused an unlimited swap at the pool's edge (within rounding)"
+                            );
                         }
                         _noteReached("partial fill refused");
                         _expectedRevert();
@@ -560,6 +701,7 @@ contract DeltaFeeHandler is HandlerBase, InvariantAsserts {
 
 contract DeltaFeeHookInvariants is V4Harness, InvariantAsserts {
     using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
 
     uint160 internal constant SQRT_PRICE_1_1 = 79228162514264337593543950336;
 
@@ -589,8 +731,9 @@ contract DeltaFeeHookInvariants is V4Harness, InvariantAsserts {
         handler.seed(100_000e18, 50e18);
 
         targetContract(address(handler));
-        bytes4[] memory sel = new bytes4[](16);
+        bytes4[] memory sel = new bytes4[](17);
         sel[15] = DeltaFeeHandler.swapPrepaid.selector;
+        sel[16] = DeltaFeeHandler.swapPrepaidLimited.selector;
         sel[0] = DeltaFeeHandler.fund.selector;
         sel[1] = DeltaFeeHandler.swap.selector;
         sel[2] = DeltaFeeHandler.swapBurst.selector;
@@ -607,7 +750,7 @@ contract DeltaFeeHookInvariants is V4Harness, InvariantAsserts {
         sel[13] = DeltaFeeHandler.setManagerBlocked.selector;
         sel[14] = DeltaFeeHandler.calmDown.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
-        assertEq(sel.length, 16, "the selector list and the handler have drifted apart");
+        assertEq(sel.length, 17, "the selector list and the handler have drifted apart");
     }
 
     function afterInvariant() public virtual {
@@ -686,6 +829,138 @@ contract DeltaFeeHookInvariants is V4Harness, InvariantAsserts {
             0,
             string.concat("the handler met a failure it did not predict: ", handler.lastUnexpected())
         );
+        // the prediction is held to the swaps that stood too, or "predicted" could become a blanket excuse
+        assertEq(handler.forecastWrong(), 0, _reason("the P9 forecast"));
+    }
+
+    // ------------------------------------------------------------------ shrunk sequences from the campaign
+    /// @notice the campaign's first catch in CI (two runs, two seeds, the same three calls; `doctrine/NEXT.md` row 5):
+    /// the only provider takes ALL its liquidity out, another actor is funded, and a prepaid exact-in swap runs on a
+    /// pool with no liquidity. The pool fills nothing, so the prepaying router has paid for a swap that did not
+    /// happen: its prepayment must come back to the payer, or the unlock cannot close.
+    function test_ci_replay_a_prepaid_swap_on_a_pool_emptied_of_liquidity() public {
+        // run 36013019422, seed 0x9684d3bc...3dac: removeLiquidity binds 3e21 to the whole 50e18
+        handler.removeLiquidity(1_000_000_000, 3_000_000_000_000_000_000_000);
+        assertEq(manager.getLiquidity(key.toId()), 0, "replay: the pool still has liquidity");
+        handler.fund(165_577_562_928_883_747_114_875_185_255_186, 654_755_058_787);
+        address payer = address(0x6001); // actor 23 956 % 5
+        uint256 before0 = token0.trueBalanceOf(payer);
+        handler.swapPrepaid(23_956, 147_028_384);
+        invariant_no_unexplained_reverts();
+        assertEq(handler.successesOf("swapPrepaid"), 1, "replay: the prepaid swap did not stand");
+        assertEq(token0.trueBalanceOf(payer), before0, "replay: the payer lost its prepayment to a swap that filled nothing");
+        handler.assertReached("prepaid swap filled short, the unused prepayment returned", 1);
+        _allInvariants();
+    }
+
+    /// @notice the same catch from run 36010657863 (seed 0x1649f0c6...8579): the whole liquidity again, 128 wei prepaid
+    function test_ci_replay_a_prepaid_swap_on_a_pool_emptied_of_liquidity_second_run() public {
+        handler.removeLiquidity(
+            33_000_754_858_910_868_398_267_428_534_851_208_763_725_614_360_198_736_648_331_173_735_321_529_483_265,
+            100_000_000_000_000_000_000_000
+        );
+        assertEq(manager.getLiquidity(key.toId()), 0, "replay: the pool still has liquidity");
+        handler.fund(20_125_707_078_920_429_269_254_013_612_690_055_421, 5_423);
+        address payer = address(0x6001); // actor 1 996 % 5
+        uint256 before0 = token0.trueBalanceOf(payer);
+        handler.swapPrepaid(1_996, 128);
+        invariant_no_unexplained_reverts();
+        assertEq(handler.successesOf("swapPrepaid"), 1, "replay: the prepaid swap did not stand");
+        assertEq(token0.trueBalanceOf(payer), before0, "replay: the payer lost its prepayment to a swap that filled nothing");
+        _allInvariants();
+    }
+
+    /// @notice the campaign's second catch, found by the verifier on the same seeds (a red in the HANDLER, not in the
+    /// hook): liquidity drained to almost nothing, a burst pushes the price far to one side, liquidity comes back, and a
+    /// second burst of exact-out swaps asks the pool for more of the scarce currency than it holds. The pool fills
+    /// short, the hook refuses the rebated swap (P9) - correctly. The handler used to call that refusal a surprise
+    /// because the pool's liquidity was >= 1e18; liquidity says nothing about how much of ONE currency the pool holds.
+    /// Seven calls, shrunk from seed 0x9684d3bc...3dac (the first CI run's) on the tree before the router fix.
+    function test_replay_P9_an_unlimited_exact_out_the_pool_cannot_fill_is_a_predicted_refusal() public {
+        handler.fund(1, 1_000_000_000_000_000_000_000);
+        handler.addLiquidity(6756, 9188);
+        handler.removeLiquidity(255, 1_000_000_000_000_000_000_000);
+        handler.swapBurst(
+            21_000, 61678357398080765210293718086378416697372618187842506566286863523773954249005, 1_000_000_000_000, 500
+        );
+        handler.addLiquidity(255, 1_000_000_000_000_000_000_000);
+        handler.swapBurst(
+            4_004_159_087,
+            1_700_000_000,
+            49959367603673595303297320131006763953537934668055001659846536947750116786176,
+            57896044618658097711785492504343953926634992332820282019728792003956564819968
+        );
+        handler.setFeeOnTransfer(725, 15);
+        invariant_no_unexplained_reverts();
+        handler.assertReached("P9 refused an unlimited swap: predicted", 1);
+        _allInvariants();
+    }
+
+    /// @notice the same refusal on the tree WITH the router fix, nine calls shrunk from seed 0x5eed (red on the
+    /// verifier's bench, green on the fixer's with identical files: a pinned seed is evidence on one bench only)
+    function test_replay_P9_the_same_refusal_after_the_router_fix() public {
+        handler.fund(1, 1_000_000_000_000_000_000_000);
+        handler.swap(1, 500_000_000_000_000_000, 2, 1);
+        handler.addLiquidity(0, 100_000_000_000_000_000);
+        handler.removeLiquidity(0, 98079714615416886934934209737619787751609303819750539264);
+        handler.swapBurst(96, 10_620, 1_971, 14);
+        handler.setShortDeliver(485053260817066172746253684029974021, 4_738, 1_996);
+        handler.nextBlock(3_892);
+        handler.swapBurst(
+            16, 36271603392835451902015514392751374211422416918959581591278453706336191381505, 654_755_058_787, 100
+        );
+        handler.setPaused(24_049, 8);
+        invariant_no_unexplained_reverts();
+        handler.assertReached("P9 refused an unlimited swap: predicted", 1);
+        _allInvariants();
+    }
+
+    /// @notice a prepaid swap the pool stops at its PRICE LIMIT: part of the prepayment used, the rest the router's
+    /// credit. The payer must end exactly where the router that pays afterwards leaves it on the same state - which
+    /// kills a router that hands back its whole credit instead of the unused part (with every earlier prepaid swap the
+    /// pool used all of it or none of it, and the two answers coincide).
+    function test_a_prepaid_swap_stopped_by_its_price_limit_pays_exactly_what_the_pool_used() public {
+        handler.fund(1, 1_000e18);
+        address payer = address(0x6001); // actor 1 % 5
+        (uint160 sqrtP,,,) = manager.getSlot0(key.toId());
+        SwapParams memory p =
+            SwapParams({zeroForOne: true, amountSpecified: -5e17, sqrtPriceLimitX96: sqrtP - (sqrtP >> 12)});
+
+        // both routers straight at the pool, each from the same state and undone afterwards (the handler's model of
+        // the hook's books counts only the swaps it drives)
+        uint256 snap = vm.snapshotState();
+        vm.prank(payer);
+        BalanceDelta paidAfter = router.swap(key, p, "");
+        uint256 payerAfterMinimal = token0.trueBalanceOf(payer);
+        vm.revertToState(snap);
+
+        snap = vm.snapshotState();
+        PrepayRouter prepay = handler.prepay();
+        uint256 before0 = token0.trueBalanceOf(payer);
+        vm.prank(payer);
+        BalanceDelta d = prepay.swap(key, p);
+        assertTrue(d.amount0() < 0 && d.amount0() > p.amountSpecified, "not a partial fill that used something");
+        assertEq(d.amount0(), paidAfter.amount0(), "the two routers filled differently");
+        assertEq(int256(token0.trueBalanceOf(payer)) - int256(before0), d.amount0(), "the payer paid other than the pool used");
+        assertEq(token0.trueBalanceOf(payer), payerAfterMinimal, "the prepaying router left the payer elsewhere");
+        assertEq(token0.trueBalanceOf(address(prepay)), 0, "the prepaying router kept currency0");
+        vm.revertToState(snap);
+
+        // and the campaign's action on the same shape
+        handler.swapPrepaidLimited(1, 5e17, 12);
+        handler.assertReached("prepaid swap stopped by its price limit: part used, exactly the rest returned", 1);
+        _allInvariants();
+    }
+
+    function _allInvariants() internal view {
+        invariant_every_swap_balances_and_the_hook_gets_only_its_booked_delta();
+        invariant_the_fee_is_exact_and_on_the_unspecified_side();
+        invariant_the_rebate_is_bounded_and_capped_per_block();
+        invariant_no_free_rebate();
+        invariant_the_router_and_the_helper_are_empty_between_actions();
+        invariant_currency0_is_conserved();
+        invariant_currency1_is_conserved();
+        invariant_no_unexplained_reverts();
     }
 
     // ------------------------------------------------------------------ non vacuity
@@ -703,6 +978,7 @@ contract DeltaFeeHookInvariants is V4Harness, InvariantAsserts {
         handler.nextBlock(1);
         handler.swapLimited(2, 5e17, YES); // a rebate in play: refused (P9)
         handler.swapPrepaid(2, 1e17); // a payment in flight: no rebate (P7)
+        handler.swapPrepaidLimited(2, 5e17, 12); // stopped by its limit: part used, the rest returned
         handler.readBudget(NO);
         handler.addLiquidity(0, 1e17);
         handler.removeLiquidity(0, 1e16);
@@ -732,6 +1008,8 @@ contract DeltaFeeHookInvariants is V4Harness, InvariantAsserts {
         handler.assertReached("partial fill refused", 1);
         handler.assertReached("prepaid swap with a rebate budget", 1);
         handler.assertExercised("swapPrepaid", 1);
+        handler.assertExercised("swapPrepaidLimited", 1);
+        handler.assertReached("prepaid swap stopped by its price limit: part used, exactly the rest returned", 1);
         assertGt(handler.exactOutOk(), 1, "no exact-out swap succeeded");
         assertGt(handler.revertsExpected(), 0, "the hostile branches were never reached");
 
