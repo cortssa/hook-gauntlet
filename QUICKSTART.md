@@ -10,12 +10,12 @@ guess. This page exists so that the next reader does not.
 ## 0. What you need
 
 - Foundry (`forge`, `cast`): supported versions are in `foundry-kit/README.md` (1.8.1 pinned, 1.8.3 CI-proven).
-- `bash` 5, `git`, `rsync`, `python3` (standard library only; `scripts/assert-fresh-build.sh` uses it). Linux, or Windows **inside WSL with the project on the Linux side** (`CRLF` breaks a shell
+- `bash` 5, `git`, `rsync`, `python3` optional (standard library only: `scripts/assert-fresh-build.sh` uses it for the evidence lines, which file changed; the verdict is forge's own). `shellcheck` optional locally: the selftest runs it when present and says when it did not; CI always runs it. Linux, or Windows **inside WSL with the project on the Linux side** (`CRLF` breaks a shell
   script silently).
 - Non-interactive shells (agents, CI, `wsl` from PowerShell) do not read your profile: put `~/.foundry/bin` on `PATH`
   yourself, or `export PATH="$HOME/.foundry/bin:$PATH"` at the top of your script.
 - Slither only for the static-analysis judge in full mode - an install your agent must ask you for.
-- Network only for three things: cloning forge-std (step 1; offline: copy any forge-std v1.16.2 checkout to
+- Network only for three things: cloning forge-std (step 1; offline: `mkdir -p foundry-kit/lib` and copy any forge-std v1.16.2 checkout to
   `foundry-kit/lib/forge-std`, the battery checks nothing about where it came from), fetching Uniswap's sources at pinned
   commits (step 3, offline route there) and the real pool manager's bytecode (step 8). Everything else runs offline.
 
@@ -123,10 +123,14 @@ and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` a
 absolute). That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
 (the PoolManager stops at "stack too deep"): start its `foundry.toml` and `remappings.txt` from the kit's own
 `foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (solc 0.8.26, evm cancun, the optimizer, the PoolManager's
-IR compilation restrictions, and the eight remappings - `v4-core/`, `@uniswap/v4-core/`, `solmate/`, `@openzeppelin/`,
-v4-core's own `forge-std/`, `ds-test/`, `gauntlet-kit/`, `gauntlet-v4/` for `V4Harness` and `HookMiner` - with `<kit>`
-prefixed), and its scenarios from `foundry-kit/v4/test/`. Its bytecode is then measured with the optimizer on, because the
-manager needs it; that is the audited artefact, say so. A hook that HOLDS tokens has no single worked example: the token
+IR compilation restrictions - its `paths` entry made absolute too, `<kit>/foundry-kit/v4/lib/v4-core/src/PoolManager.sol` -
+and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `ds-test/`, `solmate/`, `@openzeppelin/`,
+`v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
+carry because the module reaches its own sources directly: `gauntlet-v4/=<kit>/foundry-kit/v4/src/` for `V4Harness` and
+`HookMiner`), and its scenarios from `foundry-kit/v4/test/`. Every test that creates the PoolManager is then compiled under the
+restricted via-IR profile, so the hook the tests, the fuzz and the mutants deploy is the `<Hook>.manager.json` build, not the
+default `<Hook>.json`: THAT is the audited artefact - `size.sh` prints both rows, cite the `.manager` one; promotion hashes it;
+a hook deployed from any other profile is a different artefact (`NEXT.md`, bytecode changed). A hook that HOLDS tokens has no single worked example: the token
 side is `foundry-kit/test/` (ToyVault), the hook side is `foundry-kit/v4/test/`; merge them. Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
 A promise that breaks under a token behaviour the owner has not decided: `doctrine/NEXT.md` row 6b, not a reason to leave
 the action out.
@@ -137,14 +141,14 @@ Deterministic tools on your machine, no model. Run them on your project director
 
 | judge | command | done when |
 |---|---|---|
-| build, lints, size | `forge build` in `<proj>`; `scripts/size.sh <proj>` | clean build; runtime AND initcode margins under your chain's limit |
+| build, lints, size | `forge build` in `<proj>`; `scripts/size.sh <proj>` | it compiles (forge's lint warnings, most of them in the kit's and v4-core's own files, belong to the static-triage row, not to the build); runtime AND initcode margins under your chain's limit |
 | tests, sizes, freshness | `scripts/battery.sh <proj>` | `BATTERY PASSED` (forge's `passed N` counts test functions and campaigns, not the invariants inside one contract: read the campaign lines) |
 | static triage | `forge lint src/` (Slither only if the owner allowed the install; write `static triage: forge lint only, Slither not installed` in `STATE.md` `notes:` otherwise) | every warning triaged in `.gauntlet/STATIC-TRIAGE.md`: fixed, or refused with the reason (`doctrine/JUDGES.md` row 1) |
-| branch coverage | `forge coverage --report summary --no-match-coverage '<the regex in doctrine/JUDGES.md row 4>'` (on forge's default budget this reruns your 128 000-call campaign: about two minutes) (`--ir-minimum` if it will not compile) | branch numbers for `src/` in the dossier, and the uncovered branches named |
+| branch coverage | `forge coverage --report summary --no-match-coverage '<the regex in doctrine/JUDGES.md row 4>'` (this reruns your everyday campaign: about two minutes at forge's default 256 x 500, seconds at the v4 recipe's 64 x 64; a hook next to the PoolManager's IR restriction, the 7b layout: add `--ir-minimum`, or forge measures the wrong build and maps hits to the wrong lines - `doctrine/JUDGES.md` row 4) (`--ir-minimum` also if it will not compile) | branch numbers for `src/` in the dossier, and the uncovered branches named |
 | dirty memory, junk bits | `forge test --brutalize` in `<proj>` | the same suite green (`doctrine/JUDGES.md` row 6) |
 | long fuzz | `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
 | campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
-| mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies outside the project: `COPY_ROOT=<their common parent>`; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
+| mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies reached by RELATIVE paths outside the project: `COPY_ROOT=<their common parent>`; absolute remappings need nothing; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
 | simulation sandbox (optional) | step 4, on your binding | `doctrine/SIMULATE.md` §5 says what goes in the dossier |
 

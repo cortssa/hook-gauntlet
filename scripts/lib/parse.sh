@@ -134,6 +134,22 @@ first_error_line() {
 ' "${l:0:300}"
 }
 
+# parse_build_verdict <log of a `forge build` that exited 0>
+#   whether forge COMPILED anything. forge 1.8.1 prints `No files changed, compilation skipped` when every artifact is
+#   what the sources and the settings as they are now produce, and `Compiling <n> files with Solc <version>` once per
+#   compiler run when it compiled (on a terminal the line starts with a spinner, `[...] Compiling ...`). Prints
+#   "compiled" or "skipped". A log with both (two compiler runs, one of them skipped) is "compiled": something was
+#   rebuilt. Fixtures: scripts/test/fixtures/build-real-noop.txt, build-real-compiled.txt, build-nm-neither.txt.
+#   exit 1: neither line - another forge's wording, or not a build log: REFUSED, never read as "skipped"
+parse_build_verdict() {
+  local txt
+  [ -r "$1" ] || return 1
+  txt="$(_parse_clean "$1")"
+  if grep -Eq '^(\[[^]]*\] )?Compiling [0-9]+ files? with ' <<< "$txt"; then echo compiled; return 0; fi
+  if grep -Eq '^(\[[^]]*\] )?No files changed, compilation skipped$' <<< "$txt"; then echo skipped; return 0; fi
+  return 1
+}
+
 # The simulation ledger (SimLedger.line): tab separated, 13, 15 or 16 fields, label and agent then numbers.
 #   label agent decided executed refused in out quoted shortfall worst windfall gas pnl [gasCost pnlNet [atQuote]]
 # A well-formed line has at least 13 fields and every field from the 3rd to the 16th that is present is an integer

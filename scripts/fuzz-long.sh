@@ -24,8 +24,10 @@
 #                     The bench keeps the campaign's corpus/ and census/ from one run to the next (bench.sh BENCH_KEEP):
 #                     a refresh never deletes them, and a corpus/ the project has is merged in. census/long.tsv is THIS run's
 #                     census and starts empty; another run's census under another name (GAUNTLET_CENSUS) stays.
-#                     Whenever the campaign wrote one - passed or failed - its absolute path is printed alone on a line,
-#                     `census: <path>`: the file the gate reads (scripts/census.sh --aggregate <path>).
+#                     When the campaign PASSED and wrote one, its absolute path is printed alone on a line,
+#                     `census: <path>`: the file the gate reads (scripts/census.sh --aggregate <path>). A FAILED campaign has
+#                     no census (forge writes a line per shrink replay): the file is renamed <name>.FAILED.tsv, named, and
+#                     the gate refuses it.
 #          OUT_DIR    where to write the log (default: <project>/.gauntlet/reports)
 #          FORGE_FLAGS  extra flags for forge test (e.g. --offline)
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
@@ -161,10 +163,23 @@ if grep -q "does not exist; falling back" "$OUT_DIR/05-fuzz-long.txt"; then
 fi
 echo
 echo "invariant campaigns: $campaigns, fuzzed calls in total: $calls"
-if [ -s "$GAUNTLET_CENSUS" ]; then
+if [ "$rc" -ne 0 ] && [ -s "$GAUNTLET_CENSUS" ]; then
+  # A FAILED campaign has NO census: forge calls afterInvariant() on every replay it makes while it shrinks a counterexample,
+  # and each writes a line. Measured on a stranger's v4 hook: 199 510 "runs" and 59 778 "unexplained" for 272 real runs;
+  # reproduced, 198 991 lines for 53. The table of that file used to be printed here, and its path offered to the gate.
+  failed_census="${GAUNTLET_CENSUS%.tsv}.FAILED.tsv"
+  mv -f "$GAUNTLET_CENSUS" "$failed_census"
+  case "$failed_census" in /*) failed_abs="$failed_census" ;; *) failed_abs="$(pwd -P)/${failed_census#./}" ;; esac
+  echo "fuzz-long: the campaign FAILED, so it has NO census. forge calls afterInvariant() on every replay it makes while it"
+  echo "           shrinks a counterexample, and each one wrote a line: $(awk 'END { print NR }' "$failed_census") lines, not one per run."
+  echo "           Kept for reading as $failed_abs - the gate (census.sh --aggregate) refuses it."
+  echo "           Fix the failure, run again, and gate THAT campaign's census."
+  echo "fuzz-long: the campaign FAILED - no census (renamed $failed_abs)" > "$OUT_DIR/06-census-long.txt"
+elif [ -s "$GAUNTLET_CENSUS" ]; then
   # printed and kept, never a gate here: which actions are CORE is the project's call (scripts/census.sh, CORE=...).
-  # CENSUS_TABLE_ONLY: the table without a gate verdict, which here would be "PASSED" over nothing judged
-  CORE="" CENSUS_TABLE_ONLY=1 "$HERE/census.sh" --aggregate "$GAUNTLET_CENSUS" | tee "$OUT_DIR/06-census-long.txt"
+  # CENSUS_TABLE_ONLY: the table without a gate verdict, which here would be "PASSED" over nothing judged. The log names
+  # the suites that ran, whose persisted failures replayed first and wrote lines too (census.sh says how many)
+  CORE="" CENSUS_TABLE_ONLY=1 CENSUS_FORGE_LOG="$OUT_DIR/05-fuzz-long.txt" "$HERE/census.sh" --aggregate "$GAUNTLET_CENSUS" | tee "$OUT_DIR/06-census-long.txt"
   # the path the gate reads, absolute and alone on its line (QUICKSTART: "the path fuzz-long.sh printed"). It is in the
   # bench when there is one, and it used to be named nowhere: a fresh reader had to find the bench directory and guess.
   case "$GAUNTLET_CENSUS" in /*) census_abs="$GAUNTLET_CENSUS" ;; *) census_abs="$(pwd -P)/${GAUNTLET_CENSUS#./}" ;; esac

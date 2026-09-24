@@ -53,6 +53,40 @@ else
   hash_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
 fi
 
+# ================================================================= the scripts themselves: bash -n, shellcheck
+# CI's `shellcheck` job runs, from the checkout's root, exactly (a comment that STARTS with the tool's name is read by it
+# as a directive, hence the "$"):
+#   $ shellcheck --external-sources --source-path=SCRIPTDIR --severity=warning scripts/*.sh scripts/lib/*.sh
+# and a finding at severity warning or error fails that job (style and info notes are not gated). The same command runs
+# here, from the same directory, so a local selftest refuses what CI would refuse. With no shellcheck on this machine it
+# is NOT run and the run says so; that is not counted as INCOMPLETE (it proves no guard, and CI runs it on every push).
+echo "== the scripts themselves: bash -n, shellcheck =="
+lint_scripts() { # lint_scripts <a scripts/ directory>: 0 clean, 1 a syntax error or a shellcheck finding
+  local d f bad=0 files=()
+  d="$(basename "$1")"
+  for f in "$1"/*.sh "$1"/lib/*.sh; do [ -f "$f" ] && files+=("$d/${f#"$1"/}"); done
+  [ "${#files[@]}" -gt 0 ] || { echo "no script under $1"; return 1; }
+  for f in "${files[@]}"; do (cd "$1/.." && bash -n "$f") || { echo "bash -n: $f"; bad=1; }; done
+  if command -v shellcheck > /dev/null 2>&1; then
+    (cd "$1/.." && shellcheck --external-sources --source-path=SCRIPTDIR --severity=warning "${files[@]}") || bad=1
+  fi
+  return "$bad"
+}
+lint_scripts "$HERE" > "$TMP/o198" 2>&1; check "bash -n and shellcheck (CI's command) over scripts/*.sh and scripts/lib/*.sh" 0 $? "$TMP/o198"
+LB="$TMP/lintbad/scripts"; mkdir -p "$LB/lib"
+printf '#!/usr/bin/env bash\necho ok\n' > "$LB/lib/ok.sh"
+printf '#!/usr/bin/env bash\nif then\n' > "$LB/bad.sh"
+lint_scripts "$LB" > "$TMP/o199" 2>&1; check "a script with a syntax error is refused (bash -n)" 1 $? "$TMP/o199"
+if command -v shellcheck > /dev/null 2>&1; then
+  # SC2164 (cd without a fallback) is a WARNING: bash -n passes it, CI's shellcheck job fails on it
+  printf '#!/usr/bin/env bash\ncd "$1"\necho "in $PWD"\n' > "$LB/bad.sh"
+  lint_scripts "$LB" > "$TMP/o200" 2>&1; check "a script with a shellcheck warning is refused, as CI's job refuses it" 1 $? "$TMP/o200"
+  if grep -q 'SC2164' "$TMP/o200"; then echo "  ok    and the refusal names the finding (SC2164)"; else
+    echo "  FAIL  the refusal does not name SC2164"; fails=$((fails + 1)); fi
+else
+  echo "  --    shellcheck is not installed here: NOT run on this machine (CI's shellcheck job runs it on every push)"
+fi
+
 # ================================================================= release-guard.sh
 echo "== release-guard.sh =="
 W="$TMP/work"; P="$TMP/published"
@@ -88,13 +122,34 @@ if [ "$before" = "$after" ]; then echo "  ok    the guard never writes into the 
 "$HERE/release-guard.sh" "$W" > "$TMP/o138" 2>&1; check "missing argument" 4 $? "$TMP/o138"
 
 # ================================================================= assert-fresh-build.sh
-# The guard compares CONTENT with forge's own record of what it compiled (cache/solidity-files-cache.json: one contentHash
-# per source). The fixture is a small project BUILT BY FORGE 1.8.1 - its sources in fixtures/fresh-project/, forge's cache
-# of that build in fixtures/fresh-project.cache.json (the hashes are forge's, not this kit's; only the cache's library
-# path was made relative). Its five sources fall in five size classes of the hash, so a hasher that disagrees with forge
-# on any of them turns the "matches" case red. File times are SET, not waited for, and set on PURPOSE against the verdict:
+# The VERDICT is forge's: the guard runs `forge build` and reads its answer ("No files changed, compilation skipped" =
+# FRESH; a compilation = STALE, rebuilt; a failed build = nothing decided). Here, with no compiler, forge is a STUB that
+# gives the answer each case names (FAKE_BUILD) - what forge 1.8.1 answered in the same situation on a real project
+# (the real answers are cases o165-o167, o174 and o207-o212 in the forge section below). What this section tests is
+# the rest: the guard's reading of each answer, and the EVIDENCE it prints before the verdict - the content of every
+# source compared with forge's own record of what it compiled (cache/solidity-files-cache.json: one contentHash each).
+# The fixture is a small project BUILT BY FORGE 1.8.1 - its sources in fixtures/fresh-project/, forge's cache of that
+# build in fixtures/fresh-project.cache.json (the hashes are forge's, not this kit's; only the cache's library path was
+# made relative). Its five sources fall in five size classes of the hash, so a hasher that disagrees with forge on any of
+# them names a source that did not change. File times are SET, not waited for, and set on PURPOSE against the content:
 # an edit dated before the build, a copy dated after it - the time must not decide either way.
 echo "== assert-fresh-build.sh =="
+FF="$TMP/fforge"; mkdir -p "$FF"
+cat > "$FF/forge" <<'STUB'
+#!/usr/bin/env bash
+# a stub forge: answers `forge build` the way $FAKE_BUILD says, and refuses a repeated --offline as forge 1.8.1 does
+n=0; for a in "$@"; do [ "$a" = "--offline" ] && n=$((n + 1)); done
+if [ "$n" -gt 1 ]; then echo "error: the argument '--offline' cannot be used multiple times"; exit 2; fi
+case "${FAKE_BUILD:-}" in
+  skipped) echo "No files changed, compilation skipped" ;;
+  compiled) printf 'Compiling 3 files with Solc 0.8.26\nSolc 0.8.26 finished in 1.00ms\nCompiler run successful!\n' ;;
+  failed) printf 'Compiling 1 files with Solc 0.8.26\nError: Compiler run failed:\nError (2314): Expected identifier\n --> src/B.sol:4:10:\n'; exit 1 ;;
+  *) echo "a line forge never printed" ;;
+esac
+exit 0
+STUB
+chmod +x "$FF/forge"
+fresh() { PATH="$FF:$PATH" "$HERE/assert-fresh-build.sh" "$@"; }
 J="$TMP/project"
 cp -R "$FIX/fresh-project" "$J"
 printf '[profile.default]\n' > "$J/foundry.toml"
@@ -102,63 +157,92 @@ T=1700000000
 stamp() { T=$((T + 10)); touch -d "@$T" "$@"; }
 stamp "$J/src/A.sol" "$J/src/B.sol" "$J/src/C.sol" "$J/test/D.t.sol" "$J/script/E.s.sol" "$J/foundry.toml"
 before_build=$T
+no_change_named() { ! grep -q '^evidence: .* changed after the last build' "$1" && ! grep -q '^evidence: .* is not in the cache' "$1"; }
 
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o6" 2>&1; check "nothing built yet" 2 $? "$TMP/o6"
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o6" 2>&1; check "nothing built yet (no out/): nothing decided, and no build run" 2 $? "$TMP/o6"
 
 mkdir -p "$J/out/C.sol"
 printf '{}\n' > "$J/out/C.sol/C.json"; stamp "$J/out/C.sol/C.json"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o7" 2>&1; check "artifacts but no forge cache: nothing to compare against" 2 $? "$TMP/o7"
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o7" 2>&1; check "artifacts but no forge cache: nothing to compare against" 2 $? "$TMP/o7"
 
 mkdir -p "$J/cache"; cp "$FIX/fresh-project.cache.json" "$J/cache/solidity-files-cache.json"; stamp "$J/cache/solidity-files-cache.json"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o157" 2>&1; check "every source's content is the one forge compiled (five size classes of its hash)" 0 $? "$TMP/o157"
+FAKE_BUILD=skipped fresh "$J" > "$TMP/o157" 2>&1; check "forge compiled nothing: FRESH" 0 $? "$TMP/o157"
+if no_change_named "$TMP/o157" && grep -q '^evidence: 5 sources' "$TMP/o157"; then echo "  ok    and the evidence finds every source's content the one forge compiled (five size classes of its hash)"; else
+  echo "  FAIL  the evidence names a source whose content is the one forge compiled (the hasher disagrees with forge?)"; fails=$((fails + 1)); fi
+
+# forge's answer decides, whatever the evidence: every source is what forge compiled and forge compiled anyway (the
+# settings changed, an artifact went missing...) - STALE, and it says the sources are not what changed
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o201" 2>&1; check "every source's content unchanged, and forge compiled: STALE (forge decides, not the hash)" 1 $? "$TMP/o201"
+if grep -q '^STALE BUILD: forge compiled' "$TMP/o201" && grep -q 'not a source' "$TMP/o201"; then echo "  ok    and it says the sources are not what changed"; else
+  echo "  FAIL  a STALE with unchanged sources does not say what else changes a build"; fails=$((fails + 1)); fi
+FAKE_BUILD=failed fresh "$J" > "$TMP/o202" 2>&1; check "a build that fails decides nothing" 2 $? "$TMP/o202"
+if grep -q 'Error (2314)' "$TMP/o202"; then echo "  ok    and it prints forge's error"; else
+  echo "  FAIL  a failed build is not shown with its error"; fails=$((fails + 1)); fi
+FAKE_BUILD=odd fresh "$J" > "$TMP/o203" 2>&1; check "an answer from forge this guard does not know decides nothing (never read as FRESH)" 2 $? "$TMP/o203"
+FORGE_FLAGS="--offline" FAKE_BUILD=skipped fresh "$J" > "$TMP/o204" 2>&1; check "FORGE_FLAGS=--offline (the battery's) is not passed twice" 0 $? "$TMP/o204"
+FORGE_FLAGS="--force" FAKE_BUILD=compiled fresh "$J" > "$TMP/o205" 2>&1; check "FORGE_FLAGS with --force (always compiles) is refused: nothing decided" 2 $? "$TMP/o205"
 
 # (b) the case that used to flip: the same bytes copied in again AFTER the build (new mtime, same content)
 cp "$FIX/fresh-project/src/C.sol" "$J/src/C.sol"; cp "$FIX/fresh-project/test/D.t.sol" "$J/test/D.t.sol"; stamp "$J/src/C.sol" "$J/test/D.t.sol"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o158" 2>&1; check "sources copied in after the build, same content (new mtime): FRESH" 0 $? "$TMP/o158"
-if grep -q 'newer than the cache with the same content' "$TMP/o158"; then echo "  ok    and the newer times are printed as evidence, not as a verdict"; else
-  echo "  FAIL  the copied sources' newer times are not reported as evidence"; fails=$((fails + 1)); fi
+FAKE_BUILD=skipped fresh "$J" > "$TMP/o158" 2>&1; check "sources copied in after the build, same content (new mtime): FRESH" 0 $? "$TMP/o158"
+if grep -q 'newer than the cache with the same content' "$TMP/o158" && no_change_named "$TMP/o158"; then echo "  ok    and the newer times are printed as evidence, not as a change"; else
+  echo "  FAIL  the copied sources' newer times are not reported as evidence, or are reported as a change"; fails=$((fails + 1)); fi
 
 # (a) an edit that was not built - dated BEFORE the build, so that only its content can give it away
 printf '// edited, not built\n' >> "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o159" 2>&1; check "a source edited without a build (dated before the build): STALE" 1 $? "$TMP/o159"
-if grep -q '^STALE BUILD: src/B.sol ' "$TMP/o159"; then echo "  ok    and the verdict names the edited source"; else
-  echo "  FAIL  the STALE verdict does not name src/B.sol"; fails=$((fails + 1)); fi
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o159" 2>&1; check "a source edited without a build (dated before the build): STALE" 1 $? "$TMP/o159"
+if grep -q '^evidence: src/B.sol changed after the last build' "$TMP/o159"; then echo "  ok    and the evidence names the edited source"; else
+  echo "  FAIL  the evidence does not name src/B.sol"; fails=$((fails + 1)); fi
 cp "$FIX/fresh-project/src/B.sol" "$J/src/B.sol"; stamp "$J/src/B.sol"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o160" 2>&1; check "the edit undone (the compiled content again, a new mtime): FRESH without a rebuild" 0 $? "$TMP/o160"
+FAKE_BUILD=skipped fresh "$J" > "$TMP/o160" 2>&1; check "the edit undone (the compiled content again, a new mtime): FRESH" 0 $? "$TMP/o160"
+if no_change_named "$TMP/o160"; then echo "  ok    and the evidence names no source"; else echo "  FAIL  the evidence names a source after the edit was undone"; fails=$((fails + 1)); fi
 
 # (c) a new source, never built - also dated before the build
 printf '// a new file\n' > "$J/src/F.sol"; touch -d "@$before_build" "$J/src/F.sol"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o161" 2>&1; check "a new source that was never built: STALE" 1 $? "$TMP/o161"
-if grep -q '^STALE BUILD: src/F.sol is not in the cache' "$TMP/o161"; then echo "  ok    and the verdict says the new source is not in the cache"; else
-  echo "  FAIL  the STALE verdict does not say src/F.sol is missing from the cache"; fails=$((fails + 1)); fi
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o161" 2>&1; check "a new source that was never built: STALE" 1 $? "$TMP/o161"
+if grep -q '^evidence: src/F.sol is not in the cache' "$TMP/o161"; then echo "  ok    and the evidence says the new source is not in the cache"; else
+  echo "  FAIL  the evidence does not say src/F.sol is missing from the cache"; fails=$((fails + 1)); fi
 rm -f "$J/src/F.sol"
 
-# the config is not in forge's cache, so its content cannot be compared: a NOTE, never a verdict (the header says so)
+# the config is not in forge's cache, so the evidence cannot compare its content - but forge's own build sees it: a changed
+# optimizer recompiles (measured, forge 1.8.1: the stub answers what forge answered), so this is STALE now, not a note
 printf 'optimizer = true\n' >> "$J/foundry.toml"; stamp "$J/foundry.toml"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o162" 2>&1; check "a config newer than the cache is not decided on (forge's cache does not record it)" 0 $? "$TMP/o162"
-if grep -q '^note: foundry.toml is newer than the cache' "$TMP/o162"; then echo "  ok    and it says so, in a note naming foundry.toml"; else
-  echo "  FAIL  no note about the config the guard cannot check"; fails=$((fails + 1)); fi
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o162" 2>&1; check "a config changed after the build, no source changed: STALE (forge sees the settings)" 1 $? "$TMP/o162"
+if grep -q '^evidence: foundry.toml is newer than the cache' "$TMP/o162"; then echo "  ok    and the evidence names foundry.toml as newer than the cache"; else
+  echo "  FAIL  no evidence line about the config"; fails=$((fails + 1)); fi
 printf '[profile.default]\n' > "$J/foundry.toml"; touch -d "@$before_build" "$J/foundry.toml"
 
-# a cache this guard cannot read (another forge's shape), or no interpreter to hash with: nothing decided, never FRESH
+# a cache the evidence cannot read (another forge's shape), or no interpreter to hash with: no evidence, and it says so -
+# forge's answer still decides (these two were "nothing decided" while the hash was the verdict)
 cp "$J/cache/solidity-files-cache.json" "$TMP/cache.keep"; printf '{"_format": "", "files": {"src/A.sol": {"sourceName": "src/A.sol"}}}\n' > "$J/cache/solidity-files-cache.json"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o163" 2>&1; check "a cache with no contentHash (another shape) decides nothing" 2 $? "$TMP/o163"
+FAKE_BUILD=skipped fresh "$J" > "$TMP/o163" 2>&1; check "a cache with no contentHash: no evidence, forge's answer decides" 0 $? "$TMP/o163"
+if grep -q '^evidence: none' "$TMP/o163"; then echo "  ok    and it says there is no evidence"; else echo "  FAIL  it does not say the evidence is missing"; fails=$((fails + 1)); fi
 cp "$TMP/cache.keep" "$J/cache/solidity-files-cache.json"
-HASH_PYTHON="$TMP/no-such-python" "$HERE/assert-fresh-build.sh" "$J" > "$TMP/o164" 2>&1; check "no interpreter to hash with decides nothing" 2 $? "$TMP/o164"
+HASH_PYTHON="$TMP/no-such-python" FAKE_BUILD=skipped fresh "$J" > "$TMP/o164" 2>&1; check "no interpreter to hash with: no evidence, forge's answer decides" 0 $? "$TMP/o164"
+if grep -q '^evidence: none' "$TMP/o164"; then echo "  ok    and it says there is no evidence"; else echo "  FAIL  it does not say the evidence is missing"; fails=$((fails + 1)); fi
+no_forge_path=""
+while IFS= read -r -d ':' d; do [ -x "$d/forge" ] || no_forge_path="$no_forge_path$d:"; done <<< "$PATH:"
+PATH="${no_forge_path%:}" "$HERE/assert-fresh-build.sh" "$J" > "$TMP/o206" 2>&1; check "no forge on the PATH decides nothing" 2 $? "$TMP/o206"
 
 # line ends: forge 1.8.1 hashes the text with every CR LF turned into LF, in one pass, and nothing else - a lone CR, a CR CR LF,
 # a missing last newline stay as they are (measured on eight fixtures against its own cache, 2026-09-23). A checkout with
-# CRLF is therefore the text forge compiled, and the guard used to call it STALE on a fresh build. The two cases after it
-# pin the rule from the other side: a guard that dropped EVERY CR, or turned a lone CR into LF, would call them FRESH.
+# CRLF is therefore the text forge compiled, and the evidence used to name it as changed on a fresh build. The two cases
+# after it pin the rule from the other side: a hasher that dropped EVERY CR, or turned a lone CR into LF, would not name them.
 for f in src/A.sol src/B.sol src/C.sol test/D.t.sol script/E.s.sol; do
   sed 's/$/\r/' "$FIX/fresh-project/$f" > "$J/$f"; touch -d "@$before_build" "$J/$f"
 done
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o171" 2>&1; check "the five sources with CRLF line ends, same text as forge compiled: FRESH" 0 $? "$TMP/o171"
+FAKE_BUILD=skipped fresh "$J" > "$TMP/o171" 2>&1; check "the five sources with CRLF line ends (forge compiles nothing)" 0 $? "$TMP/o171"
+if no_change_named "$TMP/o171"; then echo "  ok    and the evidence names no source: CRLF is the text forge compiled"; else
+  echo "  FAIL  the evidence names a CRLF source as changed"; fails=$((fails + 1)); fi
 for f in src/A.sol src/B.sol src/C.sol test/D.t.sol script/E.s.sol; do cp "$FIX/fresh-project/$f" "$J/$f"; touch -d "@$before_build" "$J/$f"; done
 awk 'NR == 1 { printf "%s\r\r\n", $0; next } { print }' "$FIX/fresh-project/src/B.sol" > "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o172" 2>&1; check "a line ending CR CR LF is not the compiled text (forge folds CR LF once): STALE" 1 $? "$TMP/o172"
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o172" 2>&1; check "a line ending CR CR LF (forge compiles)" 1 $? "$TMP/o172"
+if grep -q '^evidence: src/B.sol changed after the last build' "$TMP/o172"; then echo "  ok    and the evidence names it: forge folds CR LF once"; else
+  echo "  FAIL  the evidence does not name a CR CR LF source"; fails=$((fails + 1)); fi
 awk 'NR == 1 { printf "%s\r", $0; next } { print }' "$FIX/fresh-project/src/B.sol" > "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
-"$HERE/assert-fresh-build.sh" "$J" > "$TMP/o173" 2>&1; check "a lone CR where an LF was is not the compiled text (forge keeps a lone CR): STALE" 1 $? "$TMP/o173"
+FAKE_BUILD=compiled fresh "$J" > "$TMP/o173" 2>&1; check "a lone CR where an LF was (forge compiles)" 1 $? "$TMP/o173"
+if grep -q '^evidence: src/B.sol changed after the last build' "$TMP/o173"; then echo "  ok    and the evidence names it: forge keeps a lone CR"; else
+  echo "  FAIL  the evidence does not name a lone-CR source"; fails=$((fails + 1)); fi
 cp "$FIX/fresh-project/src/B.sol" "$J/src/B.sol"; touch -d "@$before_build" "$J/src/B.sol"
 
 # ================================================================= fetch-bytecode.sh (the refusals; no network is used)
@@ -339,6 +423,9 @@ expect_out "first error, real (v4 module copied without its parent): the unresol
 expect_out "first error, when the log ENDS in warnings" 'Error (6275): Source "../src/InvariantBase.sol" not found: F' 0 \
   first_err_is "$FIX/build-nm-error-then-warnings.txt"
 expect_out "first error, in a log with none: refused" "" 1 first_error_line "$FIX/summary-real-one-suite.txt"
+expect_out "build verdict, real: nothing compiled" "skipped" 0 parse_build_verdict "$FIX/build-real-noop.txt"
+expect_out "build verdict, real: compiled (the lint notes after it are not read)" "compiled" 0 parse_build_verdict "$FIX/build-real-compiled.txt"
+expect_out "build verdict, a log with neither line: refused (never read as nothing compiled)" "" 1 parse_build_verdict "$FIX/build-nm-neither.txt"
 
 # ---- the scripts that read those shapes, fed them through a forge SHIM (no compiler runs): the parser is only half of
 # the guard, the other half is the script acting on its refusal
@@ -347,8 +434,9 @@ FS="$TMP/fshim"; FP="$TMP/fproj"; mkdir -p "$FS" "$FP/src" "$FP/out/A.sol" "$FP/
 cp -R "$FIX/fresh-project/." "$FP/"; printf '[profile.default]\n' > "$FP/foundry.toml"
 printf '{}\n' > "$FP/out/A.sol/A.json"; cp "$FIX/fresh-project.cache.json" "$FP/cache/solidity-files-cache.json"
 touch -d "@1700000000" "$FP/src/A.sol" "$FP/foundry.toml"; touch -d "@1700000100" "$FP/out/A.sol/A.json" "$FP/cache/solidity-files-cache.json"
-# the shim answers `forge build --sizes` with $SHIM_SIZES and `forge test` with $SHIM_TEST, and any other build with success
-printf '#!/usr/bin/env bash\ncase " $* " in\n  *" --sizes "*) cat "$SHIM_SIZES" ;;\n  " test "*) cat "$SHIM_TEST" ;;\n  *) echo "Compiler run successful!" ;;\nesac\nexit 0\n' > "$FS/forge"; chmod +x "$FS/forge"
+# the shim answers `forge build --sizes` with $SHIM_SIZES and `forge test` with $SHIM_TEST, and any other build with forge's
+# "nothing to compile" (the freshness step builds too, and reads that answer as FRESH)
+printf '#!/usr/bin/env bash\ncase " $* " in\n  *" --sizes "*) cat "$SHIM_SIZES" ;;\n  " test "*) cat "$SHIM_TEST" ;;\n  *) echo "No files changed, compilation skipped" ;;\nesac\nexit 0\n' > "$FS/forge"; chmod +x "$FS/forge"
 export SHIM_SIZES="$FIX/sizes-real.txt" SHIM_TEST="$FIX/summary-real-one-suite.txt"
 PATH="$FS:$PATH" OUT_DIR="$TMP/fb" "$HERE/battery.sh" "$FP" > "$TMP/o100" 2>&1; check "battery through the shim on a real green summary (the control)" 0 $? "$TMP/o100"
 SHIM_TEST="$FIX/summary-nm-console-only.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fb" "$HERE/battery.sh" "$FP" > "$TMP/o101" 2>&1
@@ -714,15 +802,39 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
     echo "  FAIL  the refusal does not name the resolved path"; fails=$((fails + 1)); fi
 
   "$HERE/battery.sh" "$M" > "$TMP/o26" 2>&1; check "battery on a small green project" 0 $? "$TMP/o26"
-  # the stranger's case, on a cache forge itself just wrote: the sources copied in again after the build (new mtime, same
-  # bytes) are FRESH; an edit is STALE with no build in between; the edit undone is FRESH again, still with no build
+  # the guard against the REAL forge, on the project the battery just built. The stranger's case: the sources copied in
+  # again after the build (new mtime, same bytes) are FRESH. An edit is STALE - and the guard's own build has now compiled
+  # it, so the edit UNDONE is a change too: STALE again (it was FRESH while the hash decided and nothing was rebuilt)
   CB="$TMP/copyback"; mkdir -p "$CB"
   cp -R "$M/src" "$M/test" "$CB/" && rm -rf "$M/src" "$M/test" && cp -R "$CB/src" "$CB/test" "$M/" && touch "$M/src/A.sol" "$M/test/A.t.sol"
-  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o165" 2>&1; check "freshness after the sources were copied in again (forge's own cache): FRESH" 0 $? "$TMP/o165"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o165" 2>&1; check "freshness after the sources were copied in again (real forge): FRESH" 0 $? "$TMP/o165"
   cp "$M/src/A.sol" "$TMP/A.sol.keep"; printf '// edited after the build\n' >> "$M/src/A.sol"
-  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o166" 2>&1; check "freshness after an edit with no build (forge's own cache): STALE" 1 $? "$TMP/o166"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o166" 2>&1; check "freshness after an edit with no build (real forge): STALE" 1 $? "$TMP/o166"
+  if grep -q '^evidence: src/A.sol changed after the last build' "$TMP/o166"; then echo "  ok    and the evidence names the edited source"; else
+    echo "  FAIL  the evidence does not name src/A.sol"; fails=$((fails + 1)); fi
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o207" 2>&1; check "the guard rebuilt what it called STALE: the next run is FRESH" 0 $? "$TMP/o207"
   cp "$TMP/A.sol.keep" "$M/src/A.sol"
-  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o167" 2>&1; check "freshness after the edit was undone, no build (forge's own cache): FRESH" 0 $? "$TMP/o167"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o167" 2>&1; check "the edit undone after the guard rebuilt it: a change again, STALE (real forge)" 1 $? "$TMP/o167"
+  # the case the content hash could not see: only the SETTINGS changed, no source touched. forge 1.8.1 recompiles on a new
+  # optimizer or evm_version (measured on a toy: the runtime went from 690 to 388 bytes with the optimizer on)
+  cp "$M/foundry.toml" "$TMP/mini.toml.keep"
+  sed -i 's/^libs = \["lib"\]$/&\noptimizer = true/' "$M/foundry.toml"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o208" 2>&1; check "only the optimizer turned on in foundry.toml, no source changed: STALE (real forge)" 1 $? "$TMP/o208"
+  if grep -q 'not a source' "$TMP/o208"; then echo "  ok    and it says no source changed: the settings, the compiler or an artifact did"; else
+    echo "  FAIL  a settings-only STALE does not say that no source changed"; fails=$((fails + 1)); fi
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o209" 2>&1; check "and rebuilt: the next run is FRESH" 0 $? "$TMP/o209"
+  sed -i 's/^optimizer = true$/&\nevm_version = "shanghai"/' "$M/foundry.toml"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o210" 2>&1; check "only evm_version changed: STALE (real forge)" 1 $? "$TMP/o210"
+  cp "$TMP/mini.toml.keep" "$M/foundry.toml"
+  # a build that fails, and no build at all: nothing decided
+  printf 'contract {\n' >> "$M/src/A.sol"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o211" 2>&1; check "a source that does not compile: nothing decided (real forge)" 2 $? "$TMP/o211"
+  if grep -q 'Error (' "$TMP/o211"; then echo "  ok    and it prints solc's error"; else echo "  FAIL  the failed build's error is not printed"; fails=$((fails + 1)); fi
+  cp "$TMP/A.sol.keep" "$M/src/A.sol"
+  rm -rf "$M/out" "$M/cache"
+  "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o212" 2>&1; check "no build at all (no out/, no cache): nothing decided, nothing built" 2 $? "$TMP/o212"
+  if [ ! -e "$M/out" ]; then echo "  ok    and it did not build"; else echo "  FAIL  the guard built a project that had no build"; fails=$((fails + 1)); fi
+  (cd "$M" && forge build > "$TMP/o212.build" 2>&1)
   # the fresh reader's case: a CRLF checkout, built, checked at once - forge hashed the LF text, the guard must too
   cp "$M/test/A.t.sol" "$TMP/At.sol.keep"; sed -i 's/$/\r/' "$M/src/A.sol" "$M/test/A.t.sol"
   (cd "$M" && forge build > "$TMP/o174.build" 2>&1)
@@ -1131,18 +1243,28 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   MATCH="--match-contract (ToyVaultInvariants|RedOnPurposeInvariants)" MIN_PCT=25 "$HERE/census.sh" "$K" > "$TMP/o87" 2>&1; rc87=$?
   if [ "$rc87" -ne 0 ] && [ "$rc87" -ne 2 ] && grep -q "campaign itself FAILED" "$TMP/o87"; then echo "  ok    a red campaign fails census.sh even when the census table is clean (rc=$rc87)"; else
     echo "  FAIL  census.sh answered $rc87 over a red campaign"; fails=$((fails + 1)); fi
-  # ... and the long fuzz of that red campaign, in a bench: it FAILS, and still prints the census path - the bench's
-  # census/long.tsv, which exists - and that pasted path is what the gate reads
+  # a red campaign has NO census (K12): forge calls afterInvariant on every shrink replay, so the file holds a line per
+  # replay (measured on a stranger's v4 hook: 198 991 lines for 53 runs). Renamed runs.FAILED.tsv, no table printed.
+  if [ ! -e "$K/census/runs.tsv" ] && [ -s "$K/census/runs.FAILED.tsv" ] && ! grep -aq '^== campaign census:' "$TMP/o87" \
+    && grep -aqF "$(cd "$K" && pwd -P)/census/runs.FAILED.tsv" "$TMP/o87"; then
+    echo "  ok    and it prints no census table: the file is renamed runs.FAILED.tsv, and named"; else
+    echo "  FAIL  a red campaign's census: runs.tsv $([ -e "$K/census/runs.tsv" ] && echo KEPT || echo gone), runs.FAILED.tsv $([ -s "$K/census/runs.FAILED.tsv" ] && echo there || echo MISSING), tables $(grep -ac '^== campaign census:' "$TMP/o87")"; fails=$((fails + 1)); fi
+  # ... and the long fuzz of that red campaign, in a bench: it FAILS, prints no census path (a red campaign has no census:
+  # it was printed until K12, and the gate read 198 991 "runs" of a 53-run campaign), renames the bench's census/long.tsv
+  # to long.FAILED.tsv and names it; the gate refuses that file in one line
   BENCH_ROOT="$TMP/fzk" RUNS=65 DEPTH=64 MATCH="--match-contract (ToyVaultInvariants|RedOnPurposeInvariants)" "$HERE/fuzz-long.sh" "$K" > "$TMP/o191" 2>&1; rc191=$?
   FZK="$(find "$TMP/fzk" -maxdepth 1 -name 'fuzz-long-kitcopy-*' -print -quit 2> /dev/null)"
-  p191="$(grep -a '^census: /' "$TMP/o191" | head -1 | sed 's/^census: //')"
+  p191="${FZK:+$(cd "$FZK" && pwd -P)/census/long.FAILED.tsv}"
   if [ "$rc191" -ne 0 ] && [ "$rc191" -ne 2 ] && grep -q "LONG FUZZ FAILED" "$TMP/o191" && [ -n "$FZK" ] \
-    && [ "$(grep -ac '^census: /' "$TMP/o191")" = "1" ] && [ "$p191" = "$(cd "$FZK" && pwd -P)/census/long.tsv" ] && [ -s "$p191" ]; then
-    echo "  ok    a long fuzz that FAILED in a bench prints the census path too: the bench's census/long.tsv (rc=$rc191)"; else
-    echo "  FAIL  the failed long fuzz (rc=$rc191) and its census path: '$p191' (bench ${FZK:-none})"; grep -a -e 'LONG FUZZ' -e '^census' "$TMP/o191" | head -4 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+    && [ "$(grep -ac '^census: ' "$TMP/o191")" = "0" ] && [ ! -e "$FZK/census/long.tsv" ] && [ -s "$p191" ] \
+    && grep -aq "the campaign FAILED, so it has NO census" "$TMP/o191" && grep -aqF "$p191" "$TMP/o191"; then
+    echo "  ok    a long fuzz that FAILED in a bench prints no census path: it renames the census long.FAILED.tsv and names it (rc=$rc191)"; else
+    echo "  FAIL  the failed long fuzz (rc=$rc191) and its census: long.tsv $([ -e "$FZK/census/long.tsv" ] && echo KEPT || echo gone), '$p191' $([ -s "$p191" ] && echo there || echo MISSING)"; grep -a -e 'LONG FUZZ' -e '^census' -e 'NO census' "$TMP/o191" | head -4 | sed "s/^/        | /"; fails=$((fails + 1)); fi
   CORE="deposit" MIN_PCT=1 OUT_DIR="$TMP/g191" "$HERE/census.sh" --aggregate "$p191" > "$TMP/o192" 2>&1
-  check "the gate over the path the failed long fuzz printed, pasted as is" 0 $? "$TMP/o192"
-  gate_ok "the gate over the pasted path" "$TMP/o192" "$TMP/g191/06-census-gate.txt"
+  check "the gate over a FAILED campaign's census refuses it: nothing measured" 2 $? "$TMP/o192"
+  if [ "$(wc -l < "$TMP/o192" | tr -d ' ')" = "1" ] && grep -aq '^census gate: FAILED - .*FAILED campaign' "$TMP/o192" && [ ! -e "$TMP/g191/06-census-gate.txt" ]; then
+    echo "  ok    in one line, the verdict, and no record"; else
+    echo "  FAIL  the refusal of a FAILED census: $(wc -l < "$TMP/o192" | tr -d ' ') line(s), record $([ -e "$TMP/g191/06-census-gate.txt" ] && echo WRITTEN || echo absent)"; sed "s/^/        | /" "$TMP/o192" | head -4; fails=$((fails + 1)); fi
   # a handler with NO targetSelector: the fuzzer calls every non-view function it has, HandlerBase's `writeCensus(string)`
   # included, with labels of its own making. The fuzzer's calls arrive as their own transactions (msg.sender == tx.origin)
   # and `writeCensus` ignores those, so the census holds one line per run, all under the suite's own label - it used to
@@ -1179,7 +1301,45 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   cp "$TMP/kit-toml.keep" "$K/foundry.toml"; rm -rf "$persisted"
   MATCH="--match-contract EnvFailInvariants" "$HERE/census.sh" "$K" > "$TMP/o179" 2>&1
   check "the config fixed and the directory deleted as the hint says: the census passes" 0 $? "$TMP/o179"
-  rm -f "$K/test/NoSelector.t.sol" "$K/test/EnvFail.t.sol"
+  # ---- K12: a persisted failure replays FIRST on the next run and writes a census line like a run (measured on a stranger's
+  # v4 hook: 1 011 lines for 1 000 runs, ten persisted failures). forge exposes nothing that tells the replay from a run,
+  # so census.sh says it under the table: `runs: <n> (<dir>/failures holds <k> persisted failures of <suites>: ...)`.
+  mkdir -p "$TMP/pbench/census" "$TMP/pbench/cache/invariant/failures/SomeInvariants/invariants"
+  cp "$C3" "$TMP/pbench/census/long.tsv"
+  printf 'seq\n' > "$TMP/pbench/cache/invariant/failures/SomeInvariants/invariants/invariant_a"
+  printf 'seq\n' > "$TMP/pbench/cache/invariant/failures/SomeInvariants/invariants/invariant_b"
+  CORE="deposit" OUT_DIR="$TMP/g193" "$HERE/census.sh" --aggregate "$TMP/pbench/census/long.tsv" "$TMP/gproj" > "$TMP/o193" 2>&1
+  check "the gate over a census next to two persisted failures" 0 $? "$TMP/o193"
+  l193="runs: 3 (cache/invariant/failures holds 2 persisted failures of SomeInvariants: they replay first and count)"
+  if grep -aqxF "$l193" "$TMP/o193" && grep -aqxF "$l193" "$TMP/g193/06-census-gate.txt" 2> /dev/null \
+    && case "$(gate_last "$TMP/o193")" in "census gate: PASSED - "*) true ;; *) false ;; esac; then
+    echo "  ok    and it says, under the table and in the record, that they replay first and count; the verdict is still last"; else
+    echo "  FAIL  the persisted failures are not named under the census:"; grep -a -e '^runs:' -e '^census gate:' "$TMP/o193" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  if ! grep -aq '^runs: ' "$TMP/o189" "$TMP/o62"; then echo "  ok    and with no persisted failure there is no such line"; else
+    echo "  FAIL  a 'runs:' line with no persisted failure:"; grep -a '^runs: ' "$TMP/o189" "$TMP/o62" | head -2 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # a persisted failure of ANOTHER suite is not replayed by this campaign, and it must not be told it was
+  mkdir -p "$K/cache/invariant/failures/OtherInvariants/invariants"; printf 'seq\n' > "$K/cache/invariant/failures/OtherInvariants/invariants/invariant_x"
+  MATCH="--match-contract NoSelectorInvariants" FOUNDRY_FUZZ_SEED=0x6b37 "$HERE/census.sh" "$K" > "$TMP/o194" 2>&1
+  if grep -aq '^== campaign census: NoSelector' "$TMP/o194" && ! grep -aq '^runs: ' "$TMP/o194"; then
+    echo "  ok    and a suite's persisted failures are not counted against another suite's campaign"; else
+    echo "  FAIL  persisted failures of a suite that did not run:"; grep -a -e '^runs:' -e '^== campaign' "$TMP/o194" | head -3 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$K/cache/invariant/failures/OtherInvariants"
+  CENSUS_TABLE_ONLY=1 "$HERE/census.sh" --aggregate "$p191" > "$TMP/o195" 2>&1
+  check "the table-only mode refuses a FAILED campaign's census too" 2 $? "$TMP/o195"
+  if [ "$(wc -l < "$TMP/o195" | tr -d ' ')" = "1" ] && grep -aq 'FAILED campaign' "$TMP/o195" && ! grep -aq '^== campaign census:' "$TMP/o195"; then echo "  ok    in one line, with no table"; else
+    echo "  FAIL  the table-only refusal printed $(wc -l < "$TMP/o195" | tr -d ' ') line(s)"; fails=$((fails + 1)); fi
+  # end to end: a long campaign red on purpose persists its failure in the bench; the next, green, replays it first
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/InvariantBase.sol";\ncontract FlipHandler is HandlerBase { uint256 public n; constructor() { _addActor(address(0xA1)); } function poke(uint256) external countedSetter("poke") { n++; } }\ncontract FlipInvariants is Test { FlipHandler h; function setUp() public { h = new FlipHandler(); targetContract(address(h)); bytes4[] memory s = new bytes4[](1); s[0] = FlipHandler.poke.selector; targetSelector(FuzzSelector({addr: address(h), selectors: s})); }\nfunction invariant_flip() public view { if (vm.envOr("K12_FLIP_RED", false)) assertEq(h.n(), 0, "red on purpose"); }\nfunction afterInvariant() public { h.writeCensus("Flip"); } }\n' > "$K/test/Flip.t.sol"
+  K12_FLIP_RED=true BENCH_ROOT="$TMP/fzflip" RUNS=65 DEPTH=64 MATCH="--match-contract FlipInvariants" "$HERE/fuzz-long.sh" "$K" > "$TMP/o196" 2>&1; rc196=$?
+  FZF="$(find "$TMP/fzflip" -maxdepth 1 -name 'fuzz-long-kitcopy-*' -print -quit 2> /dev/null)"
+  BENCH_ROOT="$TMP/fzflip" RUNS=65 DEPTH=64 MATCH="--match-contract FlipInvariants" "$HERE/fuzz-long.sh" "$K" > "$TMP/o197" 2>&1
+  check "the same long campaign, green, in the bench where it failed" 0 $? "$TMP/o197"
+  n197="$(awk 'END { print NR }' "$FZF/census/long.tsv" 2> /dev/null)"
+  if [ "$rc196" -ne 0 ] && [ "$rc196" -ne 2 ] && [ -d "$FZF/cache/invariant/failures/FlipInvariants" ] && [ "${n197:-0}" = "67" ] \
+    && grep -aqxF "runs: 67 (cache/invariant/failures holds 1 persisted failures of FlipInvariants: they replay first and count)" "$TMP/o197"; then
+    echo "  ok    the persisted failure replayed first and counted: 67 lines for 65 runs (N + 1 + 1), and the line under the table says so"; else
+    echo "  FAIL  the red run (rc=$rc196), then the green: ${n197:-no} census lines for 65 runs, persisted $([ -d "$FZF/cache/invariant/failures/FlipInvariants" ] && echo there || echo MISSING)"; grep -a -e '^runs:' -e '^== campaign' "$TMP/o197" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -f "$K/test/NoSelector.t.sol" "$K/test/EnvFail.t.sol" "$K/test/Flip.t.sol"
 else
   echo "  SKIPPED - forge, or $KIT/lib, is not available here. mutate.sh, size.sh, battery.sh, fuzz-long.sh and the"
   echo "            black-box mode of bench.sh are NOT proven on this machine."

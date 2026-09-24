@@ -81,8 +81,12 @@ rc_sizes=${PIPESTATUS[0]}
 
 echo "== freshness =="
 if [ -x "$HERE/assert-fresh-build.sh" ]; then
+  # The check asks forge whether anything is left to compile, with the battery's own FORGE_FLAGS and profile. Right after
+  # the build above that is a no-op, so rc 0 means what it says: the artifacts the tests and sizes read were the sources
+  # and settings as they are now. rc 1 means forge still had something to compile - a file changed while the battery ran,
+  # or the steps were built differently - so what was measured above was stale (the check has rebuilt it). rc 2: not decided.
   # OUT_DIR means "reports" here and "artifacts" in the freshness check: do not let ours leak into it
-  env -u OUT_DIR "$HERE/assert-fresh-build.sh" . 2>&1 | tee "$OUT_DIR/04-freshness.txt"
+  env -u OUT_DIR FORGE_FLAGS="$FORGE_FLAGS" "$HERE/assert-fresh-build.sh" . 2>&1 | tee "$OUT_DIR/04-freshness.txt"
   rc_fresh=${PIPESTATUS[0]}
 else
   echo "assert-fresh-build.sh not found next to battery.sh: freshness NOT checked" | tee "$OUT_DIR/04-freshness.txt"
@@ -96,7 +100,7 @@ echo "test      rc=$rc_test   (passed $tests_passed, failed $tests_failed, skipp
 # by NAME, per test directory, so a log shows which parts of the suite ran (e.g. the v4 sandbox's test/sim)
 echo "suites    $(parse_suites_by_dir "$OUT_DIR/02-test.txt")"
 echo "sizes     rc=$rc_sizes"
-echo "freshness rc=$rc_fresh"
+echo "freshness rc=$rc_fresh   (0: forge had nothing left to compile; 1: it had - what was measured was stale, now rebuilt; 2: not decided)"
 echo "logs in   $OUT_DIR"
 
 if [ "$rc_build" -ne 0 ] || [ "$rc_test" -ne 0 ] || [ "$rc_sizes" -ne 0 ] || [ "$rc_fresh" -ne 0 ]; then

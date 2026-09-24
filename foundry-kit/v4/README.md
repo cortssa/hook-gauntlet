@@ -65,9 +65,10 @@ project remaps `gauntlet-kit/` to `../src` and a bench of the subdirectory alone
 (`scripts/fuzz-long.sh foundry-kit/v4` knows this and benches `foundry-kit` by itself). The dependency directories are
 `lib/` at the root and `lib/` beside every nested `foundry.toml`, found and linked one by one - and nothing else called
 `lib`: `scripts/lib/` is source and is copied (an rsync `--exclude=lib` used to drop both it and `v4/lib`, and every
-v4 bench then needed a network install). `SRC_DIRS` on the battery adds the root kit's sources to the freshness check,
-which otherwise only watches this project's own; `src` and `test` now cover the example too, since it lives inside
-them.
+v4 bench then needed a network install). `SRC_DIRS` on the battery adds the root kit's sources to the freshness check's
+EVIDENCE (the list of sources that changed since the last build), which otherwise only hashes this project's own; the
+verdict is forge's own build, which follows the imports into `../src` without being told. `src` and `test` cover the
+example too, since it lives inside them.
 
 A project with **no `lib/` of its own** (forge-std installed somewhere else) gets nothing linked, and `bench.sh` says so
 in one line: `the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>`. `LINK_FROM=<dir>` makes
@@ -164,6 +165,37 @@ what lies outside the project: it let `vendor/kit/InvariantBase.sol` in. **A han
 into `test/Gate.invariants.t.sol`, that file got a row of its own (68.75 % of lines, 3/4 branches); forge leaves out
 only the test contracts themselves. The sandbox in the step 0 layout never enters the default profile's coverage
 (measured: identical before and after).
+
+**A hook compiled next to the PoolManager's IR restriction: add `--ir-minimum`, or the numbers are not about what ran.**
+The layout of QUICKSTART step 7b (and of this module): `compilation_restrictions` puts `PoolManager.sol` under the
+`manager` profile, via IR at 44 444 444 runs. Every file that creates the PoolManager - `V4Harness`, so every test that
+inherits it - is then compiled ONLY under that profile, and the hook they `new` is the hook's `.manager` build. Measured
+(forge 1.8.1, 2026-09-24, on a copy of a stranger's real v4 hook, `ReferralSkimHook`): in `out/`, the tests, the handler
+and `V4Harness` carry `viaIR: true`, the hook has two artefacts (`ReferralSkimHook.json`, 4 779 bytes, no IR;
+`ReferralSkimHook.manager.json`, 4 698 bytes, IR), and the hook a test deploys is 4 698 bytes under `forge test` AND under
+plain `forge coverage`. `forge coverage` turns the optimizer and IR off for the default build only ("optimizer settings
+and `viaIR` have been disabled"), while the restricted build keeps both, and the report maps hits on optimized IR code
+back to source lines. What it said: `src/` 59.18 % of lines, 4/5 branches, 6/14 functions; the lines of `claim` at 357,
+357, **0**, 81, **0**, 73 - the line that zeroes the credit never run, next to the one after it run 81 times, while
+`test_claim_pays_exactly_the_credit_and_zeroes_it` asserts that it did; `skimOf`'s return line 0 of 2 467 calls; 1 of the
+9 entry points that `test_every_undeclared_entry_point_reverts` calls; the empty-`hookData` branch 0, which
+`test_no_referrer_pays_nothing` takes. **Not a coverage of anything.** With `--ir-minimum` there is ONE build (83 files
+compiled once, not 83 + 19; the deployed hook is 7 741 bytes, the build coverage reads), and every line that execution
+ties together agrees: `claim` 366, 366, 77, 77, 77, 77 (366 calls, 289 refused as nothing owed), `skimOf` 2 652 on every
+line, all 9 entry points hit, the empty-`hookData` branch 304 - `src/` 100 % of lines, 5/5 branches, 14/14 functions.
+Removing the restriction under a profile of its own does not work (plain coverage stops at "Stack too deep" in the
+PoolManager with the optimizer off). So, on this layout:
+
+```sh
+forge coverage --ir-minimum --report summary --no-match-coverage '^([^st]|s($|[^r])|sr($|[^c])|src($|[^/])|t($|[^e])|te($|[^s])|tes($|[^t])|test($|[^/]))'
+```
+
+forge warns that `--ir-minimum` "can result in inaccurate source mappings"; on this hook they were checked against
+execution line by line as above and agreed. Check yours the same way before you cite a number: pick a function a named
+test runs whole, and see that every line of it has the same count. A line at 0 inside a function whose test passes is a
+mapping error, not a gap. This module itself needs `--ir-minimum` anyway: plain `forge coverage`, even with
+`--match-path test/HostileHook.t.sol`, compiles the whole module and stops at "Stack too deep" (measured the same day;
+with `--ir-minimum`, `src/HostileHook.sol` 86.67 % of lines, 5/5 branches, from that one test file).
 
 ---
 
@@ -449,7 +481,7 @@ forge 1.8.1, solc 0.8.26, `evm_version = cancun`. Numbers, not adjectives:
 | --- | --- |
 | module's own tests | all passed, 0 failed, **0 skipped**, the same count on both managers, and under `--brutalize`. The count is whatever `scripts/battery.sh` prints today: it was copied here twice and was stale both times |
 | native mutation on the example hook | in `src/examples/MUTANTS.md`, which is the only place that number lives |
-| `forge coverage`, `src/HostileHook.sol` | **72.97 % of lines** (54/74), up from 3.70 % when it had no tests of its own |
+| `forge coverage --ir-minimum --match-path test/HostileHook.t.sol`, `src/HostileHook.sol` | **86.67 % of lines** (2026-09-24, `--ir-minimum` is required next to the PoolManager's IR restriction: the coverage paragraph above; the earlier 72.97 % was measured without it and mapped the wrong build) |
 | invariant campaign | 64 runs × 64 depth, 4 096 calls; the census, not `reverts:` — see the root README |
 | clean build | about 25 s |
 | `PoolManager` from source | **24 050 B**, 526 under the EIP-170 limit |

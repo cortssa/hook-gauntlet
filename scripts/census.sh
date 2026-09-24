@@ -38,6 +38,15 @@
 #          CENSUS_TABLE_ONLY  1: --aggregate prints the table and nothing else - no gate record, no verdict line. For a
 #                       caller that judges nothing (fuzz-long.sh prints the long campaign's table with no CORE, and a
 #                       "PASSED - 0 CORE actions" under it would read as a gate that was never run).
+#          CENSUS_FORGE_LOG  --aggregate: forge's log of the campaign, when there is one (fuzz-long.sh passes it). Only the
+#                       persisted failures of suites named in it are counted in the `runs:` line below.
+# Counts:  a run writes one line, and forge adds lines that are not runs. A GREEN campaign of N runs has N + 1 lines plus one
+#          per persisted failure of a suite that ran (forge replays them first; foundry-kit/README.md, the census): when
+#          <failure_persist_dir>/failures holds any, a line under the table says how many - `runs: <n> (cache/invariant/failures
+#          holds <k> persisted failures of <suites>: they replay first and count)`. A FAILED campaign has NO census: forge
+#          writes a line per shrink replay (199 510 lines for 272 runs, measured). Run mode renames its file runs.FAILED.tsv
+#          and prints no table; fuzz-long.sh renames long.tsv long.FAILED.tsv; --aggregate refuses any *.FAILED.tsv in one
+#          line, exit 2.
 # Exit:    0 printed (and every CORE / REACH name met the floor); 1 a name is below the floor or in no suite at all, or a
 #          run met an unexplained revert; 2 NOTHING MEASURED - no census line was written (the suite does not call
 #          writeCensus from afterInvariant, or foundry.toml lacks fs_permissions for ./census), or MIN_PCT is not a
@@ -142,11 +151,55 @@ aggregate() { # aggregate <file>
     }' "$1"
 }
 
+# A persisted failure (forge's <failure_persist_dir>/failures/<suite>/) is replayed FIRST on every later run of its suite,
+# and afterInvariant writes a line for the replay like for a run: measured (forge 1.8.1, a stranger's v4 hook), 1 011 lines
+# for 1 000 runs with ten persisted failures - N + 1 + one per persisted failure. forge's census line carries nothing that
+# tells the replay from a run, so the count is SAID, under the table, never corrected.
+# persisted_note <root> <census file> [<forge log>]: the root is where forge ran; with a log, only suites that ran count
+persisted_note() {
+  local root="$1" tsv="$2" log="${3:-}" pdir abs d s c k=0 names="" n
+  pdir="${FOUNDRY_INVARIANT_FAILURE_PERSIST_DIR:-}"
+  if [ -z "$pdir" ] && [ -f "$root/foundry.toml" ] && command -v forge > /dev/null 2>&1; then
+    pdir="$(cd "$root" && forge config 2> /dev/null | awk '/^\[invariant\]/ {f = 1; next} /^\[/ {f = 0} f && $1 == "failure_persist_dir" {v = $3} END {gsub(/"/, "", v); print v}')"
+  fi
+  pdir="${pdir:-cache/invariant}"; pdir="${pdir#./}"
+  case "$pdir" in /*) abs="$pdir" ;; *) abs="$root/$pdir" ;; esac
+  [ -d "$abs/failures" ] || return 0
+  for d in "$abs/failures"/*/; do
+    [ -d "$d" ] || continue
+    s="$(basename "$d")"
+    # forge prints "Ran <n> tests for <path>:<Suite>" for every suite it ran
+    if [ -n "$log" ] && ! grep -aqE "^Ran [0-9]+ tests? for .*:$s\$" "$log"; then continue; fi
+    c="$(find "$d" -type f | wc -l | tr -d ' ')"
+    [ "$c" -gt 0 ] || continue
+    k=$((k + c)); names="${names:+$names, }$s"
+  done
+  [ "$k" -gt 0 ] || return 0
+  n="$(awk 'END { print NR }' "$tsv")"
+  echo "runs: $n ($pdir/failures holds $k persisted failures of $names: they replay first and count)"
+}
+
+# where forge ran, for a census file given to --aggregate: the parent of its census/ directory (census/long.tsv, where
+# fuzz-long.sh writes it), or else the project given, or else here
+census_root() { # census_root <file> [project-dir]
+  local dir
+  dir="$(cd "$(dirname "$1")" 2> /dev/null && pwd -P)" || { (cd "${2:-.}" && pwd -P); return; }
+  if [ "$(basename "$dir")" = "census" ]; then dirname "$dir"; else (cd "${2:-.}" 2> /dev/null && pwd -P); fi
+}
+
+# A FAILED campaign has no census. forge calls afterInvariant() on every replay it makes while it SHRINKS a counterexample,
+# and each writes a line like a run: measured (forge 1.8.1, a stranger's v4 hook), 199 510 lines and 59 778 "unexplained"
+# for 272 runs; reproduced, 198 991 lines for 53. fuzz-long.sh and the run mode below rename such a file *.FAILED.tsv.
+failed_census() { case "$(basename "$1")" in *.FAILED.tsv | *.FAILED) return 0 ;; *) return 1 ;; esac; }
+FAILED_WHY="is the census of a FAILED campaign: forge wrote a line per shrink replay, not per run. NOTHING MEASURED - fix the failure, and gate a green campaign's census"
+
 if [ "${1:-}" = "--aggregate" ] && [ "${CENSUS_TABLE_ONLY:-0}" = "1" ]; then
   [ -n "${2:-}" ] || { echo "usage: census.sh --aggregate <file> [project-dir]"; exit 2; }
   [ -z "$floor_error" ] || { echo "census: $floor_error NOTHING MEASURED."; exit 2; }
+  if failed_census "$2"; then echo "census: $2 $FAILED_WHY."; exit 2; fi
   aggregate "$2"; rc=$?
   [ "$rc" -eq 2 ] && echo "census: $2 is empty or missing. NOTHING MEASURED."
+  [ "$rc" -ne 2 ] && persisted_note "$(census_root "$2" "${3:-}")" "$2" "${CENSUS_FORGE_LOG:-}"
   exit "$rc"
 fi
 
@@ -155,6 +208,7 @@ fi
 # last. The exit code is what it always was.
 if [ "${1:-}" = "--aggregate" ]; then
   [ -n "${2:-}" ] || { echo "usage: census.sh --aggregate <file> [project-dir]"; echo "census gate: FAILED - no census file given"; exit 2; }
+  if failed_census "$2"; then echo "census gate: FAILED - $2 $FAILED_WHY"; exit 2; fi
   TSV="$2"; GPROJECT="${3:-.}"
   proj_abs="$(cd "$GPROJECT" 2> /dev/null && pwd -P)" || { echo "census gate: FAILED - cannot enter the project $GPROJECT"; exit 2; }
   gate_out="${OUT_DIR:-.gauntlet/reports}"; case "$gate_out" in /*) ;; *) gate_out="$proj_abs/$gate_out" ;; esac
@@ -170,6 +224,7 @@ if [ "${1:-}" = "--aggregate" ]; then
   else
     GATE_WHY="$(mktemp)" || { echo "census gate: FAILED - mktemp"; exit 2; }
     GATE_WHY="$GATE_WHY" aggregate "$TSV" | tee -a "$record"; rc=${PIPESTATUS[0]}
+    [ "$rc" -ne 2 ] && persisted_note "$(census_root "$TSV" "${3:-}")" "$TSV" "${CENSUS_FORGE_LOG:-}" | tee -a "$record"
     if [ "$rc" -eq 0 ]; then
       n_core="$(printf '%s\n' "${CORE:-}" | wc -w | tr -d ' ')"
       n_reach="$(printf '%s\n' "${REACH:-}" | tr ';' '\n' | grep -c .)"
@@ -223,10 +278,21 @@ forge test $FORGE_FLAGS $MATCH > "$OUT_DIR/06-census-run.txt" 2>&1
 rc_forge=$?
 if [ "$rc_forge" -ne 0 ]; then
   echo "census: the campaign itself FAILED (rc=$rc_forge). The end of its log:"; tail -n 12 "$OUT_DIR/06-census-run.txt" | sed "s/^/    | /"
+  # a red campaign has no census: its file holds a line per shrink replay (see failed_census). Renamed, never tabled.
+  if [ -s "$GAUNTLET_CENSUS" ]; then
+    failed_file="${GAUNTLET_CENSUS%.tsv}.FAILED.tsv"
+    mv -f "$GAUNTLET_CENSUS" "$failed_file"
+    echo "census: the campaign FAILED, so it has NO census: forge calls afterInvariant() on every replay it makes while it"
+    echo "        shrinks a counterexample, and each wrote a line ($(awk 'END { print NR }' "$failed_file") lines, not one per run). Kept for"
+    echo "        reading as $(pwd -P)/${failed_file#./}; the gate refuses it. Fix the failure first."
+    echo "census: the campaign FAILED - no census (renamed $failed_file)" > "$OUT_DIR/06-census.txt"
+    exit "$rc_forge"
+  fi
 fi
 
 aggregate "$GAUNTLET_CENSUS" | tee "$OUT_DIR/06-census.txt"
 rc=${PIPESTATUS[0]}
+[ "$rc" -ne 2 ] && persisted_note "$(pwd -P)" "$GAUNTLET_CENSUS" "$OUT_DIR/06-census-run.txt" | tee -a "$OUT_DIR/06-census.txt"
 if [ "$rc" -eq 2 ]; then
   echo "census: no census line was written. Call handler.writeCensus(\"<name>\") from afterInvariant() and give foundry.toml"
   echo "        fs_permissions = [{ access = \"read-write\", path = \"./census\" }]. NOTHING MEASURED."

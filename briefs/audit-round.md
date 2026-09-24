@@ -8,7 +8,7 @@ Give it to an agent with a **fresh context**. Do not paste the previous report i
 # AUDIT {{ROUND}} - attack `{{TARGET}}` with Foundry (adversarial, independent) - MODE: {{DISCOVERY_OR_REGRESSION}}
 
 *Two kinds of round, and the orchestrator picks ONE per brief. **DISCOVERY**: the auditor gets the spec, the code, the
-attack prompts and the spec's assumptions, and NO earlier report, no list of accepted findings, no account of what
+attack prompts and the spec's assumptions, and NO earlier report, no list of accepted findings (the phase-3 `pending` findings ARE named: they are open, not accepted), no account of what
 changed - delete those sections. A reviewer who reads what the last one thought inherits the last one's blind spots;
 rediscoveries are the price, and the orchestrator de-duplicates afterwards. Round 1 is a discovery round by nature,
 and **the round that closes the loop must be one**. Point at least one discovery round at the spec's "does not apply"

@@ -54,9 +54,11 @@ step is written.
 - **The model provider's safety classifier may stop an agent at a step whose declared purpose is to produce an
   offensive artefact.** Seen three times, always at the same kind of step: writing a target with planted defects and
   its proof-of-concept exploits (twice, with an instruction not to retry even reworded), and writing a new
-  "adversarial" agent for a specific hook (once). It was **not** seen on anything else the route asks for - tests that
-  falsify a spec's promises, verifier rounds, black-box rounds, a phishing test of an app, or measurement with the
-  sandbox's shipped population - across two days of such work. This is an observation, not knowledge of the
+  "adversarial" agent for a specific hook (once). It was seen ONCE more on a plain discovery round (`briefs/audit-round.md`, a real v4 hook that
+  takes fees), after the baseline and before any route: the agent reported a withheld response and stopped. It was
+  **not** seen on verifier rounds, black-box rounds, a phishing test of an app, or measurement with the sandbox's
+  shipped population, across eleven full walks of the route. So a round can die: `NEXT.md` row 11b (retry once with a
+  fresh agent; then record it as stopped). This is an observation, not knowledge of the
   classifier's rules, which are the provider's.
 
   So the route is written so that **no required step asks an agent to author an offensive artefact**:

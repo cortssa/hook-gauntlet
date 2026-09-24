@@ -195,6 +195,25 @@ census counts N + 1 lines for N runs, and the last run about twice. The bias is 
 script that dropped "the last line" would drop a real run the day forge stops replaying); read every "of 65" in this
 file and in `v4/README.md` as "of the 65 lines of a 64-run campaign".
 
+**Two more kinds of line that are not runs.** Both measured with forge 1.8.1 on a stranger's real v4 hook (a long
+campaign, 1 000 runs x 128), and reproduced on a copy of it:
+
+- **A persisted failure replays first, and writes a line.** When a campaign fails, forge keeps the sequence under
+  `<failure_persist_dir>/failures/<suite>/` (default `cache/invariant`) and replays it FIRST on every later run of that
+  suite, saying nothing; `afterInvariant()` runs after the replay like after a run. The green campaign after a red one
+  had **1 011 lines for 1 000 runs**: ten persisted failures, one per invariant. Nothing in the line tells a replay from
+  a run (forge exposes nothing; the replays are only shorter - 5 or 6 calls against 128), so nothing is dropped: a green
+  campaign of N runs has **N + 1 + one line per persisted failure** of the suites that ran, and when there are any
+  `census.sh` says so under the table: `runs: 1011 (cache/invariant/failures holds 10 persisted failures of
+  ReferralSkimInvariants: they replay first and count)`. Deleting that directory removes the replays, and with them
+  forge's record of the counterexample: do it only once the counterexample is written down and kept as a test.
+- **A FAILED campaign has no census.** forge calls `afterInvariant()` on every replay it makes while it SHRINKS a
+  counterexample, up to `shrink_run_limit` per broken invariant. The stranger's red campaign left 199 510 lines, 59 778 of
+  them "unexplained", for 272 real runs; the copy, 198 991 for 53 runs and 200 068 for 240. So a red run's file is
+  renamed: `fuzz-long.sh` makes `census/long.tsv` into `census/long.FAILED.tsv`, `census.sh` in run mode makes
+  `census/runs.tsv` into `census/runs.FAILED.tsv`, both say why and print no table, and `census.sh --aggregate` refuses a
+  `*.FAILED.tsv` in one line (exit 2). Fix the failure, run again, and gate THAT census.
+
 `CORE` names the actions that must have SUCCEEDED, `REACH` (semicolon separated - the names have spaces) the
 boundaries that must have been REACHED, each in at least `MIN_PCT` per cent of the runs, judged per suite. `REACH`
 exists because of a mutant: a hook that answered with the wrong selector from its fifth swap in a block kept every
