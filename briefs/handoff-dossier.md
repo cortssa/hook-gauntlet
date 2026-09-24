@@ -99,9 +99,11 @@ promotion) reads `owner decision pending: <what>` - never `triage pending`, whic
 item is also a named entry in `STATE.md` `waiting_on_owner:`. None of these is a skip. A row that does not apply to this
 hook (the real-manager battery for a hook on no manager) reads `n/a: <what replaced it, section 8>` and does not count as
 not done; neither does an optional judge the owner did not ask for (the sandbox: `not run: optional, not requested`).
-What DOES count as not done: a judge light mode skips by design (promotion, rehearsal, the black-box until it runs) -
-that is what the count is for - and a tool the owner did not allow (Slither never installed: `not done: static triage by
-forge lint only`). It is a status report for the owner, not a handoff; nothing below it moves to promotion.
+What DOES count as not done: `N` counts the rows of section 6 only (the judges of `doctrine/JUDGES.md`): a judge not
+run because light mode skips it (the fork battery, symbolic, the second engine, the reference model) and a tool the owner
+did not allow (Slither never installed: `not done: static triage by forge lint only`). Promotion and rehearsal are
+phases, not judges: light mode's skipping them goes in the status line's `skipped` count and in section 8, not in `N`.
+Phase-3 `pending` findings are listed in section 4 as open. It is a status report for the owner, not a handoff; nothing below it moves to promotion.
 An auditor judges new findings against this list; leaving something out of it is how a known issue becomes a "critical".
 
 ## 5. Candidates raised and refuted (must)

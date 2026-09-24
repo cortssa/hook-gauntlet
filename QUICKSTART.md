@@ -15,8 +15,9 @@ guess. This page exists so that the next reader does not.
 - Non-interactive shells (agents, CI, `wsl` from PowerShell) do not read your profile: put `~/.foundry/bin` on `PATH`
   yourself, or `export PATH="$HOME/.foundry/bin:$PATH"` at the top of your script.
 - Slither only for the static-analysis judge in full mode - an install your agent must ask you for.
-- Network only for two things: fetching Uniswap's sources at pinned commits (step 3) and the real pool manager's
-  bytecode (step 8). Everything else runs offline.
+- Network only for three things: cloning forge-std (step 1; offline: copy any forge-std v1.16.2 checkout to
+  `foundry-kit/lib/forge-std`, the battery checks nothing about where it came from), fetching Uniswap's sources at pinned
+  commits (step 3, offline route there) and the real pool manager's bytecode (step 8). Everything else runs offline.
 
 ## 1. Clone, one dependency, and prove the scripts before trusting them
 
@@ -84,8 +85,8 @@ mkdir -p .gauntlet/briefs .gauntlet/reports
 cp <kit>/state/STATE.md <kit>/state/DECISIONS.md <kit>/state/LOG.md .gauntlet/   # <kit> = where step 1 cloned it
 ```
 
-Then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines but keep, in `STATE.md`, the section headers (retitled
-to your hook) and the flag block at the top, and in `DECISIONS.md` and `LOG.md` the rules paragraph at the top (their only
+Then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines but keep, in `STATE.md`, the section headers and the flag block at the top (the title is the one line that
+names the hook: retitle it), and in `DECISIONS.md` and `LOG.md` the rules paragraph at the top (their only
 headers are the fictional entries: delete those whole), set to the starting values `doctrine/NEXT.md` gives. `.gauntlet/` is the default
 location; the project root works too - write which in `STATE.md`, it is a decision. Everything the route produces
 for your hook lives beside them: `.gauntlet/SPEC.md`, the filled briefs in `.gauntlet/briefs/`, the round reports in
@@ -112,7 +113,8 @@ Done: every line of the spec could fail. A line that cannot fail is not a promis
 ## 7b. The harness the judges need (phases 2 and 3 - the largest job on this page)
 
 Nothing in step 8 measures anything until your project has: unit tests; a handler on the kit's `HandlerBase` with one
-action per capability, the `HostileERC20` switches wired in as actions, and `targetSelector` set; the invariants from
+action per capability, the `HostileERC20` switches wired in as actions (they do not cover everything: `foundry-kit/README.md`
+"Not covered yet" - a balance that changes with no transfer, a rebase, needs a token of your own), and `targetSelector` set; the invariants from
 your spec's section 3 on `InvariantBase`; a smoke test that asserts every action succeeded a few times; `fail_on_revert =
 true` and the census wiring (`writeCensus` in `afterInvariant`, `fs_permissions` for `./census`). How: `doctrine/INVARIANTS.md`
 and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` are the worked examples. A project with no
@@ -131,10 +133,11 @@ Deterministic tools on your machine, no model. Run them on your project director
 | build, lints, size | `forge build` in `<proj>`; `scripts/size.sh <proj>` | clean build; runtime AND initcode margins under your chain's limit |
 | tests, sizes, freshness | `scripts/battery.sh <proj>` | `BATTERY PASSED` (forge's `passed N` counts test functions and campaigns, not the invariants inside one contract: read the campaign lines) |
 | static triage | `forge lint src/` (Slither only if the owner allowed the install; write `static triage: forge lint only, Slither not installed` in `STATE.md` `notes:` otherwise) | every warning triaged in `.gauntlet/STATIC-TRIAGE.md`: fixed, or refused with the reason (`doctrine/JUDGES.md` row 1) |
-| branch coverage | `forge coverage --report summary --no-match-coverage '<the regex in doctrine/JUDGES.md row 4>'` (`--ir-minimum` if it will not compile) | branch numbers for `src/` in the dossier, and the uncovered branches named |
+| branch coverage | `forge coverage --report summary --no-match-coverage '<the regex in doctrine/JUDGES.md row 4>'` (on forge's default budget this reruns your 128 000-call campaign: about two minutes) (`--ir-minimum` if it will not compile) | branch numbers for `src/` in the dossier, and the uncovered branches named |
+| dirty memory, junk bits | `forge test --brutalize` in `<proj>` | the same suite green (`doctrine/JUDGES.md` row 6) |
 | long fuzz | `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
 | campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
-| mutation | `scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (dependencies outside the project: `COPY_ROOT=<their common parent>`; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
+| mutation | `TEST_FLAGS="--match-path 'test/unit/*'" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies outside the project: `COPY_ROOT=<their common parent>`; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
 | simulation sandbox (optional) | step 4, on your binding | `doctrine/SIMULATE.md` §5 says what goes in the dossier |
 
@@ -153,7 +156,7 @@ cp <kit>/briefs/audit-round.md .gauntlet/briefs/r01.md   # fill the placeholders
 ```
 
 A **fresh** agent - a new session, no memory of writing the hook - runs the brief inside the bench and writes
-`.gauntlet/reports/r01.md`. Then you: read the WHOLE report; reproduce every finding (a test counts once seen RED);
+`.gauntlet/reports/r01.md`. Then you: read the WHOLE report; reproduce every HIGH and MEDIUM by your own means, on your own bench, and rerun the auditor's test for each low (`doctrine/VERIFY.md` 6; a test counts once seen RED);
 decide each one - fix at the cause / refuse in writing / accept with a number - in `DECISIONS.md`; add the regression
 test and the fuzz action that would have caught it; run the judges again; close the round with one `ROUND` line at the
 top of the `LOG.md` entry (`state/README.md`). Then back to `doctrine/NEXT.md`.
