@@ -177,7 +177,8 @@ adapters/        claude-code/ (the supported adapter, the path this was run on);
 Foundry, `bash`, `git`, and Python 3 if you can (standard library only: the freshness guard uses it for the evidence
 it prints - which source changed since the last build; without it that evidence is missing, the verdict is forge's either
 way), and an agent that can read files and run a terminal; Slither (Python) for the static-analysis
-judge, which full mode requires and which is an install your agent must ask you for. `forge install foundry-rs/forge-std`
+judge, which full mode requires and which is an install your agent must ask you for; `reportlab` (Python), optional, for the
+PDF copy of the dossier only (`scripts/dossier-pdf.py`; without it the dossier is handed over as Markdown alone). `forge install foundry-rs/forge-std`
 in `foundry-kit/` before the self-test (it says INCOMPLETE without it). The v4 module needs Uniswap's
 sources: `scripts/install-v4.sh` fetches them at pinned commits into a git-ignored `lib/` (or, offline, copies local
 clones and checks the same pins: `V4_LOCAL_SRC`, `foundry-kit/v4/README.md`). They are not in this

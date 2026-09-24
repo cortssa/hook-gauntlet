@@ -724,6 +724,91 @@ if grep -q "line $(grep -n '^ROUND r09' "$RL" | cut -d: -f1) is not a ROUND line
 if [ "$(wc -l < "$TMP/o148" | tr -d ' ')" = "1" ] && [ "$(wc -l < "$TMP/o149" | tr -d ' ')" = "1" ]; then echo "  ok    one JSON line from each"; else
   echo "  FAIL  the example files did not give one JSON line each"; fails=$((fails + 1)); fi
 
+# ================================================================= dossier-pdf.py (the dossier's reading copy; no forge needed)
+# The PDF is the auditor's reading copy of DOSSIER.md; the Markdown stays the record. What a PDF must never do is lose a
+# line on the way to paper, so the check below reads the text back out of the PDF (pypdf) and looks for every line of
+# the Markdown in it. The rendering needs the reportlab package and the read-back needs pypdf: the kit installs neither
+# locally. Without them those cases are NOT run and the run says so, like shellcheck above: not counted as INCOMPLETE
+# (the PDF is optional, the Markdown is what is handed over either way), and CI's selftest job installs both and checks
+# that they ran.
+echo "== dossier-pdf.py =="
+DPY="$HERE/dossier-pdf.py"; DTPL="$HERE/../briefs/handoff-dossier.md"; DFIX="$FIX/dossier-wide-table.md"
+DFIX_PAGES=2   # measured once (reportlab 4.4.9, 2026-09-24); a change of more than one page is a layout change to look at
+lines_in_pdf() { # lines_in_pdf <md> <pdf>: 0 every line of the Markdown is in the PDF's text; 1 names the ones that are not
+  python3 - "$1" "$2" << 'PY'
+import re, sys
+from pypdf import PdfReader
+md, pdf = sys.argv[1], sys.argv[2]
+# markup the renderer turns into layout, removed from both sides; letters, digits and every other sign must survive
+def norm(s):
+    return re.sub(r"[\s`|\\\[\]()]", "", s.replace("**", ""))
+text = []
+for page in PdfReader(pdf).pages:   # the footer ("... the Markdown is the record", "page N") is not the dossier's text
+    text += [l for l in page.extract_text().split("\n")
+             if "the Markdown is the record" not in l and not re.fullmatch(r"\s*page \d+\s*", l)]
+text = norm("".join(text))
+lost, fence = [], None
+for n, line in enumerate(open(md, encoding="utf-8").read().replace("\r\n", "\n").split("\n"), 1):
+    s = line
+    m = re.match(r"^\s*(```+|~~~+)(.*)$", s)
+    if m and (fence is None or m.group(1).startswith(fence)):
+        fence = m.group(1) if fence is None else None
+        s = m.group(2) if fence else ""        # the opening fence's language tag is text; the fences are not
+    elif fence is None:
+        if re.match(r"^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$", s) or s.strip() == "---":
+            continue                            # a table's separator row, a horizontal rule
+        s = re.sub(r"^#+ ", "", s)
+        s = re.sub(r"^\s*[-*] ", "", s)
+    if norm(s) and norm(s) not in text:
+        lost.append(n)
+if lost:
+    print("lost on the way to paper: line(s) %s of %s" % (", ".join(map(str, lost[:20])), md))
+    sys.exit(1)
+print("every line of %s is in the PDF's text" % md)
+PY
+}
+if ! command -v python3 > /dev/null 2>&1; then
+  echo "  --    python3 is not installed here: dossier-pdf.py NOT run on this machine (CI's selftest job runs it)"
+else
+  printf 'Notes with no title line.\n\n## A section\n\nSome text.\n' > "$TMP/notitle.md"
+  python3 "$DPY" "$TMP/notitle.md" "$TMP/notitle.pdf" > "$TMP/o213" 2>&1; check "dossier-pdf.py: a file with no '# ' title line is not a dossier" 1 $? "$TMP/o213"
+  if [ ! -e "$TMP/notitle.pdf" ]; then echo "  ok    and nothing was written"; else echo "  FAIL  a PDF was written for a file that is not a dossier"; fails=$((fails + 1)); fi
+  # reportlab hidden, even where it is installed: a package of the same name first on PYTHONPATH that refuses to import
+  mkdir -p "$TMP/no-reportlab/reportlab"
+  printf 'raise ImportError("reportlab hidden by scripts/selftest.sh")\n' > "$TMP/no-reportlab/reportlab/__init__.py"
+  PYTHONPATH="$TMP/no-reportlab" python3 "$DPY" "$DTPL" "$TMP/norl.pdf" > "$TMP/o214" 2>&1
+  check "dossier-pdf.py: reportlab missing" 2 $? "$TMP/o214"
+  if [ ! -e "$TMP/norl.pdf" ] && [ "$(wc -l < "$TMP/o214" | tr -d ' ')" = "1" ] && grep -q 'reportlab' "$TMP/o214"; then
+    echo "  ok    one line that names reportlab, and nothing written"; else
+    echo "  FAIL  not one line naming reportlab with nothing written:"; sed "s/^/        | /" "$TMP/o214"; fails=$((fails + 1)); fi
+  if python3 -c 'import reportlab' > /dev/null 2>&1; then
+    python3 "$DPY" "$DTPL" "$TMP/template.pdf" > "$TMP/o215" 2>&1; check "dossier-pdf.py renders the template, briefs/handoff-dossier.md" 0 $? "$TMP/o215"
+    if [ -s "$TMP/template.pdf" ] && [ "$(head -c 5 "$TMP/template.pdf")" = "%PDF-" ]; then echo "  ok    and the PDF exists and is not empty"; else
+      echo "  FAIL  no PDF, or an empty one, for the template"; fails=$((fails + 1)); fi
+    python3 "$DPY" "$DFIX" "$TMP/fixture.pdf" > "$TMP/o216" 2>&1
+    check "dossier-pdf.py renders a dossier with a wide table of long cells, code, nested lists, an HTML-comment preamble" 0 $? "$TMP/o216"
+    pg216="$(sed -n 's/.* (\([0-9]*\) pages*, .*/\1/p' "$TMP/o216")"
+    if [ -n "$pg216" ] && [ "$pg216" -ge $((DFIX_PAGES - 1)) ] && [ "$pg216" -le $((DFIX_PAGES + 1)) ]; then
+      echo "  ok    in $pg216 page(s), $DFIX_PAGES expected (plus or minus one)"; else
+      echo "  FAIL  in ${pg216:-an unstated number of} page(s), $DFIX_PAGES expected (plus or minus one)"; fails=$((fails + 1)); fi
+    if python3 -c 'import pypdf' > /dev/null 2>&1; then
+      lines_in_pdf "$DFIX" "$TMP/fixture.pdf" > "$TMP/o217" 2>&1; check "no line of the fixture is lost on the way to paper (read back with pypdf)" 0 $? "$TMP/o217"
+      lines_in_pdf "$DTPL" "$TMP/template.pdf" > "$TMP/o218" 2>&1; check "no line of the template is lost on the way to paper" 0 $? "$TMP/o218"
+      # the read-back seen red: the fixture with one table row taken out, rendered, is checked against the whole fixture
+      grep -v '^| coverage |' "$DFIX" > "$TMP/fixture-short.md"
+      python3 "$DPY" "$TMP/fixture-short.md" "$TMP/fixture-short.pdf" > /dev/null 2>&1
+      lines_in_pdf "$DFIX" "$TMP/fixture-short.pdf" > "$TMP/o219" 2>&1; check "the read-back goes red on a PDF that lost a table row" 1 $? "$TMP/o219"
+      if grep -q "line(s) $(grep -n '^| coverage |' "$DFIX" | cut -d: -f1) of" "$TMP/o219"; then echo "  ok    and it names that line"; else
+        echo "  FAIL  it does not name the lost line:"; sed "s/^/        | /" "$TMP/o219"; fails=$((fails + 1)); fi
+    else
+      echo "  --    pypdf is not installed here: the no-line-lost read-back NOT run on this machine (CI's selftest job runs it)"
+    fi
+  else
+    echo "  --    reportlab is not installed here: rendering the template and the wide-table fixture, and the no-line-lost"
+    echo "        read-back, NOT run on this machine (CI's selftest job installs reportlab and pypdf and runs them)"
+  fi
+fi
+
 # ================================================================= mutate.sh and size.sh (need forge and a project)
 echo "== mutate.sh / size.sh =="
 KIT="${KIT_PROJECT:-$HERE/../foundry-kit}"

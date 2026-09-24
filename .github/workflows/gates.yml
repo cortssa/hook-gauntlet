@@ -7,7 +7,9 @@
 #       battery   the root kit and the v4 module against the SOURCE manager (build, tests, sizes, stale-build check -
 #                 one exit code each), and a check that the v4 log names the sandbox suites (test/sim) that ran;
 #       selftest  scripts/selftest.sh, which makes every guard in scripts/ that can be exercised offline go red on
-#                 purpose (it runs mutation cases; 72 s on a warm local bench, 2026-09-23, longer on a cold runner);
+#                 purpose (it runs mutation cases; 72 s on a warm local bench, 2026-09-23, longer on a cold runner),
+#                 with reportlab and pypdf installed here (pinned) so that its dossier-pdf.py cases run - locally the
+#                 kit installs neither and the selftest says it skipped them - and a check that they did run;
 #       shellcheck  over scripts/*.sh and scripts/lib/*.sh, at severity "warning" (style and info notes are not gated);
 #       battery-forge-1.8.3  the same battery on a SECOND pinned forge, the second row of the supported-versions table
 #                 in foundry-kit/README.md. First seen green in run 35867090813 (2026-09-23), so that row says "supported";
@@ -36,6 +38,8 @@ env:
   FOUNDRY_VERSION: v1.8.1
   FOUNDRY_VERSION_2: v1.8.3
   FORGE_STD_TAG: v1.16.2
+  REPORTLAB_VERSION: "4.4.9"
+  PYPDF_VERSION: "6.9.1"
 
 jobs:
   battery:
@@ -109,6 +113,15 @@ jobs:
           version: ${{ env.FOUNDRY_VERSION }}
       - name: forge-std for the root kit, pinned
         run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
+      # the dossier's PDF copy: reportlab renders it, pypdf reads it back in the selftest (no line lost on the way to
+      # paper). A Python of its own, so that pip does not touch the runner's system Python; versions pinned
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: reportlab and pypdf for the dossier cases, pinned
+        run: python3 -m pip install --quiet "reportlab==${{ env.REPORTLAB_VERSION }}" "pypdf==${{ env.PYPDF_VERSION }}"
+      - name: the dossier template renders as a PDF
+        run: python3 scripts/dossier-pdf.py briefs/handoff-dossier.md "$RUNNER_TEMP/handoff-dossier.pdf"
       # the log is kept, and uploaded when the job fails: a red on the daily schedule is read days later, and the job's
       # own console is the only other copy of what went wrong
       - name: selftest
@@ -117,6 +130,10 @@ jobs:
           set -o pipefail   # without it the step's exit code would be tee's, and a red selftest would pass
           mkdir -p selftest-logs
           scripts/selftest.sh 2>&1 | tee selftest-logs/selftest.txt
+      - name: the dossier cases ran here (a skip for a missing reportlab or pypdf is not a pass)
+        run: |
+          grep -q '^  ok    no line of the fixture is lost on the way to paper' selftest-logs/selftest.txt \
+            || { echo "the dossier-pdf.py cases did not run: reportlab or pypdf missing on the runner"; exit 1; }
       - name: keep the selftest log (on failure)
         if: failure()
         uses: actions/upload-artifact@v4

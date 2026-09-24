@@ -119,8 +119,9 @@ your spec's section 3 on `InvariantBase`; a smoke test that asserts every action
 true` and the census wiring (`writeCensus` in `afterInvariant`, `fs_permissions` for `./census`). How: `doctrine/INVARIANTS.md`
 and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` are the worked examples. A project with no
 `lib/` reaches the kit through two absolute remappings, `gauntlet-kit/=<kit>/foundry-kit/src/` and
-`forge-std/=<kit>/foundry-kit/lib/forge-std/src/` (no `allow_paths` needed; say in the dossier's section 10 that they are
-absolute). That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
+`forge-std/=<kit>/foundry-kit/lib/forge-std/src/` (no `allow_paths` needed). Absolute paths into a kit checkout are fine for an
+exercise, and the dossier's section 10 then says so; a project going to a HANDOFF vendors the kit inside itself
+(`lib/hook-gauntlet`, a submodule or a copy) and remaps relatively, so that section 10 runs on a clean machine. That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
 (the PoolManager stops at "stack too deep"): start its `foundry.toml` and `remappings.txt` from the kit's own
 `foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (drop its `libs = ["lib"]` and `allow_paths = ["../src"]`: with every dependency remapped by absolute path, `libs = []` and no `allow_paths` is what a reader measured to work; solc 0.8.26, evm cancun, the optimizer, the PoolManager's
 IR compilation restrictions - its `paths` entry made absolute too, `<kit>/foundry-kit/v4/lib/v4-core/src/PoolManager.sol` -
@@ -181,7 +182,9 @@ black-box round (`briefs/black-box.md`, a bench WITHOUT the source) belongs earl
 `NEXT.md` row 18 (full mode: after promotion and rehearsal) or 18b (light mode: the owner declined promotion in
 writing) sends you to the handoff dossier, `briefs/handoff-dossier.md` - and row 9b, when findings are open and the
 owner is not there to triage, sends you to the same file as a skeleton: what the judges said read from their outputs,
-every divergence, and a non-empty list of what was **not** checked. **STOP there.** The next step is a human audit.
+every divergence, and a non-empty list of what was **not** checked. Then its reading copy for the auditor, the Markdown
+staying the record: `python3 scripts/dossier-pdf.py .gauntlet/DOSSIER.md` (needs `reportlab`; without it, exit 2 and
+nothing written - the Markdown goes alone). **STOP there.** The next step is a human audit.
 Never `forge script --broadcast`, never `cast send`: the kit has no step that deploys.
 
 ## If something here is wrong

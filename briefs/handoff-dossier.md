@@ -125,7 +125,7 @@ is what tells them apart.
 
 ## 6. What the judges said (must; the rows of `doctrine/JUDGES.md` - its row 1 is split in two here)
 
-| judge | command, tool version | result, read from the output | where the output is |
+| judge | command, tool version | result, read from the output | where the output is (inside the project, `.gauntlet/reports/...`: a bench or scratch path is not a place an auditor can read) |
 |---|---|---|---|
 | build + lints | | warnings: | |
 | static analysis | | N findings: fixed / by design / accepted / false positive -> `STATIC-TRIAGE.md` | |
@@ -162,7 +162,9 @@ rows of section 6 marked "not done".
 
 From a clean checkout on a machine with nothing but Foundry: the exact commands, in order, that rebuild the bytecode
 (`forge clean` first), run the battery, and check the manifest. Absolute remappings or `libs` paths in `foundry.toml`
-are not portable: name them here and say what the fresh machine must put at those paths (or ship a `lib/`). If it needs an RPC endpoint, say for which step; never
+are not portable: a HANDOFF ships the kit inside the project (`lib/hook-gauntlet`, a submodule or a copy, with relative
+remappings) so that this section runs on a clean machine; absolute paths into a kit checkout are for an exercise, and
+then this section says `not yet` and the dossier is a skeleton, whatever else it holds. If it needs an RPC endpoint, say for which step; never
 include one.
 
 ## 10b. What comes after the handoff (so the owner is ready for it)
@@ -184,7 +186,15 @@ wrong after deployment · security contact.
 
 ---
 
-**Gate for phase 8:** every "must" section is filled or says "not done" with a reason, the not-done count is on the status
+**Gate for phase 8:** the project is a git repository and its commit is on the first line (a manifest of hashes is an
+exercise's substitute, not a handoff's); every path in section 6's "where" column is inside the project; section 10 runs
+on a clean machine; every "must" section is filled or says "not done" with a reason, the not-done count is on the status
 line above AND in `STATE.md`'s `dossier:` flag, and every skip has the owner's written agreement; section 9 is not empty (an
 empty list of unchecked things is never true); section 5 is not empty either, on the same terms; a fresh agent, given
 only this dossier and the repository, can run section 10 to the end and get the numbers in section 6.
+
+**How it is handed over:** the auditor receives two files, `DOSSIER.md` AND `DOSSIER.pdf`. The Markdown is the record:
+the file that is diffed, cited and corrected, and the one every other file points at. The PDF is the reading copy,
+rendered from it as the last step, after the Markdown's final edit: `python3 scripts/dossier-pdf.py .gauntlet/DOSSIER.md`
+(needs the `reportlab` package; without it the script writes nothing and exits 2, and the Markdown goes alone - never
+an older PDF beside a newer Markdown). Both leave at the same commit, and where they disagree, the Markdown is right.
