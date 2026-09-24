@@ -120,7 +120,14 @@ true` and the census wiring (`writeCensus` in `afterInvariant`, `fs_permissions`
 and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` are the worked examples. A project with no
 `lib/` reaches the kit through two absolute remappings, `gauntlet-kit/=<kit>/foundry-kit/src/` and
 `forge-std/=<kit>/foundry-kit/lib/forge-std/src/` (no `allow_paths` needed; say in the dossier's section 10 that they are
-absolute). Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
+absolute). That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
+(the PoolManager stops at "stack too deep"): start its `foundry.toml` and `remappings.txt` from the kit's own
+`foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (solc 0.8.26, evm cancun, the optimizer, the PoolManager's
+IR compilation restrictions, and the eight remappings - `v4-core/`, `@uniswap/v4-core/`, `solmate/`, `@openzeppelin/`,
+v4-core's own `forge-std/`, `ds-test/`, `gauntlet-kit/`, `gauntlet-v4/` for `V4Harness` and `HookMiner` - with `<kit>`
+prefixed), and its scenarios from `foundry-kit/v4/test/`. Its bytecode is then measured with the optimizer on, because the
+manager needs it; that is the audited artefact, say so. A hook that HOLDS tokens has no single worked example: the token
+side is `foundry-kit/test/` (ToyVault), the hook side is `foundry-kit/v4/test/`; merge them. Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
 A promise that breaks under a token behaviour the owner has not decided: `doctrine/NEXT.md` row 6b, not a reason to leave
 the action out.
 
@@ -137,7 +144,7 @@ Deterministic tools on your machine, no model. Run them on your project director
 | dirty memory, junk bits | `forge test --brutalize` in `<proj>` | the same suite green (`doctrine/JUDGES.md` row 6) |
 | long fuzz | `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
 | campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
-| mutation | `TEST_FLAGS="--match-path 'test/unit/*'" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies outside the project: `COPY_ROOT=<their common parent>`; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
+| mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies outside the project: `COPY_ROOT=<their common parent>`; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
 | simulation sandbox (optional) | step 4, on your binding | `doctrine/SIMULATE.md` §5 says what goes in the dossier |
 

@@ -38,7 +38,7 @@ ROUND r05 | phase 4 | regression | vendor-a/large | bench $HOME/.gauntlet/bench/
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
 `executor`, `promotion`, `rehearsal`, `handoff`, `simulation`) · model, as specific as you can be · bench · dates · findings AS THE ROUND
-CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (for an interview, spec or battery line: that phase's gate in `AGENTS.md` §3) · cost AND effort (tokens, wall-clock,
+CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open; black-box: no divergence left; verifier: every claim held; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3) · cost AND effort (tokens, wall-clock,
 files read, tests written; leave out what you cannot measure, never guess - an orchestration harness does not always
 return a subagent's usage, and then the field says `not reported`) · the report · and, optionally,
 `conf` - the raw_confidence, 0 to 1: what the round's author would bet on its own verdict. Unused by any policy today;

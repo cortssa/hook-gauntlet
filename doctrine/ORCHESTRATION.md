@@ -42,6 +42,9 @@ is named next to the rule.
 Two refusals were observed while running the route with agents. Neither is a defect of the kit; both change how a
 step is written.
 
+- **A subagent that spawns its own agent and "waits" for it does not wake up when the child finishes**: the child's
+  completion is delivered to the orchestrator, not to the parent agent. Seen once, four hours lost. The orchestrator
+  resumes the parent with the child's result and the path of its report.
 - **The harness may refuse a subagent permission to write report files** ("return findings as text"). Seen twice. The
   orchestrator saves the returned text to the report path itself and says so in the report's header.
 - **The model provider's safety classifier may stop an agent at a step whose declared purpose is to produce an
