@@ -89,6 +89,53 @@ contract ManagerSelectionTest is V4Harness {
         assertEq(managerModeLabel(), "real bytecode (etched fixture)");
         managerPlan = ManagerPlan.SKIP_FIXTURE_MISSING;
         assertEq(managerModeLabel(), "skipped (fixture missing)");
+        managerPlan = ManagerPlan.FORK;
+        assertEq(managerModeLabel(), "mainnet fork (the deployed manager, its storage, at a pinned block)");
+        managerPlan = ManagerPlan.SKIP_FORK_NO_RPC;
+        assertEq(managerModeLabel(), "skipped (fork asked for, RPC_URL not set)");
+    }
+
+    // ------------------------------------------------------------------ the third mode (K16)
+    /// @notice `fork` is the third word, and asking for it with an endpoint is the fork.
+    function test_fork_with_an_endpoint_is_the_fork() public {
+        assertEq(uint256(managerPlanFor("fork", DEFAULT_FIXTURE, true)), uint256(ManagerPlan.FORK));
+    }
+
+    /// @notice THE FORK'S GUARD, the same one the fixture has. `V4_MANAGER=fork` with no `RPC_URL` must skip; it must
+    /// never become a green run against the source build, and never a fork of some default endpoint either.
+    function test_fork_without_an_endpoint_is_a_skip_and_never_a_silent_fallback_to_source() public {
+        uint256 plan = uint256(managerPlanFor("fork", DEFAULT_FIXTURE, false));
+        assertEq(plan, uint256(ManagerPlan.SKIP_FORK_NO_RPC), "no endpoint must skip");
+        assertTrue(plan != uint256(ManagerPlan.SOURCE), "no endpoint must never fall back to source");
+    }
+
+    /// @notice the endpoint decides nothing for the other two modes: `source` never forks because RPC_URL happens to be
+    /// exported, and `fixture` still needs its files
+    function test_an_endpoint_in_the_environment_changes_neither_source_nor_fixture() public {
+        assertEq(uint256(managerPlanFor("source", DEFAULT_FIXTURE, true)), uint256(ManagerPlan.SOURCE));
+        assertEq(
+            uint256(managerPlanFor("fixture", "fixtures/there-is-no-such-file.hex", true)),
+            uint256(ManagerPlan.SKIP_FIXTURE_MISSING)
+        );
+    }
+
+    /// @notice three words now, and still nothing else
+    function test_a_typo_of_fork_reverts_too() public {
+        vm.expectRevert(abi.encodeWithSelector(V4Harness.UnknownManagerMode.selector, "FORK"));
+        this.planFor3("FORK", DEFAULT_FIXTURE, true);
+        vm.expectRevert(abi.encodeWithSelector(V4Harness.UnknownManagerMode.selector, "forked"));
+        this.planFor3("forked", DEFAULT_FIXTURE, true);
+    }
+
+    function planFor3(string memory mode, string memory fixturePath, bool rpcSet) external returns (ManagerPlan) {
+        return managerPlanFor(mode, fixturePath, rpcSet);
+    }
+
+    /// @notice the block is a constant, so that two runs a week apart read the same chain. A test, because a pin that
+    /// somebody sets to 0 ("latest") in passing turns every number in the README into a number nobody can reproduce.
+    function test_the_fork_block_is_pinned_and_not_latest() public pure {
+        assertGt(DEFAULT_FORK_BLOCK, 21_688_329, "before the mainnet PoolManager existed (its deployment block)");
+        assertEq(DEFAULT_FORK_BLOCK, 26_050_000, "the pin moved: move the README's fork numbers with it");
     }
 }
 

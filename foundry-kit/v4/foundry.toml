@@ -31,6 +31,21 @@ compilation_restrictions = [
 # The fixture path for the real-bytecode manager, read-only; and the campaign census (HandlerBase.writeCensus), which
 # is written only when scripts/census.sh or scripts/fuzz-long.sh asks for it through GAUNTLET_CENSUS. Nothing else.
 fs_permissions = [{ access = "read", path = "./fixtures" }, { access = "read-write", path = "./census" }]
+# The fork suites (K16) are not part of the everyday run: without an endpoint they can only skip, and the battery counts a
+# skip as a failure (a skipped suite tested nothing). They run under the `fork` profile below.
+no_match_path = "test/fork/**"
+
+# The endpoint BY NAME: forge reads RPC_URL from the environment when a test forks "mainnet", and never otherwise. The
+# value is never in this file, never in the repository, and never in a trace (a trace shows the alias).
+[rpc_endpoints]
+mainnet = "${RPC_URL}"
+
+# FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4 - the fork suites, and the three example hooks'
+# unit suites unchanged, on the deployed mainnet manager at the harness's pinned block (foundry-kit/v4/README.md, "The
+# fork"). Everything else is inherited from the default profile, the compiler settings included, so the build is shared.
+[profile.fork]
+match_path = "test/{fork/**,examples/CappedDynamicFeeHook.t.sol,examples/ClaimsFeeHook.t.sol,examples/DeltaFeeHook.t.sol}"
+no_match_path = "test/sim/**"
 
 [fuzz]
 runs = 256

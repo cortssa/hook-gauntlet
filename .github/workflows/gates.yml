@@ -16,13 +16,15 @@
 #                 in foundry-kit/README.md. First seen green in run 35867090813 (2026-09-23), so that row says "supported";
 #                 if it goes red, the job is removed and the row goes back to "unsupported" - never a job left red, never
 #                 one marked allowed-to-fail. A third version is added the same way: a job first, then a row;
-#   - NOT here: the battery against the REAL pool manager's bytecode. It needs an RPC endpoint, and no endpoint or
-#     key goes into this repository or its CI. That leg is run locally (foundry-kit/v4/README.md) and reported in
-#     the dossier.
+#       fork      the v4 module on a mainnet fork, ONLY if the repository has a secret named RPC_URL; without it the
+#                 job skips every step and says so in a notice (K16, see the job);
+#   - NOT here: the battery against the REAL pool manager's bytecode etched from a fixture. It needs an RPC endpoint to
+#     fetch, and no endpoint or key goes into this repository. That leg is run locally (foundry-kit/v4/README.md) and
+#     reported in the dossier.
 # Foundry is PINNED: a nightly renames flags, and every flag in doctrine/JUDGES.md was checked against FOUNDRY_VERSION.
 # No `--offline` here: the runner has no compiler cached and `--offline` forbids forge from fetching solc 0.8.26 - the
 # first run of this workflow was red for exactly that, after a local replay had passed on a machine with solc cached.
-# Nothing in this workflow talks to an RPC, so there is nothing for `--offline` to protect.
+# Nothing but the fork job talks to an RPC, and that one only through the secret.
 # A red run here is a finding, not a "flake": a fuzz campaign starts with no corpus in CI, so a rare counterexample
 # can appear on any push - read the log before re-running.
 
@@ -106,6 +108,42 @@ jobs:
             foundry-kit/.gauntlet/reports/
             foundry-kit/v4/.gauntlet/reports/
           if-no-files-found: ignore
+
+  # The v4 module on a mainnet fork (K16): the fork suites and the three example hooks' unit suites, on the deployed
+  # PoolManager at the harness's pinned block. It needs an endpoint, which is a repository SECRET named RPC_URL - read
+  # here by name, never written anywhere. Without the secret (a fresh fork of this repository, a pull request from one,
+  # or simply none set) every step below is skipped, the job says so in a notice, and NOTHING was tested on a fork: the
+  # job's green then means "skipped", which is what the notice is for. No logs are uploaded from this job: a file is
+  # not masked the way the console is, and forge can print an endpoint in an error.
+  fork:
+    name: fork (v4 module on a mainnet fork; skipped without the RPC_URL secret)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RPC_URL: ${{ secrets.RPC_URL }}
+    steps:
+      - name: is there an endpoint (its presence only)
+        id: rpc
+        run: |
+          if [ -n "$RPC_URL" ]; then echo "have=yes" >> "$GITHUB_OUTPUT"; else
+            echo "have=no" >> "$GITHUB_OUTPUT"
+            echo "::notice title=fork SKIPPED::no RPC_URL secret in this repository: nothing was tested on a fork"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.rpc.outputs.have == 'yes'
+      - uses: foundry-rs/foundry-toolchain@v1
+        if: steps.rpc.outputs.have == 'yes'
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+      - name: forge-std for the root kit, pinned
+        if: steps.rpc.outputs.have == 'yes'
+        run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
+      - name: Uniswap v4 sources for the v4 module, at the pinned commits
+        if: steps.rpc.outputs.have == 'yes'
+        run: scripts/install-v4.sh foundry-kit/v4
+      - name: battery, v4 module, mainnet fork at the pinned block
+        if: steps.rpc.outputs.have == 'yes'
+        run: FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4
 
   selftest:
     name: selftest (every guard that can be exercised offline, seen red)

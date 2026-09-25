@@ -255,7 +255,10 @@ run against it: its **storage is empty**, so it has no owner, no protocol fees a
 make them; and `block.chainid` is still the test chain, not the fixture's. The harness prints both numbers.
 If your hook reads `block.chainid`, call `vm.chainId(...)` yourself.
 
-`V4_MANAGER` takes **exactly two values**, `source` and `fixture`. Anything else — `fixtrue`, `FIXTURE`, an
+**`V4_MANAGER=fork`** (K16). Ethereum mainnet at a pinned block, the deployed manager with its code **and its
+storage**, real USDC, WETH and ETH: see [The fork](#the-fork) below. Without `RPC_URL` it skips, like the fixture.
+
+`V4_MANAGER` takes **exactly three values**, `source`, `fixture` and `fork`. Anything else — `fixtrue`, `FIXTURE`, an
 empty string — reverts with `UnknownManagerMode`. It used to mean "source", which is the same silent
 fallback as the one below, reached by a transposed letter instead of a missing file: an audit typed
 `V4_MANAGER=fixtrue` and watched the suite print "compiled from source, 5 passed" while the operator
@@ -305,7 +308,19 @@ addresses, a fuzz corpus stores raw addresses, and a corpus replayed against the
 at the old ones - a red campaign that has nothing to do with your hook (`doctrine/JUDGES.md`). If you ever see a sequence
 step whose `addr` is not the handler, delete `corpus/` and `cache/invariant/` and run again.
 
-`fetch-bytecode.sh` prints the chain id, the code size and the keccak of the code, and refuses an address
+**The fixture is pinned to a block** (K16). `fetch-bytecode.sh` reads the code AT a block and writes it into the
+metadata, with the block's hash: `--block <n>` picks it, and without it the script asks for the latest number first and
+reads at that. The harness refuses a fixture whose metadata names no block (`FixtureNotBlockPinned` - re-fetch an older
+one), and `test/fork/FixtureBlock.t.sol` holds the metadata to its word on a fork: at the named block, on the named chain,
+the code at the named address must be the fixture, byte for byte, or the test fails (seen red with the block set to
+21 688 328, one block before the manager existed: "the code at its address has another size: 0 != 24009"). It also
+checks that the pinned fork runs the same code, so the fixture path and the fork path test the same manager.
+
+```sh
+RPC_URL=... scripts/fetch-bytecode.sh --block 26000000 0x000000000004444c5dc75cB358380D2e3dE08A90 foundry-kit/v4/fixtures/PoolManager.hex
+```
+
+`fetch-bytecode.sh` prints the chain id, the block, the code size and the keccak of the code, and refuses an address
 with no code — which is what a wrong chain, a wrong address or a stale endpoint looks like. Writing a
 zero-byte fixture and etching it produces a "manager" that accepts every call and answers nothing, and a
 whole suite passes against a contract that is not there.
@@ -335,6 +350,121 @@ not carry on with the source manager and mention it in a footnote.
 
 A **public keyless endpoint is fine** for `eth_getCode`, and is the better choice: no key means no key to
 leak. This module's own fixture was fetched through one.
+
+---
+
+## The fork
+
+`V4_MANAGER=fork` forks **Ethereum mainnet at block 26 050 000** (`DEFAULT_FORK_BLOCK` in `src/V4Harness.sol`; set
+`FORK_BLOCK` to read another) and takes the v4 PoolManager that is deployed there, at
+`0x000000000004444c5dc75cB358380D2e3dE08A90`, as it is: its code, its owner, its protocol-fee controller, every pool it
+already has and every balance it holds. Nothing is etched and nothing is deployed in its place. The harness's two hostile
+tokens are still deployed, so a suite that runs on `source` runs on the fork unchanged; and the fork adds what no local
+token has: **USDC** (blocklist, pause, 6 decimals, behind a proxy), **WETH** and **ETH** at their real addresses, funded
+to test actors with `_fundReal`.
+
+### How to run it
+
+```sh
+export RPC_URL='https://<a read-only mainnet endpoint>'   # in YOUR OWN shell; archive access if FORK_BLOCK is old
+FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4
+```
+
+`RPC_URL` comes from the environment and from nowhere else: `foundry.toml` names it (`[rpc_endpoints] mainnet =
+"${RPC_URL}"`) and the harness forks the alias `mainnet`, so a trace shows `createSelectFork("mainnet", 26050000)` and
+never the endpoint. The harness asks only whether `RPC_URL` exists (`vm.envExists`), never what it holds, because a
+cheatcode's return value is printed in a trace. **Never put the endpoint in a file of the repository**: the key rule
+above holds here word for word.
+
+The `fork` profile runs `test/fork/` and the three example hooks' unit suites (`test/examples/CappedDynamicFeeHook.t.sol`,
+`ClaimsFeeHook.t.sol`, `DeltaFeeHook.t.sol`) and nothing else. The default profile does NOT run `test/fork/`
+(`no_match_path`): without an endpoint those suites can only skip, and the battery counts a skip as a failure. So the
+everyday `scripts/battery.sh foundry-kit/v4` is what it was, and the fork is one command more.
+
+**Without `RPC_URL` nothing is green.** Every suite skips with the reason in the skip itself:
+
+```
+[SKIP: skipped: V4_MANAGER=fork but RPC_URL is not set. NOTHING WAS TESTED. Export RPC_URL ...] setUp()
+[SKIP: skipped: a fork-only suite under V4_MANAGER=source: NOTHING WAS TESTED. Run it as FOUNDRY_PROFILE=fork ...] setUp()
+```
+
+and the battery then fails on the skips, as it should. `fork` without an endpoint never means `source`
+(`test_fork_without_an_endpoint_is_a_skip_and_never_a_silent_fallback_to_source`), and an endpoint in the environment
+never turns `source` into a fork.
+
+**CI**: `.github/workflows/gates.yml` has a `fork` job that reads a repository secret named `RPC_URL` and runs the
+command above. This repository has no such secret, so the job skips every step and says so in a notice: its green
+means "skipped". The fork has been run locally, on the machine the numbers below come from.
+
+### How we know the address is the v4 PoolManager
+
+From the chain, not from a page (`test/fork/ForkManager.t.sol`,
+`test_the_address_is_the_v4_pool_manager_and_this_is_how_we_know`): at the pinned block it has code (24 009 bytes; none
+at block 21 688 328, 24 009 at 21 688 329, its deployment); the code carries its own address as an immutable, which is
+what v4's `NoDelegateCall` stores; `settle()` outside `unlock` reverts with v4's `ManagerLocked()`; its storage reads
+through v4's `extsload` (slot 0 is the owner); it initialises a pool of our own and emits v4's `Initialize` from that
+address; and its code hash is the one the fixture path fetched, `0x785f1014…c7ce1293`.
+
+### What `deal` does with real tokens, measured
+
+* **WETH, ETH**: `deal` and `vm.deal` work. `deal(WETH, who, x, true)` (move totalSupply too) reverts: WETH9's
+  totalSupply is `address(this).balance`, not a slot. `_fundReal` never adjusts totalSupply.
+* **USDC** (FiatToken v2.2 behind its proxy): `deal` works on a clean account, totalSupply adjustment included. It
+  **fails on a blocklisted one**, two ways, because v2.2 keeps the blocklist flag in the top bit of the balance's own
+  word and `balanceOf` masks it off. The first `deal` to a blocklisted account reverts inside stdStorage's slot search
+  (panic 0x11); a `deal` to an account whose slot stdStorage found earlier in the same test writes the whole word and
+  **quietly un-blocklists it**. `_fundReal` refuses a blocklisted USDC account by name (`DealWouldClearUsdcBlocklist`):
+  fund first, blocklist after.
+
+### What differs from the source manager, measured
+
+| | source (`lib/v4-core`, our build) | fork (mainnet, block 26 050 000) |
+| --- | --- | --- |
+| runtime code | 24 050 B | 24 009 B, keccak `0x785f1014…c7ce1293`, the same as the fixture (`FixtureBlock.t.sol`) |
+| storage | empty; the owner is the test contract | the chain's: owner `0x1a9C…35BC`, protocol-fee controller `0x89A5…51dB`, every pool |
+| the three unit suites (58 tests) | 58 passed | 58 passed, unchanged |
+| gas per unit test (the 56 with one figure; fuzz seed fixed) | | **50 identical**. 6 differ, none because of the manager's code: the 2 that mine a hook's salt inside the test (-77 %, +142 %: the search starts from other addresses) and 4 `DeltaFeeHook` tests that deploy helpers holding the manager's address, by 60 to 480 gas (not investigated further) |
+| behaviour | | no difference in any case run |
+
+Identical gas on 50 tests is what the same compiler (0.8.26), the same pipeline (IR) and the same run count
+(44 444 444) on the same source should give: the two builds differ by 41 bytes of code, not in anything the tests
+execute. What the fork adds is not a different manager but the **world around it**: real currencies, their switches,
+and the chain's state.
+
+### The three example hooks on real currencies
+
+`test/fork/ForkExamples.t.sol`: each hook at an address mined on the fork (`_deployHook`), on a fresh pool at 4 000 USDC
+per ETH, full-range liquidity 1e16 (about 632 000 USDC and 158 ETH). `CappedDynamicFeeHook` on USDC / WETH: the fee
+schedule (base, flat in a block, one step per swap of the previous block, base after an idle block) and books that
+close with the hook holding nothing. `DeltaFeeHook` on USDC / WETH in all four orientations and on ETH / USDC with the
+rebate in ETH and with the fee in ETH (P1, P2, P3 as in its unit suite, across a 6-decimal and an 18-decimal side), and
+P4 over a stream of swaps. `ClaimsFeeHook` on ETH / USDC in all four orientations and on USDC / WETH (C1, C2), and a
+withdrawal paid out of the manager's real ETH and USDC (C3).
+
+### USDC's blocklist and pause, on a v4 pool
+
+`test/fork/ForkUsdcBlocklist.t.sol`, on USDC / WETH pools, measured:
+
+| blocklisted | what happens |
+| --- | --- |
+| the swapper | it cannot pay in USDC and cannot be paid in it: both directions revert in the token's words; everybody else trades |
+| an LP | its USDC is stuck in the pool (the kit's helper pays the LP itself) until it is unblocked; then it all comes out |
+| **`DeltaFeeHook`** (keeps its fee as tokens) | once it holds USDC, **every swap on its pool reverts**: the fee is taken TO it when USDC is unspecified, the rebate is paid FROM it when USDC is specified. Before it holds any USDC, only the swaps whose fee is USDC die |
+| `ClaimsFeeHook` (keeps its fee as ERC-6909 claims) | its pool keeps trading, since no swap moves USDC to or from it, and it still withdraws to a clean treasury; a blocklisted treasury names another recipient |
+| the manager | every USDC pool stops, with any hook or none: swaps both ways, and liquidity out |
+| nobody, USDC **paused** | nothing that moves USDC moves; after the unpause the same swap goes through and the LP's position comes out |
+
+The `DeltaFeeHook` row was seen red first, with the expectation that ignores the token ("the hook's blocklisting is
+the hook's problem; the swaps go through"): it failed on the first orientation. For a hook author this is
+`doctrine/V4-ACCOUNTING.md` item 28: **a hook that receives a currency inherits that currency's power to freeze it, and
+its pool freezes with it.**
+
+### What it cost
+
+Forge does not report RPC requests; they were counted through a local relay (2026-09-25). The first run of the fork
+profile from a cold cache: **378 requests** for 89 tests in 13 s (294 `eth_getStorageAt`, 28 `eth_getAccountInfo`, 20 `eth_chainId`, 20 `anvil_nodeInfo` - a probe forge makes, answered with an error -, 10 `eth_getBlockByNumber`, 2 each of `eth_getCode`, `eth_getBalance`, `eth_getTransactionCount`). A second run of the same tests reads forge's fork cache
+(`~/.foundry/cache/rpc/mainnet/26050000`) and asks the endpoint only to open each fork: **50 requests** (20 `eth_chainId`, 20 `anvil_nodeInfo`, 10 `eth_getBlockByNumber`), none for state, 89 tests in 2 s. The
+block-pinned fetch of the fixture: 3 requests (`eth_chainId`, `eth_getBlockByNumber`, `eth_getCode`).
 
 ---
 
@@ -1657,8 +1787,11 @@ Written down because a list of gaps is the only honest end to a README.
 * **Deltas beyond the swap.** `afterAddLiquidityReturnDelta` / `afterRemoveLiquidityReturnDelta` and a hook that takes
   the WHOLE swap (a custom curve, `HOOK-ATTACKS.md` class 35) have no test. Nor has `DeltaFeeHook` a fixture-manager
   run, a long campaign or a native mutation pass: see "Hooks that return deltas".
-* **Fork tests.** Everything here is local. There is no test that runs against a live fork.
-* **A block-pinned fixture.** `fetch-bytecode.sh` reads the latest block; it does not pin one.
+* **What is left of the fork** (fork tests and a block-pinned fixture left this list on 2026-09-25: "The fork", above).
+  Not run on the fork: the invariant campaigns, the sandbox (`test/sim`), the native, multipool, edge and re-entrancy
+  suites (they use `_setUpV4` and would run; nobody has run them there), a pool the chain already has (every pool here is
+  fresh), a token with a transfer fee in a v4 pool, and any chain but Ethereum mainnet (the harness refuses another
+  chain id; that refusal has never fired, since no endpoint of another chain was tried).
 * **`v4-periphery` is optional and untested.** `V4_WITH_PERIPHERY=1` installs it; nothing in this module compiles
   against it.
 

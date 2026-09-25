@@ -7,7 +7,8 @@
 # rots. Each case below is run twice: once where it must pass, and once where it must fail, with the exit
 # code printed either way.
 #
-# What it does NOT exercise, because it needs the network: a SUCCESSFUL fetch-bytecode.sh (an RPC endpoint) and a
+# What it does NOT exercise, because it needs the network: a SUCCESSFUL fetch-bytecode.sh against a real endpoint (its
+# block and metadata are exercised against a stub `cast`, K16), the fork suites (foundry-kit/v4, FOUNDRY_PROFILE=fork) and a
 # successful install-v4.sh (GitHub). Their refusals are here; their success is the CI's `battery` job, which runs
 # install-v4.sh on every push, and the fetch is run by hand (foundry-kit/v4/README.md).
 #
@@ -1638,6 +1639,51 @@ else
   echo "            black-box mode of bench.sh are NOT proven on this machine."
   skipped=1
 fi
+
+# ================================================================= fetch-bytecode.sh --block (K16: a fixture names its block; no network)
+# A stub `cast` answers for the chain: it logs how it was called, so these cases see WHICH block the code was read at, and
+# what the metadata says, without an endpoint. The refusals come first and write nothing.
+echo "== fetch-bytecode.sh --block =="
+CB="$TMP/castbin"; mkdir -p "$CB"
+cat > "$CB/cast" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$CAST_LOG"
+case "$1" in
+  chain-id) echo 1 ;;
+  block-number) echo 777 ;;
+  block) echo 0x00000000000000000000000000000000000000000000000000000000000000bb ;;
+  code) echo 0x6001600155 ;;
+  keccak) echo 0x1111111111111111111111111111111111111111111111111111111111111111 ;;
+esac
+STUB
+chmod +x "$CB/cast"
+fb() { PATH="$CB:$PATH" CAST_LOG="$TMP/cast.log" RPC_URL="http://127.0.0.1:9" "$HERE/fetch-bytecode.sh" "$@"; }
+for bad in latest 0x10 012 -5 ""; do
+  fb --block "$bad" 0x000000000000000000000000000000000000dEaD "$TMP/xb.hex" > "$TMP/o301" 2>&1
+  check "--block '$bad' is refused (a block NUMBER, decimal)" 1 $? "$TMP/o301"
+done
+fb --block "https://example.invalid/v2/SECRET" 0x000000000000000000000000000000000000dEaD "$TMP/xb.hex" > "$TMP/o302" 2>&1
+check "an endpoint passed as the block is refused" 1 $? "$TMP/o302"
+if grep -q "SECRET" "$TMP/o302"; then echo "  FAIL  the refused endpoint was echoed back"; fails=$((fails + 1)); else
+  echo "  ok    and it is not echoed back"; fi
+fb --block 55 0x000000000000000000000000000000000000dEaD "$TMP/xb.hex" extra > "$TMP/o303" 2>&1
+check "a third argument after the block and the two is refused" 1 $? "$TMP/o303"
+if [ -e "$TMP/xb.hex" ] || [ -s "$TMP/cast.log" ]; then echo "  FAIL  a refused call wrote a fixture or asked the chain"; fails=$((fails + 1)); else
+  echo "  ok    no refused call wrote a fixture or asked the chain"; fi
+: > "$TMP/cast.log"
+fb --block 55 0x000000000000000000000000000000000000dEaD "$TMP/xb.hex" > "$TMP/o304" 2>&1
+check "--block 55: written" 0 $? "$TMP/o304"
+if grep -q '"block": 55,' "$TMP/xb.json" && grep -qx 'code --block 55 0x000000000000000000000000000000000000dEaD' "$TMP/cast.log" \
+  && ! grep -q '^block-number' "$TMP/cast.log"; then echo "  ok    the code was read AT block 55 and the metadata says 55"; else
+  echo "  FAIL  --block 55: metadata $(grep '"block"' "$TMP/xb.json" 2> /dev/null | tr -d ' '), calls: $(tr '\n' ';' < "$TMP/cast.log")"; fails=$((fails + 1)); fi
+: > "$TMP/cast.log"; rm -f "$TMP/xb.hex" "$TMP/xb.json"
+fb 0x000000000000000000000000000000000000dEaD "$TMP/xb.hex" > "$TMP/o305" 2>&1
+check "no --block: written" 0 $? "$TMP/o305"
+if grep -q '"block": 777,' "$TMP/xb.json" && grep -qx 'code --block 777 0x000000000000000000000000000000000000dEaD' "$TMP/cast.log"; then
+  echo "  ok    without --block the latest number is read FIRST, the code is read at it, and the metadata names it"; else
+  echo "  FAIL  no --block: metadata $(grep '"block"' "$TMP/xb.json" 2> /dev/null | tr -d ' '), calls: $(tr '\n' ';' < "$TMP/cast.log")"; fails=$((fails + 1)); fi
+if grep -q '"blockHash": "0x0*bb"' "$TMP/xb.json"; then echo "  ok    and the block's hash is recorded next to it"; else
+  echo "  FAIL  no blockHash in the metadata"; fails=$((fails + 1)); fi
 
 echo
 echo "selftest ran in $((SECONDS - started)) s"

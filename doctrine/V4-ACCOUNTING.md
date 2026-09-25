@@ -351,3 +351,26 @@ holds it. Evidence label: **TESTED**, on one pin.
   owing and the unlock refuses. *(Test: `test_a_prepaid_swap_stopped_by_its_price_limit_pays_exactly_what_the_pool_used`,
   the payer's balance equal to the one a router that pays afterwards leaves on the same state; the campaign's
   `swapPrepaidLimited`.)*
+
+## A currency that can refuse, on a fork - measured (added 2026-09-25, K16)
+
+- **28. A hook that receives a currency inherits that currency's power to freeze it, and its pool freezes with it.**
+  USDC can refuse any transfer to or from a blocklisted account, and every transfer while it is paused. The manager
+  holds every v4 pool's USDC in one balance, so the question for a hook is only whether IT is ever a party to a USDC
+  transfer inside a swap. `DeltaFeeHook` is: it `take`s its fee TO itself in the unspecified currency and pays its
+  rebate FROM itself in the specified one, so once it holds USDC every swap on its pool touches USDC on the hook's side,
+  and a blocklisted `DeltaFeeHook` reverts every swap its pool is asked for (before it holds any USDC, only the swaps
+  whose fee is USDC). `ClaimsFeeHook` is not: it squares its fee with `mint` (claims, no transfer), so a blocklisted
+  `ClaimsFeeHook`'s pool keeps trading, and it still withdraws to a clean recipient (the manager is the sender, the
+  recipient is the treasury - the hook is not a party). The rule: **list, per currency the pool can hold, every transfer
+  in which the hook is the sender or the recipient during a swap; each one is a switch somebody else can turn off**, and
+  the spec says what the pool does then (freeze, skip the fee, fall back to claims). A swapper, an LP and the manager
+  itself are the other parties the token can refuse: the swapper's own swaps die, an LP's USDC stays in the pool until
+  it is unblocked (the position is intact), and a blocklisted manager or a pause stops every USDC pool at once.
+  *(Tests: `test/fork/ForkUsdcBlocklist.t.sol` on a mainnet fork, `test_a_blocklisted_delta_hook_freezes_its_own_pool`
+  seen red first with the expectation that ignores the token; foundry-kit/v4/README.md, "The fork".)*
+- **29. A test that funds a USDC account with `deal` can un-blocklist it.** FiatToken v2.2 keeps the blocklist flag in
+  the top bit of the balance's own storage word. forge-std's `deal` to a blocklisted account either reverts inside its
+  slot search or, when the slot was found earlier in the test, overwrites the word and clears the flag - and the test
+  then measures an account the token no longer blocks. Fund first, blocklist after, fund no more; the harness's
+  `_fundReal` refuses a blocklisted USDC account. *(Test: `test_deal_on_a_blocklisted_usdc_account_reverts_or_silently_unblocklists`.)*

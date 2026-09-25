@@ -11,17 +11,23 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
+import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
 import {MinimalRouter} from "./MinimalRouter.sol";
 import {LiquidityHelper} from "./LiquidityHelper.sol";
 import {SwapEventReader} from "./SwapEventReader.sol";
 import {HookMiner} from "./HookMiner.sol";
 
+/// @notice the one question the harness asks USDC (FiatToken v2.2) before funding an account
+interface IUsdcBlocklist {
+    function isBlacklisted(address account) external view returns (bool);
+}
+
 /// @title V4Harness
 /// @notice The base a v4 hook's tests inherit from. It gives you a PoolManager, two hostile currencies, a
 /// dumb router, a liquidity helper, and - the part that matters - a choice of WHICH manager.
 ///
-/// ## The two managers, and why both
+/// ## The managers, and why more than one
 ///
 /// **From source** (`V4_MANAGER=source`, the default). `new PoolManager(...)` out of `lib/v4-core`, at the
 /// commit `scripts/install-v4.sh` pins. Fast, hermetic, debuggable, and it tests the manager you READ. It is
@@ -43,20 +49,46 @@ import {HookMiner} from "./HookMiner.sol";
 /// against the real manager when it was not. `managerPlanFor()` is a plain function so that this decision
 /// can itself be tested - see `test/ManagerSelection.t.sol`.
 ///
-/// And `V4_MANAGER` takes exactly two values. Anything else - `fixtrue`, `FIXTURE`, an empty string - is a
+/// **A fork** (`V4_MANAGER=fork`, K16). Ethereum mainnet at a PINNED block (`DEFAULT_FORK_BLOCK`, overridable with
+/// `FORK_BLOCK`), through the endpoint in `RPC_URL`, reached by the alias `mainnet` in `foundry.toml` - so that a trace
+/// shows `createSelectFork("mainnet", ...)` and never the endpoint. The manager is the deployed one at its canonical
+/// address, with its code AND its storage (owner, protocol-fee controller, every pool and every balance it holds), and
+/// the real currencies are there to use: USDC, WETH, ETH (`_fundReal`). The harness's hostile tokens are still deployed,
+/// so every suite that runs on `source` runs on the fork unchanged. Without `RPC_URL` it SKIPS, like the fixture.
+///
+/// And `V4_MANAGER` takes exactly three values. Anything else - `fixtrue`, `FIXTURE`, an empty string - is a
 /// revert, not a default. A mode that falls back to "source" on anything it does not recognise is the same
 /// silent fallback, reached by a typo instead of a missing file.
 abstract contract V4Harness is Test {
-    /// @notice what the harness decided to do about the manager, before doing it.
+    /// @notice what the harness decided to do about the manager, before doing it. (Appended to, never reordered: the
+    /// numbers of the first three are what older logs and tests say.)
     enum ManagerPlan {
         SOURCE,
         FIXTURE,
-        SKIP_FIXTURE_MISSING
+        SKIP_FIXTURE_MISSING,
+        FORK,
+        SKIP_FORK_NO_RPC
     }
 
     /// @notice the default place `scripts/fetch-bytecode.sh` is told to write, and the only directory
     /// `foundry.toml` grants the suite permission to read.
     string internal constant DEFAULT_FIXTURE = "fixtures/PoolManager.hex";
+
+    // ------------------------------------------------------------------ the fork (K16)
+    /// @notice THE PIN. Every fork run reads the chain as it was at this block, so two runs a month apart read the same
+    /// state, and forge's fork cache (`~/.foundry/cache/rpc/mainnet/<block>`) answers the second one from disk. Moving it
+    /// is a decision: re-measure the README's fork numbers (`test/ManagerSelection.t.sol` holds it to this value).
+    uint256 public constant DEFAULT_FORK_BLOCK = 26_050_000;
+    /// @notice the `rpc_endpoints` alias in `foundry.toml`, which reads `RPC_URL`. The harness never reads the endpoint
+    /// itself: a cheatcode's return value is printed in a trace, and the endpoint usually carries a key.
+    string internal constant FORK_RPC_ALIAS = "mainnet";
+    uint256 internal constant FORK_CHAIN_ID = 1;
+    /// @notice Ethereum mainnet's v4 PoolManager. How the address was checked on the chain, not taken from a page:
+    /// `test/fork/ForkManager.t.sol`, `test_the_address_is_the_v4_pool_manager_and_this_is_how_we_know`.
+    address internal constant MAINNET_POOL_MANAGER = 0x000000000004444c5dc75cB358380D2e3dE08A90;
+    /// @notice Circle's USDC (FiatToken proxy, 6 decimals; blocklist and pause) and WETH9, on mainnet
+    address internal constant MAINNET_USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address internal constant MAINNET_WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
     IPoolManager public manager;
     MinimalRouter public router;
@@ -72,15 +104,34 @@ abstract contract V4Harness is Test {
     address public managerFixtureAddress;
     uint256 public managerFixtureChainId;
     bytes32 public managerFixtureCodeHash;
+    /// @notice the block the fixture's code was read at (`fetch-bytecode.sh` records it; K16)
+    uint256 public managerFixtureBlock;
     uint256 public managerRuntimeSize;
+    /// @notice set only on the fork path: the block the fork is pinned at, and the keccak of the manager's code there
+    uint256 public forkBlock;
+    bytes32 public managerForkCodeHash;
+
+    /// @notice ERC-20s of the real world (USDC, WETH on the fork) that the harness funded: their balance is `balanceOf`,
+    /// since they have no `trueBalanceOf` to ask (see `_trueBalance`)
+    mapping(address => bool) internal _plainErc20;
 
     // ------------------------------------------------------------------ the decision, as a function
-    /// @notice `V4_MANAGER` was neither "source" nor "fixture". It is not a default, it is a typo.
+    /// @notice `V4_MANAGER` was not "source", "fixture" or "fork". It is not a default, it is a typo.
     error UnknownManagerMode(string mode);
+    /// @notice the fork answered with another chain: the addresses this harness knows are mainnet's
+    error ForkNotMainnet(uint256 chainId);
+    /// @notice no code at the manager's address at the fork's block: a `FORK_BLOCK` before the manager was deployed
+    error ForkManagerHasNoCode(uint256 blockNumber);
+    /// @notice the fixture's metadata names no block. `fetch-bytecode.sh` has recorded one since K16: re-fetch.
+    error FixtureNotBlockPinned(string metaPath);
+    /// @notice USDC keeps the blocklist bit in the balance's own word: `deal` to a blocklisted account either reverts
+    /// inside stdStorage's search or, if the slot was found earlier in the test, overwrites the word and un-blocklists
+    /// the account (both measured, `test/fork/ForkManager.t.sol`). Fund first, blocklist after, and fund no more.
+    error DealWouldClearUsdcBlocklist(address who);
 
     /// @notice decide what to do, given the mode and whether the fixture files are on disk. Separated from
     /// doing it so that a test can assert the decision directly, with no environment variables involved.
-    /// @param mode the value of `V4_MANAGER`: exactly "source" or exactly "fixture", and nothing else
+    /// @param mode the value of `V4_MANAGER`: exactly "source", "fixture" or "fork" (K16), and nothing else
     /// @param fixturePath the `.hex` path; its `.json` sibling must exist too, because the address the code
     ///        must be etched at lives in the json, and code without an address is not a manager
     /// @dev not `view`: `vm.isFile` is not a view cheatcode.
@@ -92,7 +143,16 @@ abstract contract V4Harness is Test {
     /// back to the source manager"; with a typo, it did. Found by an independent audit, which typed
     /// `fixtrue` and watched the suite report "compiled from source, 5 passed".
     function managerPlanFor(string memory mode, string memory fixturePath) public returns (ManagerPlan) {
+        // whether RPC_URL EXISTS, never what it holds (a cheatcode's return value is printed in a trace)
+        return managerPlanFor(mode, fixturePath, vm.envExists("RPC_URL"));
+    }
+
+    /// @notice the same decision with the endpoint's presence as an argument, so a test can ask it both ways (K16).
+    /// `fork` without an endpoint is a SKIP, exactly as `fixture` without its files: never "source", never a fork of
+    /// some endpoint the harness picked for you. The endpoint changes nothing for the other two modes.
+    function managerPlanFor(string memory mode, string memory fixturePath, bool rpcSet) public returns (ManagerPlan) {
         bytes32 m = keccak256(bytes(mode));
+        if (m == keccak256("fork")) return rpcSet ? ManagerPlan.FORK : ManagerPlan.SKIP_FORK_NO_RPC;
         if (m != keccak256("fixture")) {
             if (m != keccak256("source")) revert UnknownManagerMode(mode);
             return ManagerPlan.SOURCE;
@@ -143,7 +203,18 @@ abstract contract V4Harness is Test {
             return;
         }
 
-        if (managerPlan == ManagerPlan.FIXTURE) {
+        if (managerPlan == ManagerPlan.SKIP_FORK_NO_RPC) {
+            // the same rule as the missing fixture: the reason travels in the skip, and nothing falls back to source
+            vm.skip(
+                true,
+                "V4_MANAGER=fork but RPC_URL is not set. NOTHING WAS TESTED. Export RPC_URL (a read-only mainnet endpoint, archive if FORK_BLOCK is old) in your own shell; never in a file of the repository"
+            );
+            return;
+        }
+
+        if (managerPlan == ManagerPlan.FORK) {
+            _forkManager();
+        } else if (managerPlan == ManagerPlan.FIXTURE) {
             _etchManagerFromFixture(fixturePath);
         } else {
             manager = IPoolManager(address(new PoolManager(address(this))));
@@ -159,6 +230,10 @@ abstract contract V4Harness is Test {
         managerFixtureChainId = vm.parseJsonUint(meta, ".chainId");
         managerFixtureCodeHash = vm.parseJsonBytes32(meta, ".codeHash");
         uint256 declaredSize = vm.parseJsonUint(meta, ".codeSize");
+        // K16: a fixture is the code AT A BLOCK. Without the block nobody can check the fixture against the chain
+        // (`test/fork/FixtureBlock.t.sol` does), so a fixture that names none is refused, not guessed at.
+        if (!vm.keyExistsJson(meta, ".block")) revert FixtureNotBlockPinned(_metaPathOf(fixturePath));
+        managerFixtureBlock = vm.parseJsonUint(meta, ".block");
 
         bytes memory code = vm.parseBytes(_trim(vm.readLine(fixturePath)));
         require(code.length > 0, "V4Harness: fixture is empty");
@@ -169,6 +244,22 @@ abstract contract V4Harness is Test {
         vm.label(managerFixtureAddress, "PoolManager(etched)");
         manager = IPoolManager(managerFixtureAddress);
         managerRuntimeSize = code.length;
+    }
+
+    /// @notice fork mainnet at the pinned block and take the deployed manager as it is there: code AND storage.
+    /// Nothing is etched and nothing is deployed in its place; if the block is before the manager existed, or the endpoint
+    /// is another chain, it reverts saying which - a fork of the wrong thing is not a fork run.
+    function _forkManager() private {
+        forkBlock = vm.envOr("FORK_BLOCK", DEFAULT_FORK_BLOCK);
+        vm.createSelectFork(FORK_RPC_ALIAS, forkBlock);
+        if (block.chainid != FORK_CHAIN_ID) revert ForkNotMainnet(block.chainid);
+        if (MAINNET_POOL_MANAGER.code.length == 0) revert ForkManagerHasNoCode(forkBlock);
+        manager = IPoolManager(MAINNET_POOL_MANAGER);
+        managerRuntimeSize = MAINNET_POOL_MANAGER.code.length;
+        managerForkCodeHash = keccak256(MAINNET_POOL_MANAGER.code);
+        vm.label(MAINNET_POOL_MANAGER, "PoolManager(mainnet fork)");
+        vm.label(MAINNET_USDC, "USDC");
+        vm.label(MAINNET_WETH, "WETH");
     }
 
     /// @dev `cast code` writes one line, but a file that has been through a Windows editor has a `\r` on the
@@ -190,6 +281,8 @@ abstract contract V4Harness is Test {
     function managerModeLabel() public view returns (string memory) {
         if (managerPlan == ManagerPlan.SKIP_FIXTURE_MISSING) return "skipped (fixture missing)";
         if (managerPlan == ManagerPlan.FIXTURE) return "real bytecode (etched fixture)";
+        if (managerPlan == ManagerPlan.FORK) return "mainnet fork (the deployed manager, its storage, at a pinned block)";
+        if (managerPlan == ManagerPlan.SKIP_FORK_NO_RPC) return "skipped (fork asked for, RPC_URL not set)";
         return "compiled from source (lib/v4-core)";
     }
 
@@ -198,8 +291,15 @@ abstract contract V4Harness is Test {
         console2.log("V4 MANAGER:", managerModeLabel());
         console2.log("  address     ", address(manager));
         console2.log("  runtime size", managerRuntimeSize);
+        if (managerPlan == ManagerPlan.FORK) {
+            // the block and the chain, never the endpoint
+            console2.log("  fork block  ", forkBlock);
+            console2.log("  chain id    ", block.chainid);
+            console2.log("  code hash   ", vm.toString(managerForkCodeHash));
+        }
         if (managerPlan == ManagerPlan.FIXTURE) {
             console2.log("  fixture chain id", managerFixtureChainId);
+            console2.log("  fixture block   ", managerFixtureBlock);
             console2.log("  code hash   ", vm.toString(managerFixtureCodeHash));
             console2.log("  NOTE: block.chainid here is", block.chainid);
             console2.log("  If your hook reads block.chainid, set vm.chainId() to the fixture's chain yourself.");
@@ -235,6 +335,62 @@ abstract contract V4Harness is Test {
         _setUpManager();
         _deployCurrencies();
         _deployRouters();
+    }
+
+    // ------------------------------------------------------------------ fork-only suites and real currencies (K16)
+    /// @notice `_setUpV4` for a suite that means nothing off the fork (real USDC, the deployed manager's storage). Under
+    /// any other `V4_MANAGER` it SKIPS with the reason; under `fork` without `RPC_URL`, `_setUpManager` skips. Never green.
+    function _setUpV4OnFork() internal {
+        string memory mode = vm.envOr("V4_MANAGER", string("source"));
+        if (keccak256(bytes(mode)) != keccak256("fork")) {
+            vm.skip(
+                true,
+                string.concat(
+                    "a fork-only suite under V4_MANAGER=",
+                    mode,
+                    ": NOTHING WAS TESTED. Run it as FOUNDRY_PROFILE=fork V4_MANAGER=fork with RPC_URL exported"
+                )
+            );
+            return;
+        }
+        _setUpV4();
+    }
+
+    function realUsdc() internal pure returns (Currency) {
+        return Currency.wrap(MAINNET_USDC);
+    }
+
+    function realWeth() internal pure returns (Currency) {
+        return Currency.wrap(MAINNET_WETH);
+    }
+
+    /// @notice give `who` `amount` MORE of a real currency and approve the kit's router and liquidity helper: ETH through
+    /// `vm.deal`, an ERC-20 through forge-std's `deal` (it finds the balance slot; totalSupply is left alone, because on
+    /// WETH9 it is not a slot and `deal(..., true)` reverts). USDC's blocklist bit shares the balance's word, and `deal`
+    /// to a blocklisted account either reverts or quietly un-blocklists it: such an account is refused here, by name.
+    function _fundReal(Currency c, address who, uint256 amount) internal {
+        if (c.isAddressZero()) {
+            _fundNative(who, amount);
+            return;
+        }
+        address token = Currency.unwrap(c);
+        if (token == MAINNET_USDC && IUsdcBlocklist(token).isBlacklisted(who)) revert DealWouldClearUsdcBlocklist(who);
+        _plainErc20[token] = true;
+        deal(token, who, IERC20Minimal(token).balanceOf(who) + amount);
+        vm.startPrank(who);
+        IERC20Minimal(token).approve(address(router), type(uint256).max);
+        IERC20Minimal(token).approve(address(liquidity), type(uint256).max);
+        vm.stopPrank();
+    }
+
+    /// @notice a pool of two currencies in either order: sorted here, as v4 requires (ETH, the zero address, first)
+    function _initRealPool(IHooks hook, uint24 fee, int24 tickSpacing, uint160 sqrtPriceX96, Currency a, Currency b)
+        internal
+        returns (PoolKey memory key)
+    {
+        (Currency c0, Currency c1) = Currency.unwrap(a) < Currency.unwrap(b) ? (a, b) : (b, a);
+        key = PoolKey({currency0: c0, currency1: c1, fee: fee, tickSpacing: tickSpacing, hooks: hook});
+        manager.initialize(key, sqrtPriceX96);
     }
 
     // ------------------------------------------------------------------ the hook, at a mined address (K22)
@@ -326,9 +482,11 @@ abstract contract V4Harness is Test {
     // ------------------------------------------------------------------ native currency and claims (K14)
     /// @notice what `who` holds of `c`, whatever `c` is: ETH for the zero address, the TRUE balance of a harness token
     /// (`HostileERC20.trueBalanceOf`, which no switch of the token can falsify) otherwise. Every currency the harness
-    /// hands out is one of the two; a project that brings its own ERC-20 overrides this.
+    /// hands out is one of the two; a project that brings its own ERC-20 overrides this. A real token the harness funded
+    /// on the fork (`_fundReal`: USDC, WETH) has no `trueBalanceOf`, and its `balanceOf` is the balance.
     function _trueBalance(Currency c, address who) internal view virtual returns (uint256) {
         if (c.isAddressZero()) return who.balance;
+        if (_plainErc20[Currency.unwrap(c)]) return IERC20Minimal(Currency.unwrap(c)).balanceOf(who);
         return HostileERC20(Currency.unwrap(c)).trueBalanceOf(who);
     }
 
@@ -434,17 +592,7 @@ abstract contract V4Harness is Test {
         internal
         returns (SwapBooks memory b)
     {
-        address hook = address(key.hooks);
-        int256[8] memory pre = [
-            int256(_trueBalance(key.currency0, swapper)),
-            int256(_trueBalance(key.currency1, swapper)),
-            int256(_trueBalance(key.currency0, hook)),
-            int256(_trueBalance(key.currency1, hook)),
-            int256(_trueBalance(key.currency0, address(manager))),
-            int256(_trueBalance(key.currency1, address(manager))),
-            int256(_claimsOf(key.currency0, hook)),
-            int256(_claimsOf(key.currency1, hook))
-        ];
+        int256[8] memory pre = _booksSnapshot(key, swapper);
         vm.recordLogs();
         vm.prank(swapper);
         BalanceDelta d = router.swap{value: value}(key, params, "");
@@ -460,15 +608,31 @@ abstract contract V4Harness is Test {
         b.caller1 = d.amount1();
         b.pool0 = p0;
         b.pool1 = p1;
-        b.swapper0 = int256(_trueBalance(key.currency0, swapper)) - pre[0];
-        b.swapper1 = int256(_trueBalance(key.currency1, swapper)) - pre[1];
-        b.hook0 = int256(_trueBalance(key.currency0, hook)) - pre[2];
-        b.hook1 = int256(_trueBalance(key.currency1, hook)) - pre[3];
-        b.manager0 = int256(_trueBalance(key.currency0, address(manager))) - pre[4];
-        b.manager1 = int256(_trueBalance(key.currency1, address(manager))) - pre[5];
-        b.hookClaims0 = int256(_claimsOf(key.currency0, hook)) - pre[6];
-        b.hookClaims1 = int256(_claimsOf(key.currency1, hook)) - pre[7];
+        int256[8] memory post = _booksSnapshot(key, swapper);
+        b.swapper0 = post[0] - pre[0];
+        b.swapper1 = post[1] - pre[1];
+        b.hook0 = post[2] - pre[2];
+        b.hook1 = post[3] - pre[3];
+        b.manager0 = post[4] - pre[4];
+        b.manager1 = post[5] - pre[5];
+        b.hookClaims0 = post[6] - pre[6];
+        b.hookClaims1 = post[7] - pre[7];
         b.valueSent = value;
+    }
+
+    /// @dev every balance `SwapBooks` differences, in its order: swapper, hook, manager (0 then 1), the hook's claims.
+    /// A function of its own since K16: inline, the IR build of `_swapWithBooks` ran out of stack once `_trueBalance`
+    /// learned to read a real token.
+    function _booksSnapshot(PoolKey memory key, address swapper) internal view returns (int256[8] memory s) {
+        address hook = address(key.hooks);
+        s[0] = int256(_trueBalance(key.currency0, swapper));
+        s[1] = int256(_trueBalance(key.currency1, swapper));
+        s[2] = int256(_trueBalance(key.currency0, hook));
+        s[3] = int256(_trueBalance(key.currency1, hook));
+        s[4] = int256(_trueBalance(key.currency0, address(manager)));
+        s[5] = int256(_trueBalance(key.currency1, address(manager)));
+        s[6] = int256(_claimsOf(key.currency0, hook));
+        s[7] = int256(_claimsOf(key.currency1, hook));
     }
 
     /// @notice add `liq` of liquidity over the full range, paid for by `provider`.
