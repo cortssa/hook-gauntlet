@@ -26,6 +26,33 @@ one address may swap per block and charges a surcharge above a threshold. It doe
 4. **Numbers are read from outputs**, in that session, never from memory and never copied from another document.
 5. **If the files and the repository disagree, the repository wins** and you fix the files.
 
+## Where the route is: `scripts/next.sh`
+
+The flag block at the top of `STATE.md` is what `doctrine/NEXT.md` reads, and the table is taken top to bottom. Walking
+~25 rows by hand, a mistyped value (`battery: gren`) or a flag left out is read as whatever the reader guesses. So:
+
+```sh
+scripts/next.sh .gauntlet/STATE.md
+scripts/next.sh .gauntlet/STATE.md --judge 5=false,8=false,12=true    # the answers to the rows that need judgement
+```
+
+It refuses (exit 2, one line naming the flag) a flag that is missing, a value not on the flag's list, a line of the
+block that is not `name: value`, and a `ceiling` of no known shape (`not agreed ...`, `undecided ...`, or `N model rounds
+...; M used`). Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
+the flags that made it true (exit 0). No row true: `no row is true: the table has a hole or a flag is stale` (exit 1,
+NEXT.md's STOP rule: say which in `STATE.md` and ask - do not change a flag to get moving).
+
+What the flags cannot decide is not guessed. Rows 1 (a high or a `pending:` finding is open), 3 (`waiting_on_owner`), 5,
+8, 9, 9b, 10 (after a round, with no bytecode change since), 11b, 12 (did the spec's promises change?), 16, 17 and 18b
+need something `STATE.md` does not carry, and are printed `needs judgement: row <id> - <the question>`; the row after
+them is printed as the answer only if they are all false (exit 3). Answer with `--judge <row>=true|false`: the answers
+are printed back, so the judgement is on the record. Row 3: answer `false` each row below that depends on the owner's
+answer, and 3 itself `false` once none left does. Two rows are not destinations: row 2 (ceiling reached) is `in force`
+and turns every model row below it off; row 14 (the loop is over) is `passed`, and the table goes on at row 15.
+
+The rows are data inside `next.sh`: a new row of `NEXT.md` is one line there, and every run checks that the two name the
+same rows in the same order (`scripts/next.sh --check-table`); a row in one and not the other is a refusal.
+
 ## The ROUND line
 
 There used to be a fourth file, a machine-readable record of every round. Nothing ever read it, and three reviewers

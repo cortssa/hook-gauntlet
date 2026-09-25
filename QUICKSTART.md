@@ -105,7 +105,8 @@ for your hook lives beside them: `.gauntlet/SPEC.md`, the filled briefs in `.gau
 Tell your agent, in its own words: *"Read `hook-gauntlet/AGENTS.md`, all of it, then `doctrine/UPSTREAM.md`. My idea
 is: … Start at phase 0 and interview me."* From then on its next step comes from one table, `doctrine/NEXT.md`: the
 first row whose condition is true. It re-reads that table whenever it arrives with no context and whenever it
-finishes anything.
+finishes anything. `scripts/next.sh .gauntlet/STATE.md` reads the flags, refuses a malformed one, and names that row
+(and the rows only a judgement can decide, never guessed: `state/README.md`).
 
 Phase 0 is the interview: the agent copies `briefs/owner-interview.md` to `.gauntlet/briefs/00-interview.md` and you
 answer it together. One question, the self-score against the Uniswap Foundation's security framework, needs the
@@ -136,7 +137,9 @@ IR compilation restrictions - its `paths` entry made absolute too, `<kit>/foundr
 and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `ds-test/`, `solmate/`, `@openzeppelin/`,
 `v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
 carry because the module reaches its own sources directly: `gauntlet-v4/=<kit>/foundry-kit/v4/src/` for `V4Harness` and
-`HookMiner`), and its scenarios from `foundry-kit/v4/test/`. Every test that creates the PoolManager is then compiled under the
+`HookMiner`), and its scenarios from `foundry-kit/v4/test/`. In each test's `setUp`: `_setUpV4();` then
+`hook = MyHook(_deployHook(type(MyHook).creationCode, abi.encode(manager), <its flags>));` - the harness mines the address
+and refuses to run before the routers exist (`foundry-kit/v4/README.md`, "Address mining for the flag bits"). Every test that creates the PoolManager is then compiled under the
 restricted via-IR profile, so the hook the tests, the fuzz and the mutants deploy is the `<Hook>.manager.json` build, not the
 default `<Hook>.json`: THAT is the audited artefact - `size.sh` prints both rows, cite the `.manager` one; promotion hashes it;
 a hook deployed from any other profile is a different artefact (`NEXT.md`, bytecode changed). A hook that HOLDS tokens has a worked example since 2026-09-24: `DeltaFeeHook` (a fee taken by

@@ -825,6 +825,99 @@ if grep -q "line $(grep -n '^ROUND r09' "$RL" | cut -d: -f1) is not a ROUND line
 if [ "$(wc -l < "$TMP/o148" | tr -d ' ')" = "1" ] && [ "$(wc -l < "$TMP/o149" | tr -d ' ')" = "1" ]; then echo "  ok    one JSON line from each"; else
   echo "  FAIL  the example files did not give one JSON line each"; fails=$((fails + 1)); fi
 
+# ================================================================= next.sh (STATE.md's flags -> the row of doctrine/NEXT.md; no forge needed)
+# One fixture per row of the table (scripts/test/fixtures/state-row-<id>.md) whose FIRST line says how it is run and what
+# it must give: `judge=` the answers to the rows that need judgement, `rows=` the rows the output names, in order (a
+# passed row 14 or a row 2 in force, then the row given), `rc=`. A fixture whose own row needs judgement is run a second
+# time without that answer, and must then stop there (rc 3). The fixtures are listed from NEXT.md, not from the directory:
+# a row added to the table with no fixture is a red here, as it is (with no entry in next.sh) in next.sh's drift guard.
+echo "== next.sh =="
+NX="$HERE/next.sh"; NXT="$HERE/../doctrine/NEXT.md"
+nx_rows() { sed -nE 's/^(next|passed|in force|needs judgement): row ([0-9]+b?)( .*)?$/\2/p' "$1" | tr '\n' ',' | sed 's/,$//'; }
+nx_meta() { sed -nE "1s/.* $2=([^ ]+).*/\\1/p" "$1"; }   # nx_meta <fixture> <judge|rows|rc>
+nn=400
+for id in $(sed -nE 's/^\| ([0-9]+b?) \|.*/\1/p' "$NXT"); do
+  f="$FIX/state-row-$id.md"; nn=$((nn + 1))
+  if [ ! -f "$f" ]; then echo "  FAIL  NEXT.md row $id has no fixture (state-row-$id.md)"; fails=$((fails + 1)); continue; fi
+  j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
+  a=(); [ "$j" = "none" ] || a=(--judge "$j")
+  "$NX" "$f" "${a[@]}" > "$TMP/o$nn" 2>&1; check "next.sh: the fixture for row $id gives rows $want" "$wrc" $? "$TMP/o$nn"
+  got="$(nx_rows "$TMP/o$nn")"
+  case ",$want," in *",$id,"*) ;; *) echo "  FAIL  the fixture for row $id does not name row $id in rows="; fails=$((fails + 1)) ;; esac
+  if [ "$got" != "$want" ]; then echo "  FAIL  and it named rows '$got', not '$want'"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); fi
+  if [ "$wrc" = "0" ] && ! grep -q '^because: ' "$TMP/o$nn"; then echo "  FAIL  and it did not say which flags made row $id true"; fails=$((fails + 1)); fi
+  case ",$j," in *",$id=true,"*)
+    j2="$(printf ',%s,' "$j" | sed "s/,$id=true,/,/; s/^,//; s/,$//")"
+    a=(); [ -z "$j2" ] || a=(--judge "$j2")
+    "$NX" "$f" "${a[@]}" > "$TMP/o${nn}j" 2>&1; check "next.sh: row $id without its answer stops there, needing judgement" 3 $? "$TMP/o${nn}j"
+    [ "$(grep -m 1 '^needs judgement: ' "$TMP/o${nn}j" | sed -nE 's/^needs judgement: row ([0-9]+b?) .*/\1/p')" = "$id" ] \
+      || { echo "  FAIL  and the first row needing judgement is not row $id"; sed "s/^/        | /" "$TMP/o${nn}j"; fails=$((fails + 1)); } ;;
+  esac
+done
+"$NX" "$FIX/state-row-6.md" --judge 5=false > "$TMP/o440" 2>&1
+if grep -q '^next: row 6 - run the battery$' "$TMP/o440" && grep -q '^because: .*bytecode_changed_since.last_battery=yes' "$TMP/o440"; then
+  echo "  ok    the row is printed with its action as NEXT.md words it, and the flag that made it true"; else
+  echo "  FAIL  row 6 was not printed as 'next: row 6 - run the battery' with its flag:"; sed "s/^/        | /" "$TMP/o440"; fails=$((fails + 1)); fi
+# the second branch of a row, and a note that quiets one
+nx_variant() { # nx_variant <n> <label> <fixture> <sed script> <judge|-> <rc> <rows>
+  local n="$1" label="$2" fx="$3" sc="$4" j="$5" wrc="$6" want="$7"; local -a a=()
+  sed "$sc" "$FIX/$fx" > "$TMP/state-$n.md"; [ "$j" = "-" ] || a=(--judge "$j")
+  "$NX" "$TMP/state-$n.md" "${a[@]}" > "$TMP/o$n" 2>&1; check "next.sh: $label" "$wrc" $? "$TMP/o$n"
+  [ "$(nx_rows "$TMP/o$n")" = "$want" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o$n")', not '$want'"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); }
+}
+nx_variant 445 "row 13b by its second branch: a clean discovery round, a REASONED medium still open" state-row-13b.md \
+  's/^last_audit_round: .*/last_audit_round: r04 discovery 0H 0M 0L/; s/^open_findings: .*/open_findings: high=0 medium=1 low=0 reasoned_high_or_medium=1/' \
+  5=false,8=false,9=false,9b=false,10=false,11b=false 0 13b
+nx_variant 446 "row 1 by its second branch: a pending: note (a provisional high?) needs judgement" state-row-5.md \
+  's/^notes: .*/notes: pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b"
+nx_variant 447 "row 7b is quiet when notes: says what replaced the real manager" state-row-7b.md \
+  's/^notes: .*/notes: fork: n\/a - its own manager; real manager: the hook runs on its own manager, dossier section 8/' \
+  5=false 3 "8,10,11b"
+nx_variant 448 "phase 2 is row 4b's, not row 4's" state-row-4b.md 's/^phase: .*/phase: 2/' - 0 4b
+"$NX" "$FIX/state-new-project.md" > "$TMP/o441" 2>&1; check "next.sh: a new project, NEXT.md's starting values, gives row 4" 0 $? "$TMP/o441"
+[ "$(nx_rows "$TMP/o441")" = "4" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o441")', not 4"; fails=$((fails + 1)); }
+"$NX" "$FIX/state-hole.md" --judge "$(nx_meta "$FIX/state-hole.md" judge)" > "$TMP/o442" 2>&1; check "next.sh: no row true (a hole)" 1 $? "$TMP/o442"
+grep -qx 'no row is true: the table has a hole or a flag is stale' "$TMP/o442" || { echo "  FAIL  and not with NEXT.md's STOP line"; fails=$((fails + 1)); }
+# the kit's example STATE.md: its own prose says row 3 is true but blocks nothing, and the black-box (row 12) is next
+"$NX" "$HERE/../state/STATE.md" > "$TMP/o443" 2>&1; check "next.sh: the example state/STATE.md, no answers: rows needing judgement first" 3 $? "$TMP/o443"
+[ "$(nx_rows "$TMP/o443")" = "3,5,8,9,9b,11b,12,13" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o443")', not 3,5,8,9,9b,11b,12,13"; fails=$((fails + 1)); }
+"$NX" "$HERE/../state/STATE.md" --judge 3=false,5=false,8=false,9=false,9b=false,11b=false,12=true > "$TMP/o444" 2>&1
+check "next.sh: the example state/STATE.md with its prose's answers gives row 12, the black-box" 0 $? "$TMP/o444"
+[ "$(nx_rows "$TMP/o444")" = "12" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o444")', not 12"; fails=$((fails + 1)); }
+# refusals: rc 2, one line, naming the flag
+NP="$FIX/state-new-project.md"; nn=450
+nx_refused() { # nx_refused <label> <the words the refusal must say> <sed script applied to the new-project fixture> [next.sh args]
+  local label="$1" says="$2" sc="$3"; shift 3; nn=$((nn + 1))
+  sed "$sc" "$NP" > "$TMP/state-$nn.md"
+  "$NX" "$TMP/state-$nn.md" "$@" > "$TMP/o$nn" 2>&1; check "next.sh refuses $label" 2 $? "$TMP/o$nn"
+  grep -qF -- "$says" "$TMP/o$nn" || { echo "  FAIL  and not for \"$says\": $(head -1 "$TMP/o$nn")"; fails=$((fails + 1)); }
+  [ "$(wc -l < "$TMP/o$nn" | tr -d ' ')" = "1" ] || { echo "  FAIL  and the refusal is not one line"; fails=$((fails + 1)); }
+}
+nx_refused "a mistyped enum (battery: gren)" "battery: 'gren' is not one of" 's/^battery: .*/battery:                   gren/'
+nx_refused "a missing flag (no blackbox: line)" "flag 'blackbox' is missing" '/^blackbox:/d'
+nx_refused "a flag with no value (phase:)" "flag 'phase' has no value" 's/^phase: .*/phase:/'
+nx_refused "a phase outside sketch | 0-8" "phase: '9' is not one of" 's/^phase: .*/phase: 9/'
+nx_refused "a bytecode_changed_since with a key missing" "bytecode_changed_since: last_long_fuzz= is missing" 's/last_long_fuzz=yes *//'
+nx_refused "a bytecode_changed_since value that is not yes/no" "bytecode_changed_since: last_battery='maybe'" 's/last_battery=yes/last_battery=maybe/'
+nx_refused "an open_findings count that is not a number" "open_findings: medium='1-2'" 's/medium=0/medium=1-2/'
+nx_refused "a black-box round in last_audit_round" "last_audit_round: 'black-box' is not discovery or regression" 's/^last_audit_round: .*/last_audit_round: bb1 black-box no divergence/'
+nx_refused "a ceiling of no known shape" "flag 'ceiling'" 's/^ceiling: .*/ceiling: lots/'
+nx_refused "an enum followed by words that are not a comment" "battery: after 'never' only a comment" 's/^battery: .*/battery: never green/'
+nx_refused "a line of the block that is not 'name: value'" "is not 'name: value'" 's/^battery: .*/battery never/'
+nx_refused "a flag it does not know (a typo in the name)" "unknown flag 'batery'" 's/^battery:/batery:/'
+nx_refused "a flag given twice" "flag 'battery' appears twice" 's/^battery: .*/&\nbattery: green/'
+nx_refused "an answer to a row the flags decide (--judge 6=false)" "row 6 is decided by the flags" '' --judge 6=false
+nx_refused "an answer to a row NEXT.md does not have (--judge 99=true)" "no row 99" '' --judge 99=true
+nx_refused "a STATE.md with no flag block" "no flag block" '/^```/d'
+# drift guard: next.sh's rows and NEXT.md's table must name the same rows, in the same order
+"$NX" --check-table > "$TMP/o470" 2>&1; check "next.sh --check-table: its rows and doctrine/NEXT.md's table agree" 0 $? "$TMP/o470"
+sed 's/^| 18b |.*/&\n| 19 | a row added to the table | do something new | a reason |/' "$NXT" > "$TMP/next-added.md"
+"$NX" --check-table "$TMP/next-added.md" > "$TMP/o471" 2>&1; check "next.sh --check-table: a row added to NEXT.md with no entry (drift)" 2 $? "$TMP/o471"
+grep -qF "row 19" "$TMP/o471" || { echo "  FAIL  and the refusal does not name row 19: $(head -1 "$TMP/o471")"; fails=$((fails + 1)); }
+grep -v '^| 7b |' "$NXT" > "$TMP/next-removed.md"
+"$NX" "$NP" --table "$TMP/next-removed.md" > "$TMP/o472" 2>&1; check "next.sh on a STATE.md, with a row removed from NEXT.md (drift)" 2 $? "$TMP/o472"
+grep -qF "row 7b" "$TMP/o472" || { echo "  FAIL  and the refusal does not name row 7b: $(head -1 "$TMP/o472")"; fails=$((fails + 1)); }
+
 # ================================================================= dossier-pdf.py (the dossier's reading copy; no forge needed)
 # The PDF is the auditor's reading copy of DOSSIER.md; the Markdown stays the record. What a PDF must never do is lose a
 # line on the way to paper, so the check below reads the text back out of the PDF (pypdf) and looks for every line of

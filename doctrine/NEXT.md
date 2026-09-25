@@ -21,7 +21,7 @@ open_findings:             high=N medium=N low=N reasoned_high_or_medium=N   (no
                            (a finding counts as REASONED only when it has NO test; one with a tested part and a reasoned part counts as tested, and the ROUND line's `reasoned` counts the same way)
 last_audit_round:          id, discovery | regression, result (e.g. r06 regression 0H 1M 3L)   - black-box and verifier rounds do NOT go here
 last_other_round:          id, black-box | verifier, result
-ceiling:                   what the owner agreed in phase 0, and how much of it is used (see below what counts)
+ceiling:                   not agreed (phase 0) | undecided | N model rounds ... agreed ...; M used   (what the owner agreed in phase 0, and how much of it is used: reached when M >= N; see below what counts)
 real_manager_battery:      n/a (chain not chosen) | never | stale (bytecode changed since) | current
 waiting_on_owner:          none | the question(s), each named (triage of <ids> · chain · severity of <id> · reason for <judge> not run · ...)
 location:                  .gauntlet/ | root       (where these files and the dossier live)

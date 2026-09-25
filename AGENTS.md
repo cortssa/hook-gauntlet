@@ -96,6 +96,8 @@ The phases say what exists. **`doctrine/NEXT.md` says when.** It is a decision t
 condition is true. Run it every time you arrive with no context and every time you finish anything. It is how you
 know that the battery and the long fuzz come before a model round, that the black-box goes early, that a change
 with no bytecode gets a verifier and not a round, that a change after promotion sends you back, and when to stop.
+`scripts/next.sh <STATE.md>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows
+that need your judgement first (`state/README.md`).
 
 ## 4. State on disk
 
