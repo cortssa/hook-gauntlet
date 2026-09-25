@@ -12,7 +12,6 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {CurrencySettler} from "v4-core/test/utils/CurrencySettler.sol";
 import {V4Harness} from "../src/V4Harness.sol";
-import {HookMiner} from "../src/HookMiner.sol";
 import {HostileHook} from "../src/HostileHook.sol";
 import {SwapEventReader} from "../src/SwapEventReader.sol";
 
@@ -86,11 +85,8 @@ contract DeltaAccountingTest is V4Harness {
     address internal trader = address(0xB0B);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(address(this), DELTA_FLAGS, type(HostileHook).creationCode, abi.encode(manager));
-        hook = new HostileHook{salt: salt}(manager);
+        _setUpV4();
+        hook = HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), DELTA_FLAGS));
         vm.label(address(hook), "HostileHook(deltas)");
         key = _initPool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1);
         _fundAndApprove(provider, 1_000_000e18);

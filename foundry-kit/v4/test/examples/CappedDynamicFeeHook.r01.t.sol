@@ -14,7 +14,6 @@ import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {V4Harness} from "../../src/V4Harness.sol";
-import {HookMiner} from "../../src/HookMiner.sol";
 import {SwapEventReader} from "../../src/SwapEventReader.sol";
 import {CappedDynamicFeeHook} from "../../src/examples/CappedDynamicFeeHook.sol";
 
@@ -41,16 +40,14 @@ contract CappedDynamicFeeHookRound01 is V4Harness {
     address internal attacker = address(0xBAD);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG,
-            type(CappedDynamicFeeHook).creationCode,
-            abi.encode(manager)
+        _setUpV4();
+        hook = CappedDynamicFeeHook(
+            _deployHook(
+                type(CappedDynamicFeeHook).creationCode,
+                abi.encode(manager),
+                Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+            )
         );
-        hook = new CappedDynamicFeeHook{salt: salt}(manager);
         _fundAndApprove(lp, 1_000_000e18);
         _fundAndApprove(victim, 1_000_000e18);
         _fundAndApprove(attacker, 1_000_000e18);

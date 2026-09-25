@@ -123,7 +123,7 @@ behaviour, the upstream one is right.
 
 | file | what it is |
 | --- | --- |
-| `src/V4Harness.sol` | the base your tests inherit: **both** managers, currencies, routers, pool helpers (overlaps `v4-core/test/utils/Deployers.sol`) |
+| `src/V4Harness.sol` | the base your tests inherit: **both** managers, currencies, routers, pool helpers, and `_deployHook` - a hook at a mined address in one call (overlaps `v4-core/test/utils/Deployers.sol`) |
 | `src/HookMiner.sol` | CREATE2 salt search for an address carrying **exactly** the declared flags (overlaps `v4-periphery/src/utils/HookMiner.sol`) |
 | `src/MinimalRouter.sol` | the dumbest swap router that can settle its own deltas, ETH included: `msg.value` in, the rest refunded after the unlock (overlaps `v4-core/src/test/PoolSwapTest.sol`) |
 | `src/LiquidityHelper.sol` | adds and removes liquidity inside its own unlock callback, ETH included (overlaps `PoolModifyLiquidityTest.sol`). Positions are PER CALLER: the manager is given the salt `positionSalt(msg.sender, salt)`, so a hook that reads `params.salt` in a liquidity callback sees that derived salt, never the caller's |
@@ -351,6 +351,32 @@ library and a for-loop written in a hurry.
 **Mine in `setUp`, every run.** The address is `keccak(0xff, deployer, salt, keccak(initcode))`, so a salt is
 only valid for one deployer, one creation code and one set of constructor arguments. Change the hook by a
 character and yesterday's salt points somewhere else. Never hard-code one.
+
+**In a test, let the harness do it.** `V4Harness` owns the order and the mining; a test says which hook:
+
+```solidity
+function setUp() public {
+    _setUpV4();   // the manager, the two currencies, the routers - in that order, which is not taste (below)
+    hook = MyHook(_deployHook(type(MyHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG));
+    key = _initPool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1);
+    _fundAndApprove(provider, 1_000_000e18);
+    _addFullRangeLiquidity(key, provider, 100e18);
+}
+```
+
+`_deployHook(creationCode, constructorArgs, flags)` runs `HookMiner.find` for THIS contract, CREATE2s the hook, and
+checks it landed where it was mined: the same address, code and nonce afterwards as the hand-written pair
+`HookMiner.find(address(this), ...)` + `new MyHook{salt: salt}(...)` (`test/HookFlags.t.sol` compares them), a
+constructor's revert passed through as it is. It refuses to run before the routers exist (`HookBeforeRouters`): until
+then `abi.encode(manager)` encodes address zero and the miner would mine for a hook bound to no manager, and a hook
+created before the routers bumps this contract's nonce and moves them. The order inside `_setUpV4()` matters for the same
+reason - everything is created by the test contract at an address its nonce picks, and the currencies' addresses decide
+which one is `token0`. A test ABOUT the mining (the salt, the predicted address, a wrong address on purpose) keeps
+`HookMiner.find` and `new` by hand, as `test/HookFlags.t.sol` does. What it costs a test that deploys a hook inside the
+test function rather than in `setUp`: measured on this module (forge 1.8.1, 2026-09-25), the seven tests that deploy a
+hook in their own body went up by 5 550 to 67 112 gas each against the hand-written pair (the initcode is built once more
+in memory, and memory costs more the more a test already holds); a test that deploys nothing moved by -12 to +88 (its
+contract's own bytecode changed). `setUp` is not in a test's gas.
 
 ### Which refusal catches what
 
@@ -1372,7 +1398,8 @@ What a binding must do (a project's own copy of `ExampleScenario.sol`), in order
    number the sandbox gives you counts.
 
 1. Override the five verbs: `_quote`, `_execute`, `_sqrtPriceNow`, `_balances`, `_referencePriceX96`.
-2. Call `_initEngine()` once its system is deployed.
+2. Call `_initEngine()` once its system is deployed (on v4: `_setUpV4()`, then the hook with `_deployHook(...)`, as
+   `ExampleScenario._setUpScenario` does - "Address mining for the flag bits" above).
 3. **Price gas: `ledger.setGasPrice(quotePerGasE18)`** right after `_initEngine()` - raw quote per unit of gas x 1e18,
    0 for a chain whose gas nobody pays, but SAID. `run` refuses to start (`SimLedger.GasUnpriced`) until it is.
 4. Report `Fill.amountInUsed` on every executed swap (the engine refuses a fill without it). A swap that was SENT and

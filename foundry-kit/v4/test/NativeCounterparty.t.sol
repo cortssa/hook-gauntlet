@@ -16,7 +16,6 @@ import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {V4Harness} from "../src/V4Harness.sol";
-import {HookMiner} from "../src/HookMiner.sol";
 import {HostileHook} from "../src/HostileHook.sol";
 import {HostileNativeActor} from "../src/HostileNativeActor.sol";
 import {MinimalRouter} from "../src/MinimalRouter.sol";
@@ -43,15 +42,14 @@ contract NativeCounterpartyTest is V4Harness {
     address internal provider = address(0xA11CE);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
         _fundAndApprove(provider, 1_000_000e18);
         _fundNative(provider, 1_000e18);
-        (, bytes32 salt) = HookMiner.find(
-            address(this), Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG, type(HostileHook).creationCode, abi.encode(manager)
+        hook = HostileHook(
+            _deployHook(
+                type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+            )
         );
-        hook = new HostileHook{salt: salt}(manager);
         vm.label(address(hook), "HostileHook(observer)");
         key = _initNativePool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1, currency1);
         _addFullRangeLiquidity(key, provider, 100e18);

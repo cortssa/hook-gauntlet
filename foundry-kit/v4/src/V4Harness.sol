@@ -15,6 +15,7 @@ import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
 import {MinimalRouter} from "./MinimalRouter.sol";
 import {LiquidityHelper} from "./LiquidityHelper.sol";
 import {SwapEventReader} from "./SwapEventReader.sol";
+import {HookMiner} from "./HookMiner.sol";
 
 /// @title V4Harness
 /// @notice The base a v4 hook's tests inherit from. It gives you a PoolManager, two hostile currencies, a
@@ -224,6 +225,62 @@ abstract contract V4Harness is Test {
         liquidity = new LiquidityHelper(manager);
         vm.label(address(router), "MinimalRouter");
         vm.label(address(liquidity), "LiquidityHelper");
+    }
+
+    /// @notice the world before any hook, in the one order that works: the manager, the two currencies, the routers.
+    /// The order is not taste. The routers hold the manager as an immutable, so they come after it. And every contract
+    /// here is created by THIS contract, at an address its nonce picks: the currencies' addresses decide which one is
+    /// `token0`, so moving a deployment moves the prices and the books of every test that reads them.
+    function _setUpV4() internal {
+        _setUpManager();
+        _deployCurrencies();
+        _deployRouters();
+    }
+
+    // ------------------------------------------------------------------ the hook, at a mined address (K22)
+    /// @notice `_deployHook` ran before `_deployRouters`. The manager the hook's constructor arguments name may not
+    /// exist yet (an `abi.encode(manager)` evaluated then encodes address zero, and the miner mines for that), and the
+    /// hook's CREATE2 bumps this contract's nonce, which moves every contract the setup creates after it. Call
+    /// `_setUpV4()` (or the three steps it runs) first.
+    error HookBeforeRouters();
+    /// @notice the CREATE2 produced no contract and said nothing: the mined address is taken already (the same hook,
+    /// same arguments, deployed twice from here), or the constructor ran out of gas.
+    error HookNotDeployed(address mined);
+    /// @notice the CREATE2 landed somewhere other than where the miner said. It cannot happen while this contract is
+    /// the deployer; it is checked so that it is never assumed.
+    error HookLandedElsewhere(address mined, address landed);
+
+    /// @notice put a hook at an address whose low fourteen bits are exactly `flags`: mine a salt for THIS contract,
+    /// `creationCode` and `constructorArgs` (`HookMiner.find`), CREATE2 it, check it landed where it was mined. The
+    /// same contract, at the same address, from the same deployer, with the same nonce afterwards, as the two lines it
+    /// replaces - `(, bytes32 salt) = HookMiner.find(address(this), flags, type(H).creationCode, abi.encode(args));`
+    /// then `new H{salt: salt}(args)` (`test/HookFlags.t.sol` compares the two). A constructor that reverts - a hook's
+    /// own `validateHookPermissions` among them - reverts this with the constructor's own revert data, as `new` does.
+    /// A test ABOUT the mining (`test/HookFlags.t.sol`) keeps `HookMiner.find` and `new` by hand: it asserts on the
+    /// salt and the predicted address, which this does not hand back.
+    /// @param creationCode `type(MyHook).creationCode`
+    /// @param constructorArgs `abi.encode(...)`, exactly as the constructor takes them - usually `abi.encode(manager)`,
+    ///        which is why this refuses to run before the routers (`HookBeforeRouters`)
+    /// @param flags the permission bits the hook declares, OR-ed from `Hooks.*_FLAG`
+    /// @return hook the deployed hook; cast it: `MyHook(_deployHook(...))` (payable: a hook with
+    ///         `receive` casts too)
+    function _deployHook(bytes memory creationCode, bytes memory constructorArgs, uint160 flags)
+        internal
+        returns (address payable hook)
+    {
+        if (address(router) == address(0) || address(liquidity) == address(0)) revert HookBeforeRouters();
+        (address mined, bytes32 salt) = HookMiner.find(address(this), flags, creationCode, constructorArgs);
+        bytes memory initcode = bytes.concat(creationCode, constructorArgs);
+        assembly ("memory-safe") {
+            hook := create2(0, add(initcode, 0x20), mload(initcode), salt)
+            if and(iszero(hook), gt(returndatasize(), 0)) {
+                let p := mload(0x40)
+                returndatacopy(p, 0, returndatasize())
+                revert(p, returndatasize())
+            }
+        }
+        if (hook == address(0)) revert HookNotDeployed(mined);
+        if (hook != mined) revert HookLandedElsewhere(mined, hook);
     }
 
     // ------------------------------------------------------------------ pools

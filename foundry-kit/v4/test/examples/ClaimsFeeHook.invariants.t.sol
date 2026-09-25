@@ -18,7 +18,6 @@ import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation
 import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
 import {HandlerBase, InvariantAsserts, IBalanceReader, YES, NO} from "gauntlet-kit/InvariantBase.sol";
 import {V4Harness} from "../../src/V4Harness.sol";
-import {HookMiner} from "../../src/HookMiner.sol";
 import {MinimalRouter} from "../../src/MinimalRouter.sol";
 import {LiquidityHelper} from "../../src/LiquidityHelper.sol";
 import {SwapEventReader} from "../../src/SwapEventReader.sol";
@@ -585,17 +584,15 @@ contract ClaimsFeeHookInvariants is V4Harness, InvariantAsserts {
     PoolKey internal key;
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(ClaimsFeeHook).creationCode,
-            abi.encode(manager, TREASURY)
+        _setUpV4();
+        vm.recordLogs(); // the search inside `_deployHook` is pure: nothing is recorded but the constructor's events
+        hook = ClaimsFeeHook(
+            _deployHook(
+                type(ClaimsFeeHook).creationCode,
+                abi.encode(manager, TREASURY),
+                Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        vm.recordLogs();
-        hook = new ClaimsFeeHook{salt: salt}(manager, TREASURY);
         grantsAtDeployment = GrantScan.count(vm.getRecordedLogs(), address(manager), address(hook));
         key = _initNativePool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1, currency1);
         (int24 lower, int24 upper) = _fullRange(60);

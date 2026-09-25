@@ -11,7 +11,6 @@ import {PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {V4Harness} from "../V4Harness.sol";
-import {HookMiner} from "../HookMiner.sol";
 import {SwapEventReader} from "../SwapEventReader.sol";
 import {CappedDynamicFeeHook} from "../examples/CappedDynamicFeeHook.sol";
 import {ISimAgent, ISimSearcher, Intent, Fill, VENUE_MAIN, KIND_SWAP, FILLED_NOTHING} from "./ISimAgent.sol";
@@ -48,16 +47,14 @@ abstract contract ExampleScenario is V4Harness, SimEngine {
     /// @notice manager, currencies, routers, the example hook on a dynamic-fee pool, and one passive full-range
     /// provider. Set `cadence` before calling, or Ethereum L1 is assumed.
     function _setUpScenario(int256 liquidityAmount) internal {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG,
-            type(CappedDynamicFeeHook).creationCode,
-            abi.encode(manager)
+        _setUpV4();
+        hook = CappedDynamicFeeHook(
+            _deployHook(
+                type(CappedDynamicFeeHook).creationCode,
+                abi.encode(manager),
+                Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+            )
         );
-        hook = new CappedDynamicFeeHook{salt: salt}(manager);
         key = _initPool(IHooks(address(hook)), LPFeeLibrary.DYNAMIC_FEE_FLAG, 60, SQRT_PRICE_1_1);
         _fundAndApprove(provider, uint256(liquidityAmount) * 4);
         _addFullRangeLiquidity(key, provider, liquidityAmount);

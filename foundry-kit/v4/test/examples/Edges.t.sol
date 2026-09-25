@@ -16,7 +16,6 @@ import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
 import {V4Harness} from "../../src/V4Harness.sol";
-import {HookMiner} from "../../src/HookMiner.sol";
 import {HostileHook} from "../../src/HostileHook.sol";
 import {SwapEventReader} from "../../src/SwapEventReader.sol";
 import {DeltaFeeHook} from "../../src/examples/DeltaFeeHook.sol";
@@ -59,27 +58,24 @@ contract ExampleHookEdgesTest is V4Harness {
     }
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
         uint160 deltaFlags = Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
             | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG;
-        (, bytes32 salt) = HookMiner.find(address(this), deltaFlags, type(DeltaFeeHook).creationCode, abi.encode(manager));
-        delta = new DeltaFeeHook{salt: salt}(manager);
-        (, salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(ClaimsFeeHook).creationCode,
-            abi.encode(manager, treasury)
+        delta = DeltaFeeHook(_deployHook(type(DeltaFeeHook).creationCode, abi.encode(manager), deltaFlags));
+        claims = ClaimsFeeHook(
+            _deployHook(
+                type(ClaimsFeeHook).creationCode,
+                abi.encode(manager, treasury),
+                Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        claims = new ClaimsFeeHook{salt: salt}(manager, treasury);
-        (, salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG,
-            type(CappedDynamicFeeHook).creationCode,
-            abi.encode(manager)
+        capped = CappedDynamicFeeHook(
+            _deployHook(
+                type(CappedDynamicFeeHook).creationCode,
+                abi.encode(manager),
+                Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+            )
         );
-        capped = new CappedDynamicFeeHook{salt: salt}(manager);
         _fundAndApprove(provider, 1e38);
         _fundAndApprove(trader, 1e38);
     }
@@ -259,10 +255,8 @@ contract ExampleHookEdgesTest is V4Harness {
     /// (`test/HostileHook.t.sol`). And the capped example at its OWN cap at spacing 32 767: every swap of a congested
     /// block is charged `MAX_FEE`, read off the manager's `Swap` event
     function test_a_dynamic_fee_at_the_cap() public {
-        (, bytes32 salt) = HookMiner.find(
-            address(this), Hooks.BEFORE_SWAP_FLAG, type(HostileHook).creationCode, abi.encode(manager)
-        );
-        HostileHook hostile = new HostileHook{salt: salt}(manager);
+        HostileHook hostile =
+            HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG));
         PoolKey memory k = _initPool(IHooks(address(hostile)), LPFeeLibrary.DYNAMIC_FEE_FLAG, 60, SQRT_PRICE_1_1);
         _addFullRangeLiquidity(k, provider, 100e18);
         hostile.setRawFeeOverride(uint24(LPFeeLibrary.MAX_LP_FEE) | LPFeeLibrary.OVERRIDE_FEE_FLAG);

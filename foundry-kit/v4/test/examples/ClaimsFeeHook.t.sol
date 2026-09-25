@@ -46,16 +46,14 @@ contract ClaimsFeeHookTest is V4Harness {
     address internal treasury = address(0x7EA5);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(ClaimsFeeHook).creationCode,
-            abi.encode(manager, treasury)
+        _setUpV4();
+        hook = ClaimsFeeHook(
+            _deployHook(
+                type(ClaimsFeeHook).creationCode,
+                abi.encode(manager, treasury),
+                Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        hook = new ClaimsFeeHook{salt: salt}(manager, treasury);
         vm.label(address(hook), "ClaimsFeeHook");
         _fundAndApprove(provider, 1_000_000e18);
         _fundAndApprove(trader, 1_000_000e18);
@@ -197,14 +195,14 @@ contract ClaimsFeeHookTest is V4Harness {
     /// that way again unnoticed.
     function test_the_hook_grants_nobody_an_operator_or_an_allowance() public {
         address t2 = address(0x7EA6);
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(ClaimsFeeHook).creationCode,
-            abi.encode(manager, t2)
+        vm.recordLogs(); // the search inside `_deployHook` is pure: nothing is recorded but the constructor's events
+        ClaimsFeeHook fresh = ClaimsFeeHook(
+            _deployHook(
+                type(ClaimsFeeHook).creationCode,
+                abi.encode(manager, t2),
+                Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        vm.recordLogs();
-        ClaimsFeeHook fresh = new ClaimsFeeHook{salt: salt}(manager, t2);
         uint256 grants = _grantsBy(address(fresh), vm.getRecordedLogs());
 
         _keepSwapLogs = true;
@@ -280,13 +278,13 @@ contract ClaimsFeeHookTest is V4Harness {
     /// can still withdraw the token
     function test_a_treasury_that_refuses_eth_cannot_withdraw_it_and_nothing_moves() public {
         RefusingTreasury t = new RefusingTreasury();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(ClaimsFeeHook).creationCode,
-            abi.encode(manager, address(t))
+        ClaimsFeeHook h = ClaimsFeeHook(
+            _deployHook(
+                type(ClaimsFeeHook).creationCode,
+                abi.encode(manager, address(t)),
+                Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        ClaimsFeeHook h = new ClaimsFeeHook{salt: salt}(manager, address(t));
         PoolKey memory k = _initNativePool(IHooks(address(h)), 500, 10, SQRT_PRICE_1_1, currency1);
         _addFullRangeLiquidity(k, provider, 100e18);
         for (uint256 i = 0; i < 2; i++) {

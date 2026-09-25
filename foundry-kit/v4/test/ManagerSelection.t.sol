@@ -96,9 +96,7 @@ contract ManagerSelectionTest is V4Harness {
 /// builds one from source; under `V4_MANAGER=fixture` it etches the fetched one, or skips loudly.
 contract ManagerIsUsableTest is V4Harness {
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
     }
 
     function test_the_manager_under_test_is_a_real_contract_and_says_which_one_it_is() public view {

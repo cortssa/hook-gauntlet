@@ -11,7 +11,6 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {V4Harness} from "../src/V4Harness.sol";
-import {HookMiner} from "../src/HookMiner.sol";
 import {HostileHook} from "../src/HostileHook.sol";
 import {MinimalRouter} from "../src/MinimalRouter.sol";
 import {TokenCallbackActor} from "../src/TokenCallbackActor.sol";
@@ -60,9 +59,7 @@ contract TokenReentryTest is V4Harness {
     address internal trader = address(0xB0B);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
         _fundAndApprove(provider, 1_000_000e18);
         _fundAndApprove(trader, 1_000_000e18);
         key = _initPool(IHooks(address(0)), 3000, 60, SQRT_PRICE_1_1);
@@ -216,14 +213,14 @@ contract TokenReentryTest is V4Harness {
 
     // ------------------------------------------------------------------ a HOOK paying its own delta
     function _payingHook() internal returns (HostileHook hook, PoolKey memory k) {
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-                | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(HostileHook).creationCode,
-            abi.encode(manager)
+        hook = HostileHook(
+            _deployHook(
+                type(HostileHook).creationCode,
+                abi.encode(manager),
+                Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+                    | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        hook = new HostileHook{salt: salt}(manager);
         k = _initPool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1);
         _addFullRangeLiquidity(k, provider, 100e18);
         token0.mint(address(hook), 10e18);

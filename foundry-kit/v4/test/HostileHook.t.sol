@@ -129,15 +129,11 @@ contract HostileHookTest is V4Harness {
     address internal trader = address(0xB0B);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
 
         // Only `beforeSwap`. That is the entry point every switch below is observed through, and a hook with
         // fewer flags is a hook with fewer things that could explain a failure.
-        (, bytes32 salt) =
-            HookMiner.find(address(this), Hooks.BEFORE_SWAP_FLAG, type(HostileHook).creationCode, abi.encode(manager));
-        hostile = new HostileHook{salt: salt}(manager);
+        hostile = HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG));
         vm.label(address(hostile), "HostileHook");
 
         _fundAndApprove(provider, 1_000_000e18);
@@ -506,9 +502,8 @@ contract HostileHookTest is V4Harness {
             | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
             | Hooks.BEFORE_DONATE_FLAG | Hooks.AFTER_DONATE_FLAG;
 
-        (, bytes32 salt) =
-            HookMiner.find(address(this), allActions, type(HostileHook).creationCode, abi.encode(manager));
-        HostileHook everything = new HostileHook{salt: salt}(manager);
+        HostileHook everything =
+            HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), allActions));
         assertTrue(HookMiner.carriesExactly(address(everything), allActions), "not mined for exactly ten flags");
 
         // initialize: beforeInitialize + afterInitialize

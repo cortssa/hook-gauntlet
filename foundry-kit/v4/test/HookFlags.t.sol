@@ -25,9 +25,7 @@ import {CappedDynamicFeeHook} from "../src/examples/CappedDynamicFeeHook.sol";
 ///   place the hook has no code for.
 contract HookFlagsTest is V4Harness {
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
     }
 
     // ------------------------------------------------------------------ the search
@@ -126,6 +124,51 @@ contract HookFlagsTest is V4Harness {
         assertTrue(HookMiner.flagsOf(address(hook)) & Hooks.BEFORE_DONATE_FLAG != 0);
     }
 
+    // ------------------------------------------------------------------ the harness's `_deployHook` (K22)
+    /// @notice `_deployHook` is the two lines every other suite used to write, not a variant of them: the same address,
+    /// the same code, and the same nonce afterwards - the next contract this test creates lands where it would have.
+    function test_deployHook_is_the_hand_written_find_and_new() public {
+        uint160 flags = Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG;
+        uint256 snap = vm.snapshotState();
+        (address predicted, bytes32 salt) =
+            HookMiner.find(address(this), flags, type(CappedDynamicFeeHook).creationCode, abi.encode(manager));
+        address byHand = address(new CappedDynamicFeeHook{salt: salt}(manager));
+        address nextByHand = address(new HostileHook(manager));
+        bytes32 codeByHand = byHand.codehash;
+        vm.revertToState(snap);
+
+        address viaHarness = _deployHook(type(CappedDynamicFeeHook).creationCode, abi.encode(manager), flags);
+        address nextViaHarness = address(new HostileHook(manager));
+        assertEq(byHand, predicted, "the hand-written pair did not land where it mined");
+        assertEq(viaHarness, byHand, "the helper put the hook somewhere else");
+        assertEq(viaHarness.codehash, codeByHand, "the helper deployed other code");
+        assertEq(nextViaHarness, nextByHand, "the helper left this contract's nonce somewhere else");
+    }
+
+    /// @notice a constructor that refuses its address refuses it through the helper too, with its own revert data
+    function test_deployHook_passes_a_constructor_revert_through() public {
+        uint160 flags = Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG;
+        (address predicted,) = HookMiner.findWithExtraFlag(
+            address(this), flags, Hooks.AFTER_SWAP_FLAG, type(CappedDynamicFeeHook).creationCode, abi.encode(manager)
+        );
+        vm.expectRevert(abi.encodeWithSelector(Hooks.HookAddressNotValid.selector, predicted));
+        this.deployHook(type(CappedDynamicFeeHook).creationCode, abi.encode(manager), flags | Hooks.AFTER_SWAP_FLAG);
+    }
+
+    /// @notice the same hook with the same arguments twice from one deployer: the mined address is taken, and the
+    /// helper says so by name instead of returning address zero
+    function test_deployHook_twice_is_refused_by_name() public {
+        uint160 flags = Hooks.BEFORE_SWAP_FLAG;
+        address first = _deployHook(type(HostileHook).creationCode, abi.encode(manager), flags);
+        vm.expectRevert(abi.encodeWithSelector(V4Harness.HookNotDeployed.selector, first));
+        this.deployHook(type(HostileHook).creationCode, abi.encode(manager), flags);
+    }
+
+    /// @dev `vm.expectRevert` needs an external call
+    function deployHook(bytes memory creationCode, bytes memory args, uint160 flags) external returns (address) {
+        return _deployHook(creationCode, args, flags);
+    }
+
     // ------------------------------------------------------------------ the search failing
     function test_the_miner_is_not_silent_when_it_cannot_find_anything() public pure {
         // Every flag set is reachable, so a real failure needs an impossible target. `find` masks its input,
@@ -133,5 +176,33 @@ contract HookFlagsTest is V4Harness {
         // exactly fourteen bits, and the search space is far larger than the space of flag sets.
         assertEq(uint256(HookMiner.FLAG_MASK), uint256((1 << 14) - 1));
         assertGt(HookMiner.MAX_TRIES, uint256(1) << 14);
+    }
+}
+
+/// @notice `_deployHook` before the world exists. With no manager, `abi.encode(manager)` is address zero and a hook
+/// bound to no manager would be mined and deployed without a word; with a manager but no routers, the hook's CREATE2
+/// would bump this contract's nonce and move the routers. Both are refused, by name.
+contract DeployHookOrderTest is V4Harness {
+    function deployHook(bytes memory creationCode, bytes memory args, uint160 flags) external returns (address) {
+        return _deployHook(creationCode, args, flags);
+    }
+
+    function test_deployHook_with_nothing_set_up_is_refused() public {
+        vm.expectRevert(V4Harness.HookBeforeRouters.selector);
+        this.deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG);
+    }
+
+    function test_deployHook_before_the_routers_is_refused() public {
+        _setUpManager();
+        _deployCurrencies();
+        vm.expectRevert(V4Harness.HookBeforeRouters.selector);
+        this.deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG);
+    }
+
+    function test_deployHook_after_the_routers_runs() public {
+        _setUpV4();
+        address hook = this.deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG);
+        assertTrue(HookMiner.carriesExactly(hook, Hooks.BEFORE_SWAP_FLAG), "not at a mined address");
+        assertGt(hook.code.length, 0, "nothing deployed");
     }
 }

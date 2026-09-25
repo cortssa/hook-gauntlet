@@ -22,9 +22,7 @@ contract HarnessTest is V4Harness {
     PoolKey internal key;
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
 
         _fundAndApprove(provider, 1_000_000e18);
         _fundAndApprove(trader, 1_000_000e18);

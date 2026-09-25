@@ -121,17 +121,15 @@ contract DeltaFeeHookTest is V4Harness {
     address internal trader = address(0xB0B);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-                | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(DeltaFeeHook).creationCode,
-            abi.encode(manager)
+        _setUpV4();
+        hook = DeltaFeeHook(
+            _deployHook(
+                type(DeltaFeeHook).creationCode,
+                abi.encode(manager),
+                Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+                    | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        hook = new DeltaFeeHook{salt: salt}(manager);
         vm.label(address(hook), "DeltaFeeHook");
         _fundAndApprove(provider, 1_000_000e18);
         _fundAndApprove(trader, 1_000_000e18);

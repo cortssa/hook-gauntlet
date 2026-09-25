@@ -13,7 +13,6 @@ import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation
 import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
 import {HandlerBase, InvariantAsserts} from "gauntlet-kit/InvariantBase.sol";
 import {V4Harness} from "../../src/V4Harness.sol";
-import {HookMiner} from "../../src/HookMiner.sol";
 import {MinimalRouter} from "../../src/MinimalRouter.sol";
 import {LiquidityHelper} from "../../src/LiquidityHelper.sol";
 import {DeltaFeeHook} from "../../src/examples/DeltaFeeHook.sol";
@@ -34,17 +33,15 @@ abstract contract MultiPoolBase is V4Harness {
     address internal trader = address(0xB0B);
 
     function _deployMultiPool() internal {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-                | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(DeltaFeeHook).creationCode,
-            abi.encode(manager)
+        _setUpV4();
+        hook = DeltaFeeHook(
+            _deployHook(
+                type(DeltaFeeHook).creationCode,
+                abi.encode(manager),
+                Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+                    | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        hook = new DeltaFeeHook{salt: salt}(manager);
         token2 = new HostileERC20("Hostile C", "HOSC", 18);
         vm.label(address(token2), "token2");
         _fundAndApprove(provider, 1_000_000e18);

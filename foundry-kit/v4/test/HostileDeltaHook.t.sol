@@ -12,7 +12,6 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {V4Harness} from "../src/V4Harness.sol";
-import {HookMiner} from "../src/HookMiner.sol";
 import {HostileHook} from "../src/HostileHook.sol";
 import {PrepayRouter} from "./examples/PrepayRouter.sol";
 
@@ -95,17 +94,15 @@ contract HostileDeltaHookTest is V4Harness {
     address internal trader = address(0xB0B);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
-                | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG,
-            type(HostileHook).creationCode,
-            abi.encode(manager)
+        _setUpV4();
+        hook = HostileHook(
+            _deployHook(
+                type(HostileHook).creationCode,
+                abi.encode(manager),
+                Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
+                    | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
+            )
         );
-        hook = new HostileHook{salt: salt}(manager);
         vm.label(address(hook), "HostileHook(holding)");
         key = _initPool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1);
         _fundAndApprove(provider, 1_000_000e18);
@@ -277,10 +274,11 @@ contract HostileDeltaHookTest is V4Harness {
     /// returns its deltas and the manager DISCARDS them (`V4-ACCOUNTING.md` item 5) - so a hook that took its fee is
     /// left owing it, and the swap dies. Returned values without the flag are not "ignored harmlessly".
     function test_deltas_without_the_return_delta_flags_are_discarded_and_a_squaring_hook_is_left_owing() public {
-        (, bytes32 salt) = HookMiner.find(
-            address(this), Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG, type(HostileHook).creationCode, abi.encode(manager)
+        HostileHook noFlags = HostileHook(
+            _deployHook(
+                type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG
+            )
         );
-        HostileHook noFlags = new HostileHook{salt: salt}(manager);
         PoolKey memory k = _initPool(IHooks(address(noFlags)), 3000, 60, SQRT_PRICE_1_1);
         _addFullRangeLiquidity(k, provider, 100e18);
         noFlags.setDeltas(0, 0, FEE);

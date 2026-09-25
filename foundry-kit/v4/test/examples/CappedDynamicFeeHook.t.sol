@@ -31,17 +31,15 @@ contract CappedDynamicFeeHookTest is V4Harness {
     address internal trader = address(0xB0B);
 
     function setUp() public {
-        _setUpManager();
-        _deployCurrencies();
-        _deployRouters();
+        _setUpV4();
 
-        (, bytes32 salt) = HookMiner.find(
-            address(this),
-            Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG,
-            type(CappedDynamicFeeHook).creationCode,
-            abi.encode(manager)
+        hook = CappedDynamicFeeHook(
+            _deployHook(
+                type(CappedDynamicFeeHook).creationCode,
+                abi.encode(manager),
+                Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+            )
         );
-        hook = new CappedDynamicFeeHook{salt: salt}(manager);
         vm.label(address(hook), "CappedDynamicFeeHook");
 
         _fundAndApprove(provider, 1_000_000e18);
