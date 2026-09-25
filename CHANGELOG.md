@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.1 - 2026-09-25 - the dossier as a PDF, and what a handoff must be
+
+- `scripts/dossier-pdf.py` renders the handoff dossier as a PDF for the human auditor (status lines boxed first,
+  tables with wrapped cells and repeated headers, nothing dropped); QUICKSTART step 10 hands over `DOSSIER.md` and
+  `DOSSIER.pdf`, the Markdown being the record. Needs `reportlab` (optional); CI renders the template on every push.
+- A handoff, as opposed to an exercise, now requires a git repository with its commit on the dossier's first line,
+  every judge output cited from inside the project, and section 10 runnable on a clean machine (the kit vendored into
+  the project with relative remappings).
+- The DeltaFeeHook campaign's intermittent red in CI was the test harness, not the hook: a test router that kept an
+  unused prepayment, and a handler that misread a correct refusal. Both fixed, pinned as replays, verified.
+
 ## v0.1 - 2026-09-24 - pre-audit workflow for Uniswap v4 hooks
 
 First public release. Measured on one model family (Claude) inside one agent harness (Claude Code): two blind runs on one
