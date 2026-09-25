@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A flaw in the kit itself (a gate that passes when it should fail)
+    url: https://github.com/cortssa/hook-gauntlet/security/advisories/new
+    about: Report privately first, so it can be fixed before the recipe is public.

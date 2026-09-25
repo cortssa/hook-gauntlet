@@ -1,0 +1,50 @@
+name: Stuck or guessed on a step
+description: You followed QUICKSTART / AGENTS.md and a step did not work, or you had to guess.
+title: "[stuck] step <N>: "
+labels: ["stuck"]
+body:
+  - type: markdown
+    attributes:
+      value: Thank you. A report with the exact command and output is worth more than any description of it.
+  - type: input
+    id: step
+    attributes:
+      label: Document and step
+      description: Which file and which step (e.g. QUICKSTART.md step 7b, doctrine/NEXT.md row 11).
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened
+      options:
+        - It stopped (error, red, cannot continue)
+        - I had to guess (the text did not say)
+        - The document and the tool disagree
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: The output you got (the last lines are enough)
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: guess
+    attributes:
+      label: If you guessed - what did you do, and did it work?
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: forge version, OS, agent and model if an agent ran it (e.g. forge 1.8.1, Ubuntu 24.04, Claude Code / Opus)
+    validations:
+      required: true

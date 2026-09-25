@@ -1,0 +1,36 @@
+name: The kit missed something
+description: An attack, a bug or a test that the route did not catch - including what your human auditor found afterwards.
+title: "[missed] "
+labels: ["missed"]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Every attack the kit missed can become a new class or a new test for the next hook. Do NOT post a working exploit
+        against a deployed contract here; describe the class. A flaw in the kit's own gates goes through SECURITY.md.
+  - type: dropdown
+    id: source
+    attributes:
+      label: Who found it
+      options:
+        - My human auditor, after the route
+        - Me or my agent, after the route
+        - A later round of the route, that an earlier one should have caught
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What was missed (the class, not the exploit)
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why the route did not catch it, if you know
+      description: No fuzz action reached it? No invariant looked at it? Not in doctrine/HOOK-ATTACKS.md? Severity misjudged?
+  - type: textarea
+    id: test
+    attributes:
+      label: A test that shows it, if you can share one (seen failing before the fix)
+      render: solidity
