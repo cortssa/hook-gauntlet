@@ -25,14 +25,39 @@ its evidence label, and a test is cited as evidence only if it has been seen to 
 the status line: the one line every flag in `doctrine/NEXT.md` points at. A dossier can be complete and thin at the
 same time; this line says which one it is.
 
+## Start here
+
+The one page an auditor reads before anything else. Every line points into the body below, which is the record;
+assemble it last, with section 0, from the sections it names, and put nothing here that they do not hold. It fits on
+one page: the PDF starts section 0 on the next.
+
+| | |
+|---|---|
+| commit and scope | {{COMMIT}} · in scope: {{FILES_SLOC}} · out of scope: {{OUT_OF_SCOPE}} (section 1) |
+| what the hook does | {{WHAT_IT_DOES}} - one or two sentences (section 2) |
+| what it holds | {{WHAT_IT_HOLDS}} - the tokens, balances or rights it keeps between calls, and who can move them; "nothing" if nothing (sections 2, 3) |
+| the spec | section 2, from `SPEC.md`: the promises, the hostile-actor table, the invariants with their evidence labels, the trust assumptions |
+| known and accepted issues | {{ACCEPTED}} - by id, each with who accepted it; "none" if none (section 4) |
+| main findings already fixed (at most three) | {{FIXED}} - by id and severity, each with its regression test, seen red (sections 4 and 7) |
+| what was NOT checked | {{NOT_CHECKED_TOP}} - the top items of section 9; the full list is there |
+
+Set up and run - section 10 in full, from a clean checkout:
+
+```sh
+git clone {{REPOSITORY}} {{DIR}} && cd {{DIR}} && git checkout {{COMMIT}}
+lib/hook-gauntlet/scripts/doctor.sh   # what this machine lacks, with the commands; installs nothing
+{{BUILD_AND_RUN}}                     # forge clean, forge build, the battery: section 10's commands
+```
+
 ## 0. Executive summary (must)
 
 {{EXEC_SUMMARY}}
 
 Two to four sentences, before the reader hits a table: what the hook does, the round count and model families spent
 on it, the headline finding if there was one, and the one sentence the reader most needs before section 1 - whether
-anything here is still moving. No adjective a paid auditor would have to walk back later ("safe", "secure", "audited",
-"verified") - point at the evidence label instead (`doctrine/EVIDENCE.md`). Write it last, after every other section
+anything here is still moving. No word a paid auditor would have to walk back later ("safe", "secure", "audited",
+"verified", "fully verified", "battle-tested": the list and the reason are in `AGENTS.md` section 1, with the phrase
+to use instead) - point at the evidence label (`doctrine/EVIDENCE.md`). The same holds for the Start here page. Write it last, after every other section
 exists: it is the only section with no file to assemble from. Three honest sentences beat four padded ones.
 
 ## 1. Scope sheet (must)
@@ -187,7 +212,8 @@ wrong after deployment · security contact.
 ---
 
 **Gate for phase 8:** the project is a git repository and its commit is on the first line (a manifest of hashes is an
-exercise's substitute, not a handoff's); every path in section 6's "where" column is inside the project; section 10 runs
+exercise's substitute, not a handoff's); the Start here page is filled from the body and fits on one page (in the PDF,
+section 0 begins on page 2); every path in section 6's "where" column is inside the project; section 10 runs
 on a clean machine; every "must" section is filled or says "not done" with a reason, the not-done count is on the status
 line above AND in `STATE.md`'s `dossier:` flag, and every skip has the owner's written agreement; section 9 is not empty (an
 empty list of unchecked things is never true); section 5 is not empty either, on the same terms; a fresh agent, given

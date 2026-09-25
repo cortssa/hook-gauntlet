@@ -1,6 +1,6 @@
 # Quickstart - from a clone to your first adversarial round, in ten steps
 
-Every command below was run on 2026-09-23 on Linux (WSL) with forge 1.8.1 and forge-std 1.16.2. Each step says what
+Every command below was run on 2026-09-23 (`scripts/doctor.sh`: 2026-09-25) on Linux (WSL) with forge 1.8.1 and forge-std 1.16.2. Each step says what
 "done" looks like, read from the output. The route ends in **audit-ready**; it never deploys, never broadcasts, never
 holds a key. If a step needs a decision only you can make, it says so - the kit's agents stop there and ask.
 
@@ -8,6 +8,13 @@ Two readers walked the previous version of this kit with nothing but `AGENTS.md`
 guess. This page exists so that the next reader does not.
 
 ## 0. What you need
+
+**Run `scripts/doctor.sh` first** (step 1's first line clones the kit; it is the next command). It checks every item
+below and prints one line each - `ok`, `missing` or `optional-missing` - with the exact command that installs what is
+missing on your system (Linux: apt; macOS: brew; Windows outside WSL: the WSL steps, then the rest inside WSL), and its
+last line is `doctor: ready` or `doctor: missing: ...`. It never installs anything, never uses the network and never
+prints an environment variable's value (`RPC_URL`: set or not set). An agent that runs it shows the owner the commands
+and installs only on the owner's yes.
 
 - Foundry (`forge`, `cast`): supported versions are in `foundry-kit/README.md` (1.8.1 pinned, 1.8.3 CI-proven).
 - `bash` 5, `git`, `rsync`, `python3` optional (standard library only: `scripts/assert-fresh-build.sh` uses it for the evidence lines, which file changed; the verdict is forge's own). `shellcheck` optional locally: the selftest runs it when present and says when it did not; CI always runs it. Linux, or Windows **inside WSL with the project on the Linux side** (`CRLF` breaks a shell
@@ -23,6 +30,7 @@ guess. This page exists so that the next reader does not.
 
 ```sh
 git clone <url-of-this-repository> hook-gauntlet && cd hook-gauntlet
+scripts/doctor.sh      # here it lists forge-std (the next line) and v4-core (step 3) as missing; anything else: install it first
 git clone --quiet --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
 scripts/selftest.sh
 ```

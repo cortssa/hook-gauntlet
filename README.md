@@ -174,6 +174,8 @@ adapters/        claude-code/ (the supported adapter, the path this was run on);
 
 ## What you need
 
+`scripts/doctor.sh` checks everything below and prints the install command for each missing item; it installs nothing.
+
 Foundry, `bash`, `git`, and Python 3 if you can (standard library only: the freshness guard uses it for the evidence
 it prints - which source changed since the last build; without it that evidence is missing, the verdict is forge's either
 way), and an agent that can read files and run a terminal; Slither (Python) for the static-analysis

@@ -87,6 +87,107 @@ else
   echo "  --    shellcheck is not installed here: NOT run on this machine (CI's shellcheck job runs it on every push)"
 fi
 
+# ================================================================= doctor.sh (it checks; it never installs, never uses the network)
+# doctor.sh runs here on a FAKE machine: a kit tree of its own (forge-std's package.json, and a v4-core that is a real git
+# checkout whose HEAD is planted as the pin in a copy of install-v4.sh, as the install-v4 cases below do), an empty HOME,
+# and a PATH of stubs - forge and cast that print the version a case names, a uname that says which system this is, and
+# every installer and network tool (curl, wget, foundryup, apt-get, brew, pip, pipx, sudo, wsl...) as a stub that only
+# writes its name to a log. That log must stay empty: a doctor that installs or fetches is seen doing it.
+echo "== doctor.sh =="
+DR="$TMP/doctor"; DK="$DR/kit"; DB="$DR/base"; DH="$DR/home"
+mkdir -p "$DK/scripts/lib" "$DK/foundry-kit/lib/forge-std" "$DK/foundry-kit/v4/lib/v4-core/src" "$DK/foundry-kit/v4/lib/v4-core/lib/forge-std/src" \
+  "$DK/foundry-kit/v4/lib/v4-core/lib/solmate/src" "$DB" "$DH"
+cp "$HERE/doctor.sh" "$DK/scripts/" 2> /dev/null
+cp "$HERE/lib/parse.sh" "$DK/scripts/lib/"
+printf '{\n  "name": "forge-std",\n  "version": "1.16.2",\n  "license": "(Apache-2.0 OR MIT)"\n}\n' > "$DK/foundry-kit/lib/forge-std/package.json"
+dstub() { mkdir -p "$1"; printf '#!/bin/sh\n%s\n' "$3" > "$1/$2"; chmod +x "$1/$2"; }   # dstub <dir> <name> <body>
+for t in env bash sed grep head tail tr cat dirname basename cut awk; do p="$(command -v "$t")" && ln -s "$p" "$DB/$t"; done
+for t in curl wget foundryup apt apt-get brew pip pip3 pipx sudo wsl winget choco npm; do
+  dstub "$DR/trap" "$t" "echo \"$t \$*\" >> \"$DR/installer-calls\"; exit 1"; done
+dstub "$DR/linux" uname 'case "$1" in -s) echo Linux ;; -r) echo 6.1.0-generic ;; *) echo Linux ;; esac'
+dstub "$DR/mac" uname 'case "$1" in -s) echo Darwin ;; -r) echo 23.6.0 ;; *) echo Darwin ;; esac'
+dstub "$DR/win" uname 'case "$1" in -s) echo MINGW64_NT-10.0-19045 ;; -r) echo 3.5.4-0bc1222b.x86_64 ;; *) echo MINGW64_NT-10.0-19045 ;; esac'
+for v in 1.8.1 1.8.3 1.9.0; do
+  dstub "$DR/f$v" forge "printf 'forge Version: $v\nCommit SHA: 0000000\n'"; dstub "$DR/f$v" cast "printf 'cast Version: $v\n'"; done
+dstub "$DR/tools" rsync "echo 'rsync  version 3.2.7  protocol version 31'"
+dstub "$DR/oldbash" bash "echo 'GNU bash, version 3.2.57(1)-release (arm64-apple-darwin23)'"
+if command -v git > /dev/null 2>&1 && [ -f "$DK/scripts/doctor.sh" ]; then
+  ln -s "$(command -v git)" "$DR/tools/git"; mkdir -p "$DR/gitonly"; ln -s "$(command -v git)" "$DR/gitonly/git"
+  DV="$DK/foundry-kit/v4/lib/v4-core"
+  printf 'contract PoolManager {}\n' > "$DV/src/PoolManager.sol"; printf 'contract Test {}\n' > "$DV/lib/forge-std/src/Test.sol"
+  printf 'contract Owned {}\n' > "$DV/lib/solmate/src/Owned.sol"
+  (cd "$DV" && git init -q && git add -A && git -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false commit -q -m fake) > /dev/null 2>&1
+  sed "s/^V4_CORE_PIN=\"[0-9a-f]*\"/V4_CORE_PIN=\"$(git -C "$DV" rev-parse HEAD)\"/" "$HERE/install-v4.sh" > "$DK/scripts/install-v4.sh"
+  # doc <out> <dirs before the base, colon-separated> [VAR=value...]: the doctor on the fake machine, RPC_URL unset unless given
+  doc() { local o="$1" p="$2"; shift 2; env -u RPC_URL -u ETH_RPC_URL HOME="$DH" PATH="$p:$DR/trap:$DB" "$@" "$BASH" "$DK/scripts/doctor.sh" > "$o" 2>&1; }
+  # every line is `ok|missing|optional-missing <name> ...`, an indented line (a command, a step), or the last line
+  doc_shape() { ! grep -vE '^(ok|missing|optional-missing) [A-Za-z0-9_.-]+( |$)|^  |^doctor: (ready|missing: .+)$' "$1"; }
+  expect_line() { # expect_line <label> <file> <grep -E pattern>...: every pattern is found
+    local label="$1" f="$2" pat miss=""; shift 2
+    for pat in "$@"; do grep -qE -- "$pat" "$f" || miss="$miss [$pat]"; done
+    if [ -z "$miss" ]; then echo "  ok    $label"; else echo "  FAIL  $label: not found:$miss"; sed "s/^/        | /" "$f"; fails=$((fails + 1)); fi
+  }
+  L="$DR/f1.8.1:$DR/tools:$DR/linux"
+  doc "$TMP/o220" "$L"; check "doctor: everything required is there, forge at the pin" 0 $? "$TMP/o220"
+  expect_line "and it says ready on its last line, forge 1.8.1 ok, RPC_URL optional and not set" "$TMP/o220" \
+    '^ok forge 1\.8\.1' '^ok forge-std 1\.16\.2' '^ok v4-core ' '^ok bash 5' '^optional-missing RPC_URL' '^optional-missing python3'
+  if [ "$(tail -n 1 "$TMP/o220")" = "doctor: ready" ] && doc_shape "$TMP/o220"; then echo "  ok    the last line is exactly 'doctor: ready', and every line has the documented shape"; else
+    echo "  FAIL  the last line is not 'doctor: ready', or a line has another shape"; sed "s/^/        | /" "$TMP/o220"; fails=$((fails + 1)); fi
+  doc "$TMP/o221" "$DR/tools:$DR/linux"; check "doctor: no forge on the PATH" 1 $? "$TMP/o221"
+  expect_line "and it names forge and cast, with the Linux install commands, and lists them on the last line" "$TMP/o221" \
+    '^missing forge' '^missing cast' 'curl -L https://foundry\.paradigm\.xyz \| bash' 'foundryup --install 1\.8\.1' '^doctor: missing: forge, cast$'
+  mkdir -p "$DH/.foundry/bin"; cp "$DR/f1.8.1/forge" "$DR/f1.8.1/cast" "$DH/.foundry/bin/"
+  doc "$TMP/o222" "$DR/tools:$DR/linux"; check "doctor: forge installed in ~/.foundry/bin but not on the PATH" 1 $? "$TMP/o222"
+  expect_line "and it says to put ~/.foundry/bin on the PATH, not to install again" "$TMP/o222" 'export PATH="\$HOME/\.foundry/bin:\$PATH"'
+  rm -rf "$DH/.foundry"
+  doc "$TMP/o223" "$DR/f1.9.0:$DR/tools:$DR/linux"; check "doctor: a forge of another version (1.9.0)" 1 $? "$TMP/o223"
+  expect_line "and it names the version found, the supported ones and the command for the pinned one" "$TMP/o223" \
+    '^missing forge .*1\.9\.0' '1\.8\.1' 'foundryup --install 1\.8\.1' '^doctor: missing: forge'
+  doc "$TMP/o224" "$DR/f1.8.3:$DR/tools:$DR/linux"; check "doctor: forge 1.8.3, the second supported version" 0 $? "$TMP/o224"
+  expect_line "and it is ok, named as supported beside the pin" "$TMP/o224" '^ok forge 1\.8\.3'
+  doc "$TMP/o225" "$L" RPC_URL="https://k20-sentinel.example.invalid/v2/SENTINEL0KEY" ETH_RPC_URL="https://k20-sentinel.example.invalid/v2/SENTINEL0KEY"
+  check "doctor: RPC_URL set" 0 $? "$TMP/o225"
+  expect_line "and it says set" "$TMP/o225" '^ok RPC_URL set'
+  if ! grep -qiE 'SENTINEL0KEY|k20-sentinel|example\.invalid' "$TMP/o225"; then echo "  ok    and no part of the value appears in the output"; else
+    echo "  FAIL  the RPC_URL value (or part of it) was printed"; fails=$((fails + 1)); fi
+  doc "$TMP/o226" "$DR/f1.8.1:$DR/tools:$DR/win"; check "doctor: Windows outside WSL (Git Bash / MSYS uname)" 1 $? "$TMP/o226"
+  expect_line "and it gives the WSL steps: admin PowerShell wsl --install, reboot, install inside WSL, the project on the Linux side" "$TMP/o226" \
+    '^missing platform' 'administrator.*wsl --install|wsl --install.*administrator' '[Rr]eboot' 'inside WSL' 'Linux side' '^doctor: missing: platform$'
+  doc "$TMP/o227" "$DR/f1.8.1:$DR/gitonly:$DR/mac"; check "doctor: macOS with no rsync" 1 $? "$TMP/o227"
+  expect_line "and the command is brew's" "$TMP/o227" '^missing rsync' 'brew install rsync' '^doctor: missing: rsync$'
+  doc "$TMP/o228" "$DR/f1.8.1:$DR/gitonly:$DR/linux"; check "doctor: Linux with no rsync" 1 $? "$TMP/o228"
+  expect_line "and the command is apt's" "$TMP/o228" '^missing rsync' 'sudo apt-get install -y rsync'
+  doc "$TMP/o229" "$DR/oldbash:$L"; check "doctor: the bash on the PATH is 3.2 (macOS's own)" 1 $? "$TMP/o229"
+  expect_line "and it names the version found" "$TMP/o229" '^missing bash .*3\.2' '^doctor: missing: bash$'
+  mv "$DK/foundry-kit/lib/forge-std" "$DR/forge-std.away"
+  doc "$TMP/o230" "$L"; check "doctor: foundry-kit/lib/forge-std absent" 1 $? "$TMP/o230"
+  expect_line "and it gives the pinned clone command" "$TMP/o230" '^missing forge-std' 'git clone --quiet --depth 1 --branch v1\.16\.2 https://github\.com/foundry-rs/forge-std foundry-kit/lib/forge-std'
+  mv "$DR/forge-std.away" "$DK/foundry-kit/lib/forge-std"
+  cp "$DK/scripts/install-v4.sh" "$DR/install-v4.keep"
+  sed -i.bak 's/^V4_CORE_PIN="[0-9a-f]*"/V4_CORE_PIN="0000000000000000000000000000000000000000"/' "$DK/scripts/install-v4.sh"
+  doc "$TMP/o231" "$L"; check "doctor: foundry-kit/v4/lib/v4-core at another commit than the pin" 1 $? "$TMP/o231"
+  expect_line "and it gives install-v4.sh with V4_FORCE=1" "$TMP/o231" '^missing v4-core' 'V4_FORCE=1 scripts/install-v4.sh foundry-kit/v4'
+  cp "$DR/install-v4.keep" "$DK/scripts/install-v4.sh"; mv "$DV" "$DR/v4-core.away"
+  doc "$TMP/o232" "$L"; check "doctor: foundry-kit/v4/lib/v4-core not installed" 1 $? "$TMP/o232"
+  expect_line "and it gives install-v4.sh" "$TMP/o232" '^missing v4-core' 'scripts/install-v4.sh foundry-kit/v4'
+  mv "$DR/v4-core.away" "$DV"
+  if [ ! -e "$DR/installer-calls" ]; then echo "  ok    no installer and no network tool was called by any doctor run above"; else
+    echo "  FAIL  the doctor called an installer or a network tool:"; sed "s/^/        | /" "$DR/installer-calls"; fails=$((fails + 1)); fi
+  # the versions the doctor calls supported are the ones CI runs: a pin changed in one place only is seen here
+  dpins="$(sed -n 's/^FORGE_PIN="\(.*\)"$/\1 /p; s/^FORGE_ALSO="\(.*\)"$/\1 /p; s/^FORGE_STD_PIN="\(.*\)"$/\1 /p; s/^REPORTLAB_PIN="\(.*\)"$/\1 /p; s/^PYPDF_PIN="\(.*\)"$/\1/p' "$HERE/doctor.sh" | tr -d '\n')"
+  gpins="$(sed -n 's/^  FOUNDRY_VERSION: v\(.*\)$/\1 /p; s/^  FOUNDRY_VERSION_2: v\(.*\)$/\1 /p; s/^  FORGE_STD_TAG: v\(.*\)$/\1 /p; s/^  REPORTLAB_VERSION: "\(.*\)"$/\1 /p; s/^  PYPDF_VERSION: "\(.*\)"$/\1/p' "$HERE/../.github/workflows/gates.yml" | tr -d '\n')"
+  if [ -n "$dpins" ] && [ "$dpins" = "$gpins" ]; then echo "  ok    doctor.sh's pins ($dpins) are gates.yml's"; else
+    echo "  FAIL  doctor.sh's pins ($dpins) are not gates.yml's ($gpins)"; fails=$((fails + 1)); fi
+  # and on this machine, for real: whatever it finds, its last line and its exit code agree
+  "$HERE/doctor.sh" > "$TMP/o233" 2>&1; rc233=$?
+  case "$rc233:$(tail -n 1 "$TMP/o233")" in
+    "0:doctor: ready" | "1:doctor: missing: "?*) echo "  ok    doctor.sh on this machine: $(tail -n 1 "$TMP/o233") (rc=$rc233)" ;;
+    *) echo "  FAIL  doctor.sh on this machine: rc=$rc233 and last line '$(tail -n 1 "$TMP/o233")' do not agree"; fails=$((fails + 1)) ;;
+  esac
+else
+  echo "  FAIL  doctor.sh is missing, or there is no git to build its fake v4-core with"; fails=$((fails + 1))
+fi
+
 # ================================================================= release-guard.sh
 echo "== release-guard.sh =="
 W="$TMP/work"; P="$TMP/published"
@@ -794,6 +895,20 @@ else
     if python3 -c 'import pypdf' > /dev/null 2>&1; then
       lines_in_pdf "$DFIX" "$TMP/fixture.pdf" > "$TMP/o217" 2>&1; check "no line of the fixture is lost on the way to paper (read back with pypdf)" 0 $? "$TMP/o217"
       lines_in_pdf "$DTPL" "$TMP/template.pdf" > "$TMP/o218" 2>&1; check "no line of the template is lost on the way to paper" 0 $? "$TMP/o218"
+      # the entry page: the dossier as an author copies it (the template from its '# {{PROJECT}}' line on) opens on "Start
+      # here" and nothing else - section 0 first appears on page 2, which it can only do if "Start here" fitted on page 1
+      sed -n '/^# {{PROJECT}}/,$p' "$DTPL" > "$TMP/entry.md"
+      python3 "$DPY" "$TMP/entry.md" "$TMP/entry.pdf" > "$TMP/o234" 2>&1; check "dossier-pdf.py renders the template's dossier as an author copies it" 0 $? "$TMP/o234"
+      python3 - "$TMP/entry.pdf" > "$TMP/o235" 2>&1 << 'PY'
+import sys
+from pypdf import PdfReader
+pages = [pg.extract_text() for pg in PdfReader(sys.argv[1]).pages]
+first = next((k for k, t in enumerate(pages) if "0. Executive summary" in t), None)
+print("pages: %d; 'Start here' on page 1: %s; section 0 first on page: %s" % (len(pages), "Start here" in pages[0], None if first is None else first + 1))
+sys.exit(0 if "Start here" in pages[0] and first == 1 else 1)
+PY
+      check "the PDF opens on the 'Start here' page: all of it on page 1, section 0 from page 2" 0 $? "$TMP/o235"
+      lines_in_pdf "$TMP/entry.md" "$TMP/entry.pdf" > "$TMP/o236" 2>&1; check "and no line of it is lost on the way to paper" 0 $? "$TMP/o236"
       # the read-back seen red: the fixture with one table row taken out, rendered, is checked against the whole fixture
       grep -v '^| coverage |' "$DFIX" > "$TMP/fixture-short.md"
       python3 "$DPY" "$TMP/fixture-short.md" "$TMP/fixture-short.pdf" > /dev/null 2>&1

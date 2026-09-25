@@ -12,7 +12,8 @@ What it renders, and nothing else: `#` title, `##`-`######` headings, paragraphs
 numbered lists (nested by indentation), fenced code blocks (the language tag is printed above the block), and pipe
 tables (wrapped cells, long tokens broken, header repeated across pages, a row taller than a page split; a `|` inside
 `inline code` or written `\\|` stays in its cell). The first bold lines under the title (the "Not deployed" and the
-status line) are set apart in a box, because the auditor reads them first. Anything the parser does not understand is
+status line) are set apart in a box, because the auditor reads them first; a `## Start here` section after them (the
+dossier's entry page, briefs/handoff-dossier.md) ends with a page break, so the body starts on the next page. Anything the parser does not understand is
 printed as plain text, not dropped: a dossier must never lose a line on the way to paper. A character none of the PDF's
 built-in fonts can draw is printed as its code point, [U+XXXX], never as a blank box.
 """
@@ -125,7 +126,7 @@ def main():
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.pdfbase import pdfmetrics
-        from reportlab.platypus import Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
+        from reportlab.platypus import PageBreak, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table, TableStyle
         from reportlab.platypus.doctemplate import LayoutError
     except ImportError:
         fail(2, "dossier-pdf: the reportlab package is not installed (pip install reportlab); nothing written - hand over the Markdown%s" % stale)
@@ -256,6 +257,7 @@ def main():
         buf = []
         in_head_box = True   # the bold lines right under the title go into the box
         box_lines = []
+        entry_page = False   # inside a "## Start here" section: the next heading of its level starts a new page
         while i < len(lines):
             line = lines[i]
             s = line.rstrip()
@@ -303,7 +305,13 @@ def main():
             hm = HEADING.match(s)
             if hm:
                 flush_para(buf)
-                story.append(para(hm.group(2).strip(), h2 if len(hm.group(1)) <= 2 else h3))
+                level, head = len(hm.group(1)), hm.group(2).strip()
+                if level <= 2 and entry_page:
+                    story.append(PageBreak())   # the entry page ends here: the body starts on the next page
+                    entry_page = False
+                story.append(para(head, h2 if level <= 2 else h3))
+                if level <= 2 and re.match(r"(?i)start here\b", head):
+                    entry_page = True
                 i += 1
                 continue
             if s.strip().startswith("|") and i + 1 < len(lines) and is_sep(lines[i + 1]):

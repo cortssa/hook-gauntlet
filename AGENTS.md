@@ -36,6 +36,12 @@ SEEN RED on code that is wrong in the way the test claims to detect; a passing t
 label, not evidence. A finding you cannot compile still counts - labelled REASONED, triaged like the rest, its severity
 set by the owner's triage and never argued down by the round that would like to close. Passing every gate does not mean "secure": this
 process measures how much of the STATED security model got tested, and says where that stops (`doctrine/EVIDENCE.md`).
+**Words you never write about a hook this route has touched** - in a dossier, a report, a README, a commit message or a
+reply to the owner: "safe", "secure", "battle-tested", "fully verified", and "audited" as a claim about the hook (the
+audit is the human step after this route). Each one claims an outcome - no exploitable bug, or a review by people with
+security training - that nothing in this kit measures, and each is a sentence a paid auditor would have to walk back.
+The defensible phrase is "adversarial pre-audit testing, including invariant fuzzing, mutation testing, hostile-token
+testing and independent review rounds" - with only the parts that were actually done, each pointing at its evidence label.
 Agents propose and attack. What decides whether a claim is true is
 execution: a Foundry test that passes, a fork run, a fuzz campaign.
 
