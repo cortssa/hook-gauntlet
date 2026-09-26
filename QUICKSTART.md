@@ -163,6 +163,7 @@ Deterministic tools on your machine, no model. Run them on your project director
 | campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
 | mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies reached by RELATIVE paths outside the project: `COPY_ROOT=<their common parent>`; absolute remappings need nothing; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
+| the kit's own suites on an Ethereum mainnet fork | `export RPC_URL=…` (in your own terminal), then `scripts/fetch-bytecode.sh --block 26050000 0x000000000004444c5dc75cB358380D2e3dE08A90 foundry-kit/v4/fixtures/PoolManager.hex`, then `FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4` (the default battery never runs the fork suites; `foundry-kit/v4/README.md`, "The fork") | `BATTERY PASSED` with `suites test/examples=3 test/fork=6`; fork tests for YOUR hook on YOUR chain are still yours to write (`AGENTS.md` phase 3) |
 | simulation sandbox (optional) | step 4, on your binding | `doctrine/SIMULATE.md` §5 says what goes in the dossier |
 
 A tool that does not fit your hook is not a reason to skip the question: answer it another way and write down how
@@ -185,13 +186,13 @@ decide each one - fix at the cause / refuse in writing / accept with a number - 
 test and the fuzz action that would have caught it; run the judges again; close the round with one `ROUND` line at the
 top of the `LOG.md` entry (`state/README.md`). Then back to `doctrine/NEXT.md`.
 
-Done for the loop: a DISCOVERY round with zero high and zero medium findings and nothing REASONED left open. The
+Done for the loop: a DISCOVERY round, zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), and nothing REASONED left open (`doctrine/NEXT.md` row 14). The
 black-box round (`briefs/black-box.md`, a bench WITHOUT the source) belongs early - after the first or second round.
 
 ## 10. Where it ends
 
-`NEXT.md` row 18 (full mode: after promotion and rehearsal) or 18b (light mode: the owner declined promotion in
-writing) sends you to the handoff dossier, `briefs/handoff-dossier.md` - and row 9b, when findings are open and the
+`NEXT.md` row 18 (after promotion, and rehearsal if there is a runbook) or 18b (the owner declined promotion in writing: light
+mode's default, or a full-mode owner's own decision) sends you to the handoff dossier, `briefs/handoff-dossier.md` - and row 9b, when findings are open and the
 owner is not there to triage, sends you to the same file as a skeleton: what the judges said read from their outputs,
 every divergence, and a non-empty list of what was **not** checked. Then its reading copy for the auditor, the Markdown
 staying the record: `python3 scripts/dossier-pdf.py .gauntlet/DOSSIER.md` (needs `reportlab`; without it, exit 2 and

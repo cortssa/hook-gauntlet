@@ -1,21 +1,21 @@
-<!-- selftest: judge=5=false,8=false,10=false,11b=false rows=13b rc=0 -->
-# STATE - next.sh fixture: row 13b - a clean regression round is not the exit
+<!-- selftest: judge=3=false,5=false,8=false,10=false,11b=false,16=true,18b=false rows=14,3 rc=0 -->
+# STATE - next.sh fixture: the loop is over, the owner wants to freeze, but the real manager never ran and 7b waits on RPC_URL: row 16 is off until 7b has run, nothing else stands - row 3 stops and says what is waiting
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*
 
 ```
-phase:                     4
+phase:                     5
 bytecode_changed_since:    last_battery=no  last_long_fuzz=no  last_other_free_judges=no  last_audit_round=no  last_promotion=n/a
 battery:                   green
 blackbox:                  current
 open_findings:             high=0 medium=0 low=0 reasoned_high_or_medium=0
-last_audit_round:          r02 regression 0H 0M 2L
-last_other_round:          none
+last_audit_round:          r01 discovery 0H 0M 0L
+last_other_round:          b1 black-box no divergence
 ceiling:                   8 model rounds (adversarial + black-box) agreed in phase 0; 3 used
-real_manager_battery:      current
-waiting_on_owner:          none
+real_manager_battery:      never
+waiting_on_owner:          RPC_URL for the real-manager battery
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
-notes:                     fork: the battery ran against the chain's pool manager at a pinned block
+notes:                     fork: ran on a fork
 ```

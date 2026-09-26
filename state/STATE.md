@@ -17,6 +17,7 @@ ceiling:                   8 model rounds (adversarial + black-box) agreed in ph
 waiting_on_owner:          F-24, accept or fix (does not block round 6)
 location:                  .gauntlet/
 dossier:                   none
+rehearsal:                 n/a (no runbook)
 notes:                     static triage: Slither 0.10 (owner allowed the install 2026-09-11)
 ```
 

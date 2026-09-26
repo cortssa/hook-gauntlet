@@ -73,7 +73,7 @@ list you will pay for rediscoveries.*
 
 ## Exit criterion - told to you honestly
 
-This phase ends when a **discovery** round closes with zero high and zero medium findings, and no REASONED high or medium is left open. Your round may be the one that ends it. **Do not soften to make that happen and do not inflate to
+This phase ends when a **discovery** round closes with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), and no REASONED high or medium is left open. What stays open is decided after your report, by the owner's triage: you report every finding you find. Your round may be the one that ends it. **Do not soften to make that happen and do not inflate to
 avoid it.**
 
 ## Deliverables

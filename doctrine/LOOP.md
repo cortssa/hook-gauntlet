@@ -72,7 +72,7 @@ a policy: nothing reads it to decide anything; the next round comes from `NEXT.m
 
 ## Exit
 
-The loop ends when a **discovery** round closes with zero high and zero medium findings, and no REASONED high or medium is left open (`EVIDENCE.md` 3). Regression rounds verify
+The loop ends when a **discovery** round closes with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), and no REASONED high or medium is left open (`EVIDENCE.md` 3; `NEXT.md` row 14). The round still reports every finding it found; what closes the loop is what its triage leaves open. Regression rounds verify
 fixes; they cannot close the loop, because they inherit what earlier rounds believed. Apply it without softening. See `SEVERITY.md` for what those words are allowed to mean.
 
 Do not tell the round that a clean result ends the series and then ask it to be honest. Tell it both, explicitly:

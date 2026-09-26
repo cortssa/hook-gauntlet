@@ -21,7 +21,7 @@ published guides; the dossier's author should cite the ones they checked against
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
 **Not deployed. Not audited by humans.** Prepared with AI agents under the owner's direction; every claim below carries
 its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
-**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{yes/no}} · skeleton: {{K}} findings open** -
+**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{no / yes / yes, black-box: not run - ceiling reached}}{{ · black-box: stopped at <step> - only when `STATE.md` says `blackbox: stopped (<round id>)`}} · skeleton: {{K}} findings open** -
 the status line: the one line every flag in `doctrine/NEXT.md` points at. A dossier can be complete and thin at the
 same time; this line says which one it is.
 
@@ -124,10 +124,11 @@ promotion) reads `owner decision pending: <what>` - never `triage pending`, whic
 item is also a named entry in `STATE.md` `waiting_on_owner:`. None of these is a skip, and each of them COUNTS as not done in `N` (a judge waiting on the owner is a judge not run). A row that does not apply to this
 hook (the real-manager battery for a hook on no manager) reads `n/a: <what replaced it, section 8>` and does not count as
 not done; neither does an optional judge the owner did not ask for (the sandbox: `not run: optional, not requested`).
+A black-box round the ceiling left unrun (`doctrine/NEXT.md` row 2) is a round, not a judge: it is not a row of section 6 and does not count in `N`. It goes on the status line (`ceiling_reached: yes, black-box: not run - ceiling reached`) and in section 8, and section 9 says what it would have added. So does a black-box round the environment stopped twice (`doctrine/NEXT.md` row 11b, `blackbox: stopped (<round id>)`): the status line and section 8 say `black-box: stopped at <step>`, section 9 what it would have added; it counted against the ceiling, and it is not in `N` either.
 What DOES count as not done: `N` counts the rows of section 6 only (the judges of `doctrine/JUDGES.md`): a judge not
 run because light mode skips it (the fork battery, symbolic, the second engine, the reference model) and a tool the owner
 did not allow (Slither never installed: `not done: static triage by forge lint only`). Promotion and rehearsal are
-phases, not judges: light mode's skipping them goes in the status line's `skipped` count and in section 8, not in `N`.
+phases, not judges: skipping them - light mode's default, or the owner's decision in writing in full mode (`doctrine/NEXT.md` row 18b) - goes in the status line's `skipped` count and in section 8, not in `N`.
 Phase-3 `pending` findings are listed in section 4 as open. It is a status report for the owner, not a handoff; nothing below it moves to promotion.
 An auditor judges new findings against this list; leaving something out of it is how a known issue becomes a "critical".
 
@@ -174,14 +175,18 @@ that a blind spot shared by that family is invisible in everything above.
 
 ## 8. Where we diverged from the usual process (must)
 
-Every divergence recorded under `AGENTS.md` section 6b: which question, what was done instead, why.
+Every divergence recorded under `AGENTS.md` section 6b: which question, what was done instead, why. Here too: a black-box
+round the ceiling left unrun (`black-box: not run - ceiling reached`) or the environment stopped twice (`black-box: stopped at
+<step>`, `doctrine/NEXT.md` row 11b), and promotion and rehearsal when they were skipped
+(`not done: light mode` or `not done: the owner's decision in writing`, `doctrine/NEXT.md` row 18b).
 
 ## 9. What was NOT checked (must - the auditor reads this first)
 
 Be specific. Examples of the form this takes: economic and ordering attacks (MEV, JIT liquidity) were reasoned about,
 not tested · native currency paths do not exist and were not tested · behaviour on chains other than {{CHAIN}} ·
 the deployment script was simulated, never broadcast · nothing here was reviewed by a human with security training ·
-rows of section 6 marked "not done".
+rows of section 6 marked "not done" · a black-box round the ceiling left unrun or the environment stopped, and what it would have added · what
+promotion would have added, when it was skipped.
 
 ## 10. Reproduce it (must)
 

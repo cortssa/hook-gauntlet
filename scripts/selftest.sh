@@ -828,16 +828,25 @@ if [ "$(wc -l < "$TMP/o148" | tr -d ' ')" = "1" ] && [ "$(wc -l < "$TMP/o149" | 
 
 # ================================================================= next.sh (STATE.md's flags -> the row of doctrine/NEXT.md; no forge needed)
 # One fixture per row of the table (scripts/test/fixtures/state-row-<id>.md) whose FIRST line says how it is run and what
-# it must give: `judge=` the answers to the rows that need judgement, `rows=` the rows the output names, in order (a
-# passed row 14 or a row 2 in force, then the row given), `rc=`. A fixture whose own row needs judgement is run a second
-# time without that answer, and must then stop there (rc 3). The fixtures are listed from NEXT.md, not from the directory:
-# a row added to the table with no fixture is a red here, as it is (with no entry in next.sh) in next.sh's drift guard.
+# it must give: `judge=` the answers to the rows that need judgement, `rows=` the rows the output names, in order (the
+# gates in force - row 2, row 14 - then the row given), `rc=`. A fixture whose own row needs judgement is run a second
+# time without that answer, and must then stop there (rc 3). The fixtures are listed from NEXT.md, not from the directory,
+# and by the same rule next.sh reads the table with - every row under "## The table", whatever the form of its id (12,
+# 12b, 12a): a row added to the table with no fixture is a red here, as it is (with no entry in next.sh) in its drift guard.
 echo "== next.sh =="
 NX="$HERE/next.sh"; NXT="$HERE/../doctrine/NEXT.md"
-nx_rows() { sed -nE 's/^(next|passed|in force|needs judgement): row ([0-9]+b?)( .*)?$/\2/p' "$1" | tr '\n' ',' | sed 's/,$//'; }
+nx_ids() { # nx_ids <NEXT.md>: the id of every row of the table, in order
+  LC_ALL=C awk '{ sub(/\r$/, "") } /^## / { t = ($0 ~ /^## The table/); next }
+    t && /^\|/ && !/^\|[-:| ]+$/ { split($0, c, /[|]/); id = c[2]; gsub(/^[ \t]+|[ \t]+$/, "", id); if (id != "#") print id }' "$1"
+}
+nx_rows() { sed -nE 's/^(next|passed|in force|needs judgement): row ([0-9]+[A-Za-z]*)( .*)?$/\2/p' "$1" | tr '\n' ',' | sed 's/,$//'; }
 nx_meta() { sed -nE "1s/.* $2=([^ ]+).*/\\1/p" "$1"; }   # nx_meta <fixture> <judge|rows|rc>
+"$NX" --check-table > "$TMP/o400" 2>&1
+if [ -n "$(nx_ids "$NXT")" ] && grep -qF " rows, $(nx_ids "$NXT" | tr '\n' ' ' | sed 's/ $//')." "$TMP/o400"; then
+  echo "  ok    the fixture list and next.sh read the same rows from NEXT.md: $(nx_ids "$NXT" | tr '\n' ' ')"; else
+  echo "  FAIL  the fixture list ($(nx_ids "$NXT" | tr '\n' ' ')) and next.sh (below) do not read the same rows:"; sed "s/^/        | /" "$TMP/o400"; fails=$((fails + 1)); fi
 nn=400
-for id in $(sed -nE 's/^\| ([0-9]+b?) \|.*/\1/p' "$NXT"); do
+for id in $(nx_ids "$NXT"); do
   f="$FIX/state-row-$id.md"; nn=$((nn + 1))
   if [ ! -f "$f" ]; then echo "  FAIL  NEXT.md row $id has no fixture (state-row-$id.md)"; fails=$((fails + 1)); continue; fi
   j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
@@ -851,7 +860,7 @@ for id in $(sed -nE 's/^\| ([0-9]+b?) \|.*/\1/p' "$NXT"); do
     j2="$(printf ',%s,' "$j" | sed "s/,$id=true,/,/; s/^,//; s/,$//")"
     a=(); [ -z "$j2" ] || a=(--judge "$j2")
     "$NX" "$f" "${a[@]}" > "$TMP/o${nn}j" 2>&1; check "next.sh: row $id without its answer stops there, needing judgement" 3 $? "$TMP/o${nn}j"
-    [ "$(grep -m 1 '^needs judgement: ' "$TMP/o${nn}j" | sed -nE 's/^needs judgement: row ([0-9]+b?) .*/\1/p')" = "$id" ] \
+    [ "$(grep -m 1 '^needs judgement: ' "$TMP/o${nn}j" | sed -nE 's/^needs judgement: row ([0-9]+[A-Za-z]*) .*/\1/p')" = "$id" ] \
       || { echo "  FAIL  and the first row needing judgement is not row $id"; sed "s/^/        | /" "$TMP/o${nn}j"; fails=$((fails + 1)); } ;;
   esac
 done
@@ -870,15 +879,119 @@ nx_variant 445 "row 13b by its second branch: a clean discovery round, a REASONE
   's/^last_audit_round: .*/last_audit_round: r04 discovery 0H 0M 0L/; s/^open_findings: .*/open_findings: high=0 medium=1 low=0 reasoned_high_or_medium=1/' \
   5=false,8=false,9=false,9b=false,10=false,11b=false 0 13b
 nx_variant 446 "row 1 by its second branch: a pending: note (a provisional high?) needs judgement" state-row-5.md \
-  's/^notes: .*/notes: pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b"
+  's/^notes: .*/notes: pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
 nx_variant 447 "row 7b is quiet when notes: says what replaced the real manager" state-row-7b.md \
   's/^notes: .*/notes: fork: n\/a - its own manager; real manager: the hook runs on its own manager, dossier section 8/' \
-  5=false 3 "8,10,11b"
+  5=false 3 "8,10,11b,13b"
 nx_variant 448 "phase 2 is row 4b's, not row 4's" state-row-4b.md 's/^phase: .*/phase: 2/' - 0 4b
 "$NX" "$FIX/state-new-project.md" > "$TMP/o441" 2>&1; check "next.sh: a new project, NEXT.md's starting values, gives row 4" 0 $? "$TMP/o441"
 [ "$(nx_rows "$TMP/o441")" = "4" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o441")', not 4"; fails=$((fails + 1)); }
-"$NX" "$FIX/state-hole.md" --judge "$(nx_meta "$FIX/state-hole.md" judge)" > "$TMP/o442" 2>&1; check "next.sh: no row true (a hole)" 1 $? "$TMP/o442"
-grep -qx 'no row is true: the table has a hole or a flag is stale' "$TMP/o442" || { echo "  FAIL  and not with NEXT.md's STOP line"; fails=$((fails + 1)); }
+# cases beyond one per row, and the hole (state-case-*.md, state-hole*.md): the same first line, `rc=1` for a hole. The
+# hole left is a STALE flag: open_findings says a medium is open at the ceiling, the answers say no finding waits (9 and
+# 9b false) - no row is true, and neither the black-box (row 12, off at the ceiling) nor promotion (row 14 is not in
+# force while a finding is open) may be given instead.
+nn=500
+for f in "$FIX"/state-case-*.md "$FIX"/state-hole*.md; do
+  nn=$((nn + 1)); j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
+  a=(); [ "$j" = "none" ] || a=(--judge "$j")
+  "$NX" "$f" "${a[@]}" > "$TMP/o$nn" 2>&1; nrc=$?   # before the label's $(...), which would reset $?
+  check "next.sh: $(basename "$f" .md) gives rows $want" "$wrc" "$nrc" "$TMP/o$nn"
+  got="$(nx_rows "$TMP/o$nn")"; [ -n "$got" ] || got=none
+  if [ "$got" != "$want" ]; then echo "  FAIL  and it named rows '$got', not '$want'"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); fi
+  if [ "$wrc" = "1" ] && ! grep -qx 'no row is true: the table has a hole or a flag is stale' "$TMP/o$nn"; then
+    echo "  FAIL  and not with NEXT.md's STOP line"; fails=$((fails + 1)); fi
+done
+[ "$nn" -ge 523 ] || { echo "  FAIL  fewer case fixtures than written (state-case-*.md, state-hole*.md): $((nn - 500)) of 23"; fails=$((fails + 1)); }
+nx_variant 449 "full mode at the ceiling, the black-box STALE, the owner wants to freeze: row 16" \
+  state-case-ceiling-full-blackbox-never.md 's/^blackbox: .*/blackbox: stale (an event changed since it ran)/' \
+  5=false,8=false,10=false,16=true 0 "2,14,16"
+nx_variant 488 "promoted, the rehearsal not yet done, at the ceiling: still row 17" state-row-17.md \
+  's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 5=false,8=false,10=false 0 "2,14,17"
+# row 7b waits on the owner while waiting_on_owner NAMES RPC_URL or chain: an item that contains either, anywhere in it
+nx_variant 601 "waiting_on_owner names chain as its second item: row 7b is off, round 1 goes on" state-case-waiting-rpc-url.md \
+  's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7; chain - which one?/' 3=false,5=false,11b=false 0 11
+nx_variant 602 "waiting_on_owner names the chain inside an item (severity of F-7, it depends on the chain): row 7b is off" \
+  state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (it depends on the chain)/' 3=false,5=false,11b=false 0 11
+nx_variant 620 "waiting_on_owner names neither (a blockchain explorer, the RPC endpoint in words): row 7b stands" \
+  state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (a blockchain explorer link; the RPC endpoint is set)/' \
+  3=false,5=false,11b=false 0 7b
+nx_variant 627 "waiting_on_owner names the Chain with a capital, at the start of a sentence: row 7b is off" \
+  state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: Chain - which one does the owner deploy on? (asked 2026-09-24)/' \
+  3=false,5=false,11b=false 0 11
+# row 2 keeps 11b off (a retry is a model round), whatever the answer
+nx_variant 603 "at the ceiling a stopped round is not retried: 11b answered true is still off" state-row-2.md '' \
+  5=false,8=false,10=false,11b=true,16=true 0 "2,14,16"
+# the same state, CRLF: the same row
+nx_variant 604 "a STATE.md with CRLF line endings gives the same rows as with LF" state-row-17.md 's/$/\r/' \
+  5=false,8=false,10=false,11b=false 0 "14,17"
+nx_variant 605 "rehearsal: done on a leap day (2024-02-29) is a date" state-row-18.md 's/^rehearsal: .*/rehearsal: done (2024-02-29)/' \
+  5=false,8=false,10=false,11b=false 0 "14,18"
+# row 1's pending: is a note LINE that starts with it, not the word anywhere
+nx_variant 606 "a note that only mentions pending: (Slither pending: owner asked) is not row 1's" state-new-project.md \
+  's/^notes:.*/notes: static triage: forge lint only (Slither pending: owner asked)/' - 0 4
+nx_variant 607 "a pending: note on an indented line under notes: is row 1's" state-row-5.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet\n  pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
+# row 9 (NEXT.md): a finding triaged "fix at the cause" whose fix is not written is still open - its question says so,
+# and its action is to write the fix
+"$NX" "$FIX/state-case-fix-not-written.md" --judge 5=false,8=false > "$TMP/o608" 2>&1
+check "next.sh: a medium triaged fix-at-the-cause, not written: row 9 needs judgement" 3 $? "$TMP/o608"
+grep -q '^needs judgement: row 9 - .*fix at the cause' "$TMP/o608" \
+  || { echo "  FAIL  and row 9's question does not name a fix at the cause not yet written"; sed "s/^/        | /" "$TMP/o608"; fails=$((fails + 1)); }
+"$NX" "$FIX/state-case-fix-not-written.md" --judge 5=false,8=false,9=true > "$TMP/o609" 2>&1
+check "next.sh: the same, row 9 answered true: row 9" 0 $? "$TMP/o609"
+grep -q '^next: row 9 - .*write the fix' "$TMP/o609" \
+  || { echo "  FAIL  and row 9's action does not say: write the fix"; sed "s/^/        | /" "$TMP/o609"; fails=$((fails + 1)); }
+# notes are read by name only at the START of a note item: a note line (the value of notes:, or an indented line under it),
+# or a part of one after the middle dot or ";" - real manager: (row 7b) as pending: (row 1)
+nx_variant 610 "a real manager: note after the middle dot quiets row 7b: 14, 16" state-case-real-manager-note-not-at-start.md \
+  "s/^notes: .*/notes: fork: ran on a fork $(printf '\302\267') real manager: the hook runs on its own vault, dossier section 8/" \
+  5=false,8=false,10=false,11b=false,16=true 0 "14,16"
+nx_variant 611 "a pending: note after a ';' on the notes: line is row 1's" state-row-5.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet; pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
+# rows 12 and 16 wait on 7b while the chain is known and the real manager never ran (or is stale), unless a real manager:
+# note answers it; with 7b silenced by a wait and nothing else standing, row 3 stops and says what is waiting
+nx_variant 612 "the loop over, 16 off until 7b has run - the owner declined promotion in writing: 18b stands" \
+  state-case-real-manager-owed-before-16.md '' 3=false,5=false,8=false,10=false,11b=false,16=true,18b=true 0 "14,18b"
+nx_variant 613 "the same wait, a real manager: note answers 7b another way: row 12 stands" state-case-real-manager-owed-before-12.md \
+  's/^notes: .*/notes: fork: ran on a fork; real manager: the hook runs on its own vault, dossier section 8/' \
+  3=false,5=false,8=false,10=false,11b=false,12=true 0 12
+nx_variant 614 "the real manager never run and nothing waiting: row 7b, before the black-box" state-case-real-manager-owed-before-12.md \
+  's/^waiting_on_owner: .*/waiting_on_owner: none/' 5=false,8=false,10=false,11b=false,12=true 0 7b
+nx_variant 621 "the real-manager battery STALE, the chain known, 7b waiting: row 16 is off too, row 3 stops" \
+  state-case-real-manager-owed-before-16.md 's/^real_manager_battery: .*/real_manager_battery: stale (bytecode changed since)/' \
+  3=false,5=false,8=false,10=false,11b=false,16=true,18b=false 0 "14,3"
+nx_variant 628 "the same wait, the real manager CURRENT (7b not owed), the owner neither freezes nor declines: no row, not row 3" \
+  state-case-real-manager-owed-before-16.md 's/^real_manager_battery: .*/real_manager_battery: current/' \
+  3=false,5=false,8=false,10=false,11b=false,16=false,18b=false 1 "14"
+nx_variant 624 "at the ceiling too: the black-box not run, 16 off while 7b waits on RPC_URL - row 3 stops" \
+  state-case-ceiling-full-blackbox-never.md \
+  's/^real_manager_battery: .*/real_manager_battery: never/; s/^waiting_on_owner: .*/waiting_on_owner: RPC_URL for the real-manager battery/' \
+  3=false,5=false,8=false,10=false,16=true,18b=false 0 "2,14,3"
+"$NX" "$FIX/state-case-real-manager-owed-before-16.md" --judge 3=false,5=false,8=false,10=false,11b=false,16=true,18b=false > "$TMP/o615" 2>&1
+if grep -q '^next: row 3 - ' "$TMP/o615" && grep -q '^because: .*RPC_URL.*7b' "$TMP/o615"; then
+  echo "  ok    and row 3 is given saying what is waiting, and that row 7b waits on it"; else
+  echo "  FAIL  row 3 was not given with its reason (7b waits on the answer; 12 and 16 wait on 7b):"; sed "s/^/        | /" "$TMP/o615"; fails=$((fails + 1)); fi
+# rows 9 and 9b count EVERY open finding, from any round - a phase-3 pending: finding too, once round 1 has run
+"$NX" "$FIX/state-case-pending-after-round1.md" --judge 1=false,5=false,8=false > "$TMP/o616" 2>&1
+check "next.sh: a phase-3 pending medium after round 1, not answered: rows 9 and 9b need judgement" 3 $? "$TMP/o616"
+grep -q '^needs judgement: row 9 - .*from any round' "$TMP/o616" && grep -q '^needs judgement: row 9b - .*from any round' "$TMP/o616" \
+  || { echo "  FAIL  and rows 9 and 9b do not ask about a finding from any round:"; sed "s/^/        | /" "$TMP/o616"; fails=$((fails + 1)); }
+# ... unless the ceiling is reached before round 1 delivered: round 1 will not run, and row 2 sends every open finding to 9/9b
+nx_variant 622 "a phase-3 pending medium, the ceiling reached before round 1 delivered: row 9 (the owner there)" \
+  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 1=false,5=false,9=true 0 "2,9"
+nx_variant 623 "the same, the owner away: row 9b writes the skeleton with it" \
+  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 1=false,5=false,9=false,9b=true 0 "2,9b"
+# blackbox: stopped (<round id>) - a black-box round stopped twice by the environment: rows 12 and 15 do not fire again
+nx_variant 618 "a black-box stopped twice before the loop is over: row 12 does not fire again, 13b does" \
+  state-case-closing-blackbox-stopped-twice.md 's/^last_audit_round: .*/last_audit_round: r02 regression 0H 0M 0L/' \
+  5=false,8=false,10=false,11b=false,12=true 0 13b
+nx_variant 625 "a black-box stopped twice, then the ceiling reached: row 16 takes it too" \
+  state-case-closing-blackbox-stopped-twice.md 's/^ceiling: .*/ceiling: 8 model rounds (full mode) agreed in phase 0; 8 used/' \
+  5=false,8=false,10=false,16=true 0 "2,14,16"
+"$NX" "$FIX/state-case-closing-blackbox-stopped.md" --judge 5=false,8=false,10=false,11b=true > "$TMP/o626" 2>&1
+if grep -q '^next: row 11b - .*blackbox: stopped (<round id>).*black-box: stopped at <step>' "$TMP/o626"; then
+  echo "  ok    row 11b's action says what a black-box round stopped twice sets: blackbox: stopped (<round id>), and the dossier's words"; else
+  echo "  FAIL  row 11b's action does not name blackbox: stopped (<round id>) and black-box: stopped at <step>:"; sed "s/^/        | /" "$TMP/o626"; fails=$((fails + 1)); fi
 # the kit's example STATE.md: its own prose says row 3 is true but blocks nothing, and the black-box (row 12) is next
 "$NX" "$HERE/../state/STATE.md" > "$TMP/o443" 2>&1; check "next.sh: the example state/STATE.md, no answers: rows needing judgement first" 3 $? "$TMP/o443"
 [ "$(nx_rows "$TMP/o443")" = "3,5,8,9,9b,11b,12,13" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o443")', not 3,5,8,9,9b,11b,12,13"; fails=$((fails + 1)); }
@@ -910,7 +1023,24 @@ nx_refused "a flag given twice" "flag 'battery' appears twice" 's/^battery: .*/&
 nx_refused "an answer to a row the flags decide (--judge 6=false)" "row 6 is decided by the flags" '' --judge 6=false
 nx_refused "an answer to a row NEXT.md does not have (--judge 99=true)" "no row 99" '' --judge 99=true
 nx_refused "a STATE.md with no flag block" "no flag block" '/^```/d'
-# drift guard: next.sh's rows and NEXT.md's table must name the same rows, in the same order
+nn=490
+nx_refused "a missing rehearsal: flag" "flag 'rehearsal' is missing" '/^rehearsal:/d'
+nx_refused "a rehearsal: value not on its list" "rehearsal: 'yes' is not" 's/^rehearsal: .*/rehearsal: yes/'
+nx_refused "a rehearsal: done with no date" "rehearsal: 'done' is not" 's/^rehearsal: .*/rehearsal: done/'
+nx_refused "an answer to row 17, which the rehearsal: flag now decides (--judge 17=true)" "row 17 is decided by the flags" '' --judge 17=true
+nn=700
+nx_refused "rehearsal: done (date) - the placeholder, not a date" "rehearsal: 'done (date)' is not" 's/^rehearsal: .*/rehearsal: done (date)/'
+nx_refused "rehearsal: done (not yet) - words, not a date" "rehearsal: 'done (not yet)' is not" 's/^rehearsal: .*/rehearsal: done (not yet)/'
+nx_refused "rehearsal: done (2026-02-30) - no such day" "rehearsal: 'done (2026-02-30)' is not" 's/^rehearsal: .*/rehearsal: done (2026-02-30)/'
+nx_refused "rehearsal: done (2026-13-01) - no such month" "rehearsal: 'done (2026-13-01)' is not" 's/^rehearsal: .*/rehearsal: done (2026-13-01)/'
+nx_refused "rehearsal: done (2026-03-22) with words after the date" "rehearsal: 'done (2026-03-22) by F-agent' is not" 's/^rehearsal: .*/rehearsal: done (2026-03-22) by F-agent/'
+nx_refused "more REASONED high/medium than high+medium open" "open_findings: reasoned_high_or_medium=2 is more than" 's/^open_findings: .*/open_findings: high=0 medium=1 low=0 reasoned_high_or_medium=2/'
+nx_refused "blackbox: stopped without the round id" "blackbox: 'stopped' is not" 's/^blackbox: .*/blackbox: stopped/'
+nx_refused "blackbox: stopped (b1) with words after it" "blackbox: 'stopped (b1) twice' is not" 's/^blackbox: .*/blackbox: stopped (b1) twice/'
+nx_refused "a line that is not 'name: value' in a CRLF STATE.md" "is not 'name: value': 'battery never'" 's/^battery: .*/battery never/; s/$/\r/'
+if grep -q "$(printf '\r')" "$TMP/o$nn"; then echo "  FAIL  and the refusal carries the file's CR"; fails=$((fails + 1)); fi
+# drift guard: next.sh's rows and NEXT.md's table must name the same rows, in the same order, and each row's condition
+# must be the text next.sh's entry was written from (a hash of the cell, whitespace normalised)
 "$NX" --check-table > "$TMP/o470" 2>&1; check "next.sh --check-table: its rows and doctrine/NEXT.md's table agree" 0 $? "$TMP/o470"
 sed 's/^| 18b |.*/&\n| 19 | a row added to the table | do something new | a reason |/' "$NXT" > "$TMP/next-added.md"
 "$NX" --check-table "$TMP/next-added.md" > "$TMP/o471" 2>&1; check "next.sh --check-table: a row added to NEXT.md with no entry (drift)" 2 $? "$TMP/o471"
@@ -918,6 +1048,37 @@ grep -qF "row 19" "$TMP/o471" || { echo "  FAIL  and the refusal does not name r
 grep -v '^| 7b |' "$NXT" > "$TMP/next-removed.md"
 "$NX" "$NP" --table "$TMP/next-removed.md" > "$TMP/o472" 2>&1; check "next.sh on a STATE.md, with a row removed from NEXT.md (drift)" 2 $? "$TMP/o472"
 grep -qF "row 7b" "$TMP/o472" || { echo "  FAIL  and the refusal does not name row 7b: $(head -1 "$TMP/o472")"; fails=$((fails + 1)); }
+nx_drift() { # nx_drift <n> <label> <sed or awk program -> the edited NEXT.md> <want rc> <words the output must say>
+  local n="$1" label="$2" prog="$3" wrc="$4" says="$5"
+  case "$prog" in awk:*) awk "${prog#awk:}" "$NXT" > "$TMP/next-$n.md" ;; *) sed "$prog" "$NXT" > "$TMP/next-$n.md" ;; esac
+  cmp -s "$TMP/next-$n.md" "$NXT" && { echo "  FAIL  $label: the edit changed nothing"; fails=$((fails + 1)); return; }
+  "$NX" --check-table "$TMP/next-$n.md" > "$TMP/o$n" 2>&1; check "next.sh --check-table: $label" "$wrc" $? "$TMP/o$n"
+  grep -qF -- "$says" "$TMP/o$n" || { echo "  FAIL  and it does not say \"$says\": $(head -1 "$TMP/o$n")"; fails=$((fails + 1)); }
+}
+nx_drift 711 "a row 12a inserted after row 12 (an id of another form)" 's/^| 12 |.*/&\n| 12a | a row inserted | x | y |/' 2 "row 12a"
+nx_drift 712 "row 11b written 11B" 's/^| 11b |/| 11B |/' 2 "row 11B"
+nx_drift 713 "rows 17 and 18 swapped" 'awk:/^\| 17 \|/ { h = $0; next } { print } /^\| 18 \|/ { print h }' 2 "another order"
+nx_drift 714 "row 16's condition cell changed, its id kept" 's/^| 16 | the loop is over, /| 16 | the loop is over (and nothing else), /' 2 "row 16"
+nx_drift 715 "row 16's condition cell with its spaces changed only" 's/^\(| 16 | the loop is over,\) /\1    /; s/^| 16 | /|  16  |   /' 0 "agree"
+nx_drift 718 "NEXT.md with CRLF line endings" 's/$/\r/' 0 "agree"
+# inside the table every non-blank line is a row: a "|" at column 0 and four cells - an indented row, a row without its
+# leading "|" (GFM shows both in the table) or a line of prose is refused, naming the line
+nx_drift 719 "a row 12c indented two spaces inside the table" 's/^| 12 |.*/&\n  | 12c | a row inserted | x | y |/' 2 "  | 12c |"
+nx_drift 720 "a row 12c without its leading |" 's/^| 12 |.*/&\n12c | a row inserted | x | y |/' 2 "12c | a row inserted"
+nx_drift 721 "a line of prose inside the table" 's/^| 12 |.*/&\nsee also row 12c, which is not a row/' 2 "which is not a row"
+# ... and the table ends at its first blank line: prose under the same heading after it is not a row, and is not refused
+nx_drift 722 "a paragraph after the table's blank line, under the same heading" \
+  's/^| 18b |.*/&\n\nA paragraph after the table, still under its heading./' 0 "agree"
+# the hash --check-table prints is the one to paste: in a copy of next.sh, pasted over the old one, the edited table agrees
+h_new="$(sed -nE 's/^row 16: .* new hash ([0-9a-f]{8}) over ([0-9a-f]{8}).*/\1/p' "$TMP/o714")"
+h_old="$(sed -nE 's/^row 16: .* new hash ([0-9a-f]{8}) over ([0-9a-f]{8}).*/\2/p' "$TMP/o714")"
+if [ -n "$h_new" ] && [ -n "$h_old" ] && grep -q "| $h_old |" "$NX"; then
+  sed "s/| $h_old |/| $h_new |/" "$NX" > "$TMP/next-pasted.sh"
+  bash "$TMP/next-pasted.sh" --check-table "$TMP/next-714.md" > "$TMP/o716" 2>&1
+  check "next.sh --check-table: the hash it printed for row 16, pasted into its entry, makes the edited table agree" 0 $? "$TMP/o716"
+else echo "  FAIL  --check-table did not print row 16's new hash over the one in next.sh ('$h_new' over '$h_old')"; fails=$((fails + 1)); fi
+"$NX" "$NP" --table "$TMP/next-714.md" > "$TMP/o717" 2>&1; check "next.sh on a STATE.md, with row 16's condition changed in NEXT.md (drift)" 2 $? "$TMP/o717"
+grep -qF "row 16" "$TMP/o717" || { echo "  FAIL  and the refusal does not name row 16: $(head -1 "$TMP/o717")"; fails=$((fails + 1)); }
 
 # ================================================================= dossier-pdf.py (the dossier's reading copy; no forge needed)
 # The PDF is the auditor's reading copy of DOSSIER.md; the Markdown stays the record. What a PDF must never do is lose a

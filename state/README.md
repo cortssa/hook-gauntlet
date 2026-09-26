@@ -37,21 +37,35 @@ scripts/next.sh .gauntlet/STATE.md --judge 5=false,8=false,12=true    # the answ
 ```
 
 It refuses (exit 2, one line naming the flag) a flag that is missing, a value not on the flag's list, a line of the
-block that is not `name: value`, and a `ceiling` of no known shape (`not agreed ...`, `undecided ...`, or `N model rounds
-...; M used`). Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
+block that is not `name: value`, a `ceiling` of no known shape (`not agreed ...`, `undecided ...`, or `N model rounds
+...; M used`), a `rehearsal: done` without a real date (`done (YYYY-MM-DD)`), a `blackbox: stopped` without its round
+id (`stopped (<round id>)`), and more `reasoned_high_or_medium` than high + medium open. Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
 the flags that made it true (exit 0). No row true: `no row is true: the table has a hole or a flag is stale` (exit 1,
 NEXT.md's STOP rule: say which in `STATE.md` and ask - do not change a flag to get moving).
 
-What the flags cannot decide is not guessed. Rows 1 (a high or a `pending:` finding is open), 3 (`waiting_on_owner`), 5,
-8, 9, 9b, 10 (after a round, with no bytecode change since), 11b, 12 (did the spec's promises change?), 16, 17 and 18b
+What the flags cannot decide is not guessed. Rows 1 (a high is open, or a note item starts `pending: <id>`), 3 (`waiting_on_owner`), 5,
+8, 9 and 9b (a finding open, from any round, once round 1 has run or the ceiling is reached), 10 (after a round, with no bytecode change since),
+11b, 12 (did the spec's promises change?), 16 and 18b
 need something `STATE.md` does not carry, and are printed `needs judgement: row <id> - <the question>`; the row after
 them is printed as the answer only if they are all false (exit 3). Answer with `--judge <row>=true|false`: the answers
 are printed back, so the judgement is on the record. Row 3: answer `false` each row below that depends on the owner's
-answer, and 3 itself `false` once none left does. Two rows are not destinations: row 2 (ceiling reached) is `in force`
-and turns every model row below it off; row 14 (the loop is over) is `passed`, and the table goes on at row 15.
+answer, and 3 itself `false` once none left does (row 7b, decided by the flags, is off by itself while
+`waiting_on_owner` names `RPC_URL` or `chain` - an item that contains either, anywhere in it; rows 12 and 16 are off
+while 7b is owed, so when the wait silences 7b and no other row stands, row 3 is given: stop and say what is waiting).
+A note is read by its name only at the start of a note item (a note line, or a part of one after `·` or `;`):
+`pending: <id>` for row 1, `real manager:` for row 7b. Two rows are gates, not destinations (`NEXT.md`): when true they are
+printed `in force`, the rows they name are off wherever they stand, and the reading goes on - row 2 (ceiling reached)
+turns off every model row (11, 11b, 12, 13, 13b, 15), row 14 (the loop is over) turns off 11, 12, 13 and 13b (not 11b:
+a stopped round still gets its one retry).
 
-The rows are data inside `next.sh`: a new row of `NEXT.md` is one line there, and every run checks that the two name the
-same rows in the same order (`scripts/next.sh --check-table`); a row in one and not the other is a refusal.
+The rows are data inside `next.sh`: a new row of `NEXT.md` is one line there, and every run checks the two against each
+other (`scripts/next.sh --check-table`): every row of the table is read, whatever the form of its id (`12`, `12b`,
+`12a`), and a row in one and not the other, the same rows in another order, or a row whose condition cell in `NEXT.md`
+is no longer the text its line in `next.sh` was written from (each line keeps a hash of the cell, whitespace
+normalised), is a refusal naming the row. `--check-table` then prints the cell's new hash: re-read the row, make the
+line say the same, and paste the hash - never the hash alone. Inside the table every non-blank line must be a row, `|`
+at column 0 and four cells: an indented row, a row without its leading `|` (Markdown shows both in the table) or a line
+of prose there is a refusal naming the line, so no row can hide from the guard.
 
 ## The ROUND line
 

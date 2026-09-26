@@ -19,7 +19,9 @@ the contract is upgradeable or pausable. Upgradeability does not make the route 
 lost or stolen key, the storage layout across versions - `HOOK-ATTACKS.md` class 23, for which this kit has no tooling).
 
 Write the choice in `DECISIONS.md`, with a **ceiling**: the maximum number of rounds (or of money) the owner is
-willing to spend before stopping to reconsider. **STOP and ask when the ceiling is reached**, whatever the state.
+willing to spend before stopping to reconsider. **When the ceiling is reached**, whatever the state: **stop the rounds,
+report, the route continues** (`NEXT.md` row 2: a gate, not a stop - no more model rounds; every open finding is
+triaged or handed to the human audit by name, then the dossier). The owner may raise the ceiling in writing instead.
 
 **On a large surface, the denominator does not shrink because you stopped early.** When depth is capped by the
 budget above - three of nine adapters read line by line, the rest scanned only for the shape of the other six -
@@ -94,7 +96,7 @@ pay every round.
 
 ## 7. Know when to stop
 
-- The exit criterion is the stop rule: a **discovery** round closes with zero high and zero medium findings, and no REASONED high or medium is left open. **Do not run "one more to be safe".** If you want more assurance after the exit criterion,
+- The exit criterion is the stop rule: a **discovery** round closes with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), and no REASONED high or medium is left open. **Do not run "one more to be safe".** If you want more assurance after the exit criterion,
   the next unit of assurance is a different kind of reviewer - another vendor's model, or a human - not another
   round of the same kind.
 - Watch the yield. When a round's findings are all about wording, numbers in documents and test quality, the

@@ -44,7 +44,7 @@ it as **worse** than this, that is a finding.
 
 ## D-05 · 2026-03-11 · Compute: full mode
 
-**Decision:** rounds continue until a DISCOVERY round closes with zero high and zero medium, and no REASONED high or medium is left open.
+**Decision:** rounds continue until a DISCOVERY round closes with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), and no REASONED high or medium is left open.
 **Reason:** the owner has a human audit booked for May and wants the time used.
 **Consequence:** budget reviewed after every third round, from the ROUND lines of `LOG.md`.
 

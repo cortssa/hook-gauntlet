@@ -16,5 +16,6 @@ real_manager_battery:      n/a (chain not chosen)
 waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   none
+rehearsal:                 n/a (no runbook)
 notes:                     
 ```

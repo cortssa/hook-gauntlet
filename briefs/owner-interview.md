@@ -68,7 +68,8 @@ produces a spec that is wrong by Friday.
 ## 5. Process
 
 20. **How much compute are you willing to spend?** Light mode (about 3 adversarial rounds plus a black-box) or
-    full mode (rounds until one closes clean)? Agree a **ceiling** - the number of rounds after which you stop and
+    full mode (rounds until a discovery round closes clean: zero high and zero medium findings still open,
+    `doctrine/LOOP.md` "Exit")? Agree a **ceiling** - the number of rounds after which you stop and
     reconsider, whatever the state - and write it down. See `doctrine/COST.md`.
 21. Who decides trade-offs - you, or someone you have to ask?
 22. Do you have a human audit lined up? Budget? Timing? *(The whole route aims at that handoff.)*

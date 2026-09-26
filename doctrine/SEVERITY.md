@@ -2,7 +2,7 @@
 
 ## Why this file exists
 
-The exit criterion of phase 4 is "a discovery round with zero high and zero medium findings, nothing REASONED left open". That sentence is worth
+The exit criterion of phase 4 is "a discovery round with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), nothing REASONED left open". That sentence is worth
 nothing unless "medium" means the same thing in round 3 and in round 20.
 
 Left alone, severity inflates. An auditor with a fresh context and an instruction to be adversarial will label an
@@ -90,7 +90,7 @@ it becomes a test, the owner answers it in writing, or it is handed to the human
 
 ## The exit criterion, stated the way a brief should state it
 
-> This phase ends when a **discovery** round closes with zero high and zero medium findings, and no REASONED high or medium is left open. If your round closes clean, the phase ends. **Do not soften to make that happen and do
+> This phase ends when a **discovery** round closes with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), and no REASONED high or medium is left open. What stays open is decided after your report, by the owner's triage: you report every finding you find. If your round closes clean, the phase ends. **Do not soften to make that happen and do
 > not inflate to avoid it.** The only thing that makes this series worth anything is that no previous round did
 > either.
 

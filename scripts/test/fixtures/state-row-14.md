@@ -1,4 +1,4 @@
-<!-- selftest: judge=5=false,8=false,10=false,11b=false,17=false rows=14,18 rc=0 -->
+<!-- selftest: judge=5=false,8=false,10=false,11b=false rows=14,18 rc=0 -->
 # STATE - next.sh fixture: row 14 - the loop is over (then row 18: promoted, no runbook)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*
@@ -16,5 +16,6 @@ real_manager_battery:      current
 waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   none
+rehearsal:                 n/a (no runbook)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block
 ```

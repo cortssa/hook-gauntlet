@@ -43,6 +43,9 @@ test      rc=0   (passed 107, failed 0, skipped 0)  ...  BATTERY PASSED         
 test      rc=0   (passed 228, failed 0, skipped 0)  suites test=10 test/examples=11 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
 ```
 
+The v4 module on a mainnet fork is two commands more and needs your own endpoint: `FOUNDRY_PROFILE=fork V4_MANAGER=fork
+scripts/battery.sh foundry-kit/v4`, after fetching the pinned fixture (`foundry-kit/v4/README.md`, "The fork").
+
 What the v4 module covers with a worked example, and what your project must add:
 
 | covered by an example here | project-specific, yours to add |
@@ -88,7 +91,7 @@ flowchart TD
     BB --> READ
     VER --> READ
 
-    READ --> CLEAN{"A DISCOVERY round closed with<br/>0 high and 0 medium, nothing REASONED<br/>left open, nothing changed since?"}
+    READ --> CLEAN{"A DISCOVERY round closed, 0 high and<br/>0 medium still open (NEXT.md row 14),<br/>nothing REASONED left open, nothing changed since?"}
     CLEAN -- "no" --> TRIAGE["Triage each finding:<br/>fix at the CAUSE / refuse in writing /<br/>accept with a number - the OWNER decides"]
     TRIAGE --> GROW["Growth rule: add the invariant and the<br/>fuzz action that would have caught it"]
     GROW --> LOCAL
@@ -195,15 +198,19 @@ peak above idle:
 | step | time | memory |
 |---|---|---|
 | base kit: clean build / its test suite | 1.9 s / 1.2 s | 0.3 GB / 0.1 GB |
-| v4 module: clean build, which compiles Uniswap's `PoolManager` with `via_ir` | 26 s | **1.3 GB** |
+| v4 module: clean build, which compiles Uniswap's `PoolManager` with `via_ir` (re-measured 2026-09-26, below) | 197 s | **7.6 GB** |
 | v4 module: its test suite, either manager | 3 s | 0.1 GB |
 | v4 module: coverage | 29 s | 1.3 GB |
 | mutation of a 260-line hook, 16 parallel jobs | 1 min | **5.3 GB** |
 | the same, `--mutation-jobs 1` | 30 min | 0.9 GB |
 | invariant campaign, 64 000 fuzzed calls, small example | 13 s | negligible |
 
-So: 8 GB is comfortable, 4 GB works if you keep mutation to one or two jobs, and mutation is the step that trades
-memory for time almost linearly. The expensive part of this kit is not your machine, it is the model behind your
+The v4 clean build was re-measured on 2026-09-26, alone on the machine (WSL2 seeing 16 CPUs and 25 GB; forge 1.8.1,
+nothing else running): `/usr/bin/time -v forge build` in `foundry-kit/v4` with `out/` and `cache/` removed took 196.5 s
+wall at about one core busy, with a peak resident set of 7 742 720 KB, and the machine's memory in use (`free -m`,
+sampled every second) peaked 7 590 MB above idle. Timing the whole battery the same way gave 203-210 s and 7.6-7.7 GB. The 26 s / 1.3 GB this row said before does not match; where it came from was not
+investigated, and the other rows were not re-measured. So: plan on about 10 GB free to build the v4 module from clean; the root kit needs well under 1 GB; mutation is the step
+that trades memory for time almost linearly. The expensive part of this kit is not your machine, it is the model behind your
 agent. On Windows, WSL sees half of the machine's memory by default.
 
 ## Who it is for
@@ -231,7 +238,7 @@ Compute is the real cost. Two modes:
 | mode | phases 4 and 5 |
 |---|---|
 | **light** | 3 adversarial rounds + 1 black-box |
-| **full** | rounds until a discovery round closes with zero high and zero medium findings and nothing reasoned is left open, plus a black-box round and a verifier round. Open-ended: the effort this was distilled from took 25 rounds |
+| **full** | rounds until a discovery round closes with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name) and nothing reasoned is left open, plus a black-box round and a verifier round. Open-ended: the effort this was distilled from took 25 rounds |
 
 **We do not publish a price**, but here is the arithmetic from the one round we metered: about 250k tokens and half
 an hour per round on a 440-line hook, so a light-mode run (a ceiling of 4) is on the order of a million tokens of round
@@ -284,13 +291,14 @@ from all of these:
 ## Status
 
 **v0, 2026-09-24. Two blind runs on one small target; twelve fresh-reader walks of the route, the last seven with a
-real discovery round each; the v4 module's gap list closed except fork tests. One model family, one agent harness.**
+real discovery round each; the v4 module's gap list closed, fork tests included (a mainnet fork at a pinned block, 2026-09-25,
+fixed after its verifier on 2026-09-26). One model family, one agent harness.**
 
 | part | state |
 |---|---|
 | doctrine, briefs, state convention | distilled from a real project, then walked twelve times by strangers on twelve new hooks (below); every stall they hit is fixed, and each fix was re-walked |
 | Foundry kit and scripts | written with their own tests (hostile token: one test per switch; guards: a self-test that makes each one go red on purpose). Scripts exercised on bash 5 / Linux only |
-| v4 module | harness with both managers, address mining, three worked hooks with unit, invariant, mutant and edge tests; proven once against the Ethereum mainnet manager's bytecode. **Covered:** delta-returning hooks, native currency with a hostile native counterparty, ERC-6909 claims with conservation per party, settlement re-entrancy through a token's transfer hook, a second pool sharing a currency, tick/price/fee edges (all 2026-09-24, each area verified by a second agent - below). **Not covered:** fork tests and a block-pinned fixture; a JIT-recipient actor for hooks that pay "whoever is in range"; v4-periphery (its README, "What this module still does not do") |
+| v4 module | harness with both managers, address mining, three worked hooks with unit, invariant, mutant and edge tests; proven once against the Ethereum mainnet manager's bytecode. **Covered:** delta-returning hooks, native currency with a hostile native counterparty, ERC-6909 claims with conservation per party, settlement re-entrancy through a token's transfer hook, a second pool sharing a currency, tick/price/fee edges (all 2026-09-24, each area verified by a second agent - below). **Fork:** Ethereum mainnet at a pinned block, the deployed manager with its storage, real USDC / WETH / ETH, the three example hooks' unit suites and USDC's blocklist and pause (`FOUNDRY_PROFILE=fork`, needs your own endpoint; 2026-09-25, verified and fixed 2026-09-26). **Not covered:** the invariant campaigns, the sandbox and the other suites on the fork; a JIT-recipient actor for hooks that pay "whoever is in range"; v4-periphery (its README, "What this module still does not do") |
 | `adapters/claude-code/` | the path the method was actually run on |
 | `adapters/experimental/codex/` | **experimental / untested** - written from the documented convention, kept out of the supported path until an end-to-end run exists |
 | blind benchmark (planted bugs, sealed answer key, measured recall) | **run twice on the same target**: one round, then the full light route - see below |

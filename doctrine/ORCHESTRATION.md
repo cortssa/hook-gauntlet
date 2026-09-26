@@ -58,7 +58,7 @@ step is written.
   takes fees), after the baseline and before any route: the agent reported a withheld response and stopped. It was
   **not** seen on verifier rounds, black-box rounds, a phishing test of an app, or measurement with the sandbox's
   shipped population, across eleven full walks of the route. So a round can die: `NEXT.md` row 11b (retry once with a
-  fresh agent; then record it as stopped). This is an observation, not knowledge of the
+  fresh agent; then record it as stopped - the loop's closing black-box too; a black-box round stopped twice sets `blackbox: stopped (<round id>)` and does not run again; at the ceiling there is no retry, a retry is a model round). This is an observation, not knowledge of the
   classifier's rules, which are the provider's.
 
   So the route is written so that **no required step asks an agent to author an offensive artefact**:

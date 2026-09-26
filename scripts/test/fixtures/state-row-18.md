@@ -1,5 +1,5 @@
-<!-- selftest: judge=5=false,8=false,10=false,11b=false,17=false rows=14,18 rc=0 -->
-# STATE - next.sh fixture: row 18 - the handoff dossier
+<!-- selftest: judge=5=false,8=false,10=false,11b=false rows=14,18 rc=0 -->
+# STATE - next.sh fixture: row 18 - the handoff dossier (promoted, the runbook rehearsed)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*
 
@@ -16,5 +16,6 @@ real_manager_battery:      current
 waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   skeleton (0 open, 1 judge not done)
+rehearsal:                 done (2026-03-22)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block
 ```
