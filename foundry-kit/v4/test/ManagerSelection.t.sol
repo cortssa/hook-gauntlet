@@ -137,6 +137,36 @@ contract ManagerSelectionTest is V4Harness {
         assertGt(DEFAULT_FORK_BLOCK, 21_688_329, "before the mainnet PoolManager existed (its deployment block)");
         assertEq(DEFAULT_FORK_BLOCK, 26_050_000, "the pin moved: move the README's fork numbers with it");
     }
+
+    /// @notice `FORK_BLOCK`, when it is set, is a block number in plain decimal or a revert that names it - never the pin
+    /// in silence. Before K16b the harness read it with `vm.envOr`, which returns the default for anything it cannot
+    /// parse: "abc", "", "-1" and "26050000.0" ran a green fork at the pin, and "1e7" became block 10 000 000 (V16).
+    /// Seen red first (K16b) against a `forkBlockFrom` that behaves as envOr did: "next call did not revert as expected".
+    function test_FORK_BLOCK_is_a_plain_decimal_number_or_a_revert_naming_it() public {
+        assertEq(forkBlockFrom(false, ""), DEFAULT_FORK_BLOCK, "unset: the pin");
+        assertEq(forkBlockFrom(false, "abc"), DEFAULT_FORK_BLOCK, "unset: its value is not read");
+        assertEq(forkBlockFrom(true, "26050000"), 26_050_000);
+        assertEq(forkBlockFrom(true, "21688329"), 21_688_329);
+        assertEq(forkBlockFrom(true, "0"), 0, "0 is a number (the harness then finds no manager there)");
+        string[12] memory bad = [
+            "abc",
+            "",
+            "-1",
+            "+26050000",
+            " 26050000",
+            "26050000 ",
+            "26 050 000",
+            "26_050_000",
+            "26050000.0",
+            "1e7",
+            "0x18d7dd0",
+            "026050000"
+        ];
+        for (uint256 i = 0; i < bad.length; i++) {
+            vm.expectRevert(abi.encodeWithSelector(V4Harness.EnvNotADecimalBlockNumber.selector, "FORK_BLOCK", bad[i]));
+            this.forkBlockFrom(true, bad[i]);
+        }
+    }
 }
 
 /// @notice The harness actually wired up, whichever manager the environment asked for. Under the default it

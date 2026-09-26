@@ -17,10 +17,11 @@
 #                 if it goes red, the job is removed and the row goes back to "unsupported" - never a job left red, never
 #                 one marked allowed-to-fail. A third version is added the same way: a job first, then a row;
 #       fork      the v4 module on a mainnet fork, ONLY if the repository has a secret named RPC_URL; without it the
-#                 job skips every step and says so in a notice (K16, see the job);
-#   - NOT here: the battery against the REAL pool manager's bytecode etched from a fixture. It needs an RPC endpoint to
-#     fetch, and no endpoint or key goes into this repository. That leg is run locally (foundry-kit/v4/README.md) and
-#     reported in the dossier.
+#                 job skips every step and says so in a notice (K16, see the job). It fetches the manager's code at the
+#                 pinned block first, for the fork suite that holds that fixture to the chain (K16b);
+#   - NOT here: the battery against the REAL pool manager's bytecode etched from a fixture (V4_MANAGER=fixture). It needs
+#     an RPC endpoint to fetch, and no endpoint or key goes into this repository. That leg is run locally
+#     (foundry-kit/v4/README.md) and reported in the dossier.
 # Foundry is PINNED: a nightly renames flags, and every flag in doctrine/JUDGES.md was checked against FOUNDRY_VERSION.
 # No `--offline` here: the runner has no compiler cached and `--offline` forbids forge from fetching solc 0.8.26 - the
 # first run of this workflow was red for exactly that, after a local replay had passed on a machine with solc cached.
@@ -141,6 +142,11 @@ jobs:
       - name: Uniswap v4 sources for the v4 module, at the pinned commits
         if: steps.rpc.outputs.have == 'yes'
         run: scripts/install-v4.sh foundry-kit/v4
+      # the fixture first: test/fork/FixtureBlock.t.sol skips without it, and the battery counts a skip as a failure (a
+      # clean checkout's fork battery was red on exactly that, V16). The same two commands as foundry-kit/v4/README.md.
+      - name: the manager's code at the pinned block, as the fixture the fork suite checks
+        if: steps.rpc.outputs.have == 'yes'
+        run: scripts/fetch-bytecode.sh --block 26050000 0x000000000004444c5dc75cB358380D2e3dE08A90 foundry-kit/v4/fixtures/PoolManager.hex
       - name: battery, v4 module, mainnet fork at the pinned block
         if: steps.rpc.outputs.have == 'yes'
         run: FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4

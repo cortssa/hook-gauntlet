@@ -4,10 +4,12 @@ pragma solidity ^0.8.26;
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {DeltaFeeHook} from "../../src/examples/DeltaFeeHook.sol";
 import {ClaimsFeeHook} from "../../src/examples/ClaimsFeeHook.sol";
+import {V4Harness} from "../../src/V4Harness.sol";
 import {ForkPoolsBase} from "./ForkExamples.t.sol";
 
 interface IFiatToken {
@@ -25,10 +27,14 @@ interface IFiatToken {
 /// mainnet fork (FiatToken v2.2 behind the USDC proxy at the pinned block), on a fresh USDC / WETH pool.
 ///
 /// The one that matters for a hook author: a hook that RECEIVES the currency (DeltaFeeHook takes its fee as tokens and
-/// pays rebates out of them) turns its own blocklisting into a freeze of its whole pool - once it holds USDC, every swap
-/// touches USDC on the hook's side, one way or the other. A hook that keeps its fee as ERC-6909 claims (ClaimsFeeHook)
-/// is never a party to a USDC transfer during a swap, and its pool keeps trading.
+/// pays rebates out of them) turns its own blocklisting into a refusal of every swap that would move USDC to or from it
+/// - a USDC fee, a USDC rebate. Once the pool's own reserve holds USDC (per pool, not per hook) that is every swap of the sizes measured (400 USDC / 0.1 WETH here;
+/// 1x, 2x and 5x in all four orientations by V16), but not dust, and not one case the rebate cap leaves open (both
+/// measured below). Its LPs still withdraw. A hook that keeps its fee as
+/// ERC-6909 claims (ClaimsFeeHook) is never a party to a USDC transfer during a swap, and its pool keeps trading.
 contract ForkUsdcBlocklistTest is ForkPoolsBase {
+    using PoolIdLibrary for PoolKey;
+
     DeltaFeeHook internal dHook;
     ClaimsFeeHook internal cHook;
     PoolKey internal dKey; // USDC / WETH through DeltaFeeHook
@@ -155,12 +161,13 @@ contract ForkUsdcBlocklistTest is ForkPoolsBase {
     }
 
     // ------------------------------------------------------------------ the hook
-    /// @notice THE ONE. DeltaFeeHook blocklisted, holding USDC fees from earlier swaps: every orientation now touches USDC
-    /// on the hook's side - the fee is `take`n TO the hook when USDC is unspecified, the rebate is paid FROM the hook
-    /// when USDC is specified - so every swap on its pool reverts. Nobody but the hook is blocklisted.
+    /// @notice THE ONE. DeltaFeeHook blocklisted, holding USDC fees from earlier swaps: a swap of the suite's size (400
+    /// USDC or 0.1 WETH) in every orientation moves USDC on the hook's side - the fee is `take`n TO the hook when USDC is
+    /// unspecified, the rebate is paid FROM the hook when USDC is specified - so each one reverts, in the token's words.
+    /// Nobody but the hook is blocklisted. Not "every swap": the tests after this one measure what still goes through.
     /// Seen red first (K16) with the expectation that ignores the token - "the hook's blocklisting is the hook's
     /// problem, swaps go through" - `assertTrue(ok)`: FAIL on the first orientation.
-    function test_a_blocklisted_delta_hook_freezes_its_own_pool() public {
+    function test_a_blocklisted_delta_hook_refuses_every_swap_that_moves_usdc_through_it() public {
         _fillDeltaReserves();
         uint256 reserve = dHook.reserveOf(realUsdc());
         assertGt(reserve, 0, "test setup: the hook holds no USDC, and this proves only half");
@@ -185,6 +192,78 @@ contract ForkUsdcBlocklistTest is ForkPoolsBase {
         assertTrue(_says(r, BLOCKED));
         (ok,) = _try(trader, dKey, _pk(dKey, true, true, 1)); // USDC in: fee in WETH, no USDC rebate to pay
         assertTrue(ok, "a swap that never moves USDC to or from the hook was refused");
+    }
+
+    /// @notice ...but not EVERY swap (V16): one too small for a USDC fee or a USDC rebate moves no USDC through the hook
+    /// and goes through. 999 units of USDC in, exact-in: the rebate, 999 * 10 / 10 000, rounds to 0, and the fee is
+    /// WETH. 1 gwei of WETH in, exact-in: a few units of USDC out, whose fee rounds to 0; the rebate is WETH.
+    /// Seen red first (K16b) with the claim this replaced, "every swap on its pool reverts": FAIL.
+    function test_a_blocklisted_delta_hook_still_passes_a_swap_too_small_for_a_usdc_fee_or_rebate() public {
+        _fillDeltaReserves();
+        _block(address(dHook));
+        uint256 reserve = dHook.reserveOf(realUsdc());
+        (bool ok,) = _try(trader, dKey, _p(true, true, 999)); // USDC (currency0) in
+        assertTrue(ok, "999 units of USDC in, no USDC rebate: refused");
+        (ok,) = _try(trader, dKey, _p(true, false, 1e9)); // WETH in, a few units of USDC out
+        assertTrue(ok, "1 gwei of WETH in, no USDC fee: refused");
+        assertEq(dHook.reserveOf(realUsdc()), reserve, "USDC moved through a blocklisted hook");
+    }
+
+    /// @notice ...and the one case the rebate cap leaves open (V16). The hook pays USDC rebates up to a budget per block
+    /// (`REBATE_CAP_BPS` of its USDC reserve). Spent BEFORE the blocklisting, a swap that specifies USDC owes no rebate for
+    /// the rest of that block: 400 USDC in (exact-in) and 400 USDC out (exact-out) go through, while a swap whose fee is
+    /// USDC still dies. In the next block the budget is fresh, the rebate is owed again and those swaps die again - and a
+    /// rebate that reverts is never spent, so a blocklisted hook's budget does not run out a second time.
+    /// Seen red first (K16b) with the claim this replaced, "every swap on its pool reverts": FAIL.
+    function test_a_blocklisted_delta_hook_passes_usdc_specified_swaps_only_in_a_block_whose_rebate_budget_is_spent()
+        public
+    {
+        _fillDeltaReserves();
+        PoolId id = dKey.toId();
+        for (uint256 k = 0; dHook.rebateBudgetLeft(id, realUsdc()) > 0 && k < 200; k++) {
+            vm.prank(trader);
+            router.swap(dKey, _pk(dKey, true, true, 1), "");
+        }
+        assertEq(dHook.rebateBudgetLeft(id, realUsdc()), 0, "test setup: the block's USDC rebate budget is not spent");
+        _block(address(dHook));
+        (bool ok, bytes memory r) = _try(trader, dKey, _pk(dKey, true, true, 1)); // 400 USDC in, exact-in
+        assertTrue(ok, "400 USDC in, no rebate left: refused");
+        (ok,) = _try(trader, dKey, _pk(dKey, false, false, 1)); // 400 USDC out, exact-out, WETH in
+        assertTrue(ok, "400 USDC out, no rebate left: refused");
+        (ok, r) = _try(trader, dKey, _pk(dKey, true, false, 1)); // WETH in, exact-in: the fee is USDC
+        assertFalse(ok, "a USDC fee was taken to a blocklisted hook");
+        assertTrue(_says(r, BLOCKED), "not the token's words");
+        vm.roll(vm.getBlockNumber() + 1);
+        (ok, r) = _try(trader, dKey, _pk(dKey, true, true, 1));
+        assertFalse(ok, "the next block: the rebate is owed again, and a blocklisted hook cannot pay it");
+        assertTrue(_says(r, BLOCKED), "not the token's words");
+    }
+
+    /// @notice the LPs of that pool are not stuck (V16): DeltaFeeHook has no liquidity callbacks, so taking a position
+    /// out moves no USDC to or from the hook
+    function test_a_blocklisted_delta_hooks_lps_still_withdraw() public {
+        _lp2Position(dKey, 1e15);
+        _fillDeltaReserves();
+        _block(address(dHook));
+        uint256 before = _trueBalance(realUsdc(), lp2);
+        _lp2Position(dKey, -1e15);
+        assertGt(_trueBalance(realUsdc(), lp2), before, "the LP got nothing out");
+    }
+
+    // ------------------------------------------------------------------ the test's own `deal`
+    /// @notice THE `deal` TRAP on this suite's own actors (V16): `trader` was funded in setUp, so forge-std has its USDC
+    /// slot cached for every test here, and a raw `deal` after `_block(trader)` rewrites the word without a sound and
+    /// un-blocklists it - what follows would measure an account the token no longer blocks. `_fundReal` refuses by name.
+    function test_a_raw_deal_on_an_account_funded_in_setUp_silently_unblocklists_it() public {
+        _block(trader);
+        vm.expectRevert(abi.encodeWithSelector(V4Harness.DealWouldClearUsdcBlocklist.selector, trader));
+        this.fundRealExternal(realUsdc(), trader, 1);
+        deal(MAINNET_USDC, trader, 1e6); // no revert, no warning
+        assertFalse(fiat.isBlacklisted(trader), "the raw deal left the flag: the trap is gone, and so can this test be");
+    }
+
+    function fundRealExternal(Currency c, address who, uint256 amount) external {
+        _fundReal(c, who, amount);
     }
 
     /// @notice the contrast: ClaimsFeeHook keeps its fee as ERC-6909 claims, so no swap moves USDC to or from it, and a

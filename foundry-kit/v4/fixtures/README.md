@@ -10,15 +10,21 @@ Fill it with:
 
 ```sh
 export RPC_URL='https://<a public, keyless endpoint is fine for eth_getCode>'
-../../scripts/fetch-bytecode.sh <manager address> fixtures/PoolManager.hex
+../../scripts/fetch-bytecode.sh --block <n> <manager address> fixtures/PoolManager.hex
 ```
 
-which writes two files:
+which reads the code AT block `<n>` (decimal; without `--block` it asks for the latest block number first and reads the
+code at that number, so the fixture still names one block) and writes two files:
 
 | file | what it is |
 | --- | --- |
 | `PoolManager.hex` | the runtime code, `0x`-prefixed, one line |
-| `PoolManager.json` | `{ address, chainId, codeSize, codeHash }` |
+| `PoolManager.json` | `{ address, chainId, block, blockHash, codeSize, codeHash }` |
+
+The harness refuses a fixture whose json names no `block` (`FixtureNotBlockPinned`: re-fetch it), and on a fork
+`test/fork/FixtureBlock.t.sol` checks that the code at that block, on that chain, at that address IS the fixture. The
+fork battery fetches this fixture at the fork's pinned block first (`../README.md`, "The fork"):
+`--block 26050000 0x000000000004444c5dc75cB358380D2e3dE08A90`, from the repository root.
 
 Both are needed. The harness etches the code **at the address in the json**, because v4's `NoDelegateCall`
 bakes its own address into the code: a manager etched anywhere else refuses every call that reaches it.

@@ -356,7 +356,7 @@ leak. This module's own fixture was fetched through one.
 ## The fork
 
 `V4_MANAGER=fork` forks **Ethereum mainnet at block 26 050 000** (`DEFAULT_FORK_BLOCK` in `src/V4Harness.sol`; set
-`FORK_BLOCK` to read another) and takes the v4 PoolManager that is deployed there, at
+`FORK_BLOCK` to read another - a block number in plain decimal, below) and takes the v4 PoolManager that is deployed there, at
 `0x000000000004444c5dc75cB358380D2e3dE08A90`, as it is: its code, its owner, its protocol-fee controller, every pool it
 already has and every balance it holds. Nothing is etched and nothing is deployed in its place. The harness's two hostile
 tokens are still deployed, so a suite that runs on `source` runs on the fork unchanged; and the fork adds what no local
@@ -365,10 +365,28 @@ to test actors with `_fundReal`.
 
 ### How to run it
 
+From the repository root:
+
 ```sh
 export RPC_URL='https://<a read-only mainnet endpoint>'   # in YOUR OWN shell; archive access if FORK_BLOCK is old
+scripts/fetch-bytecode.sh --block 26050000 0x000000000004444c5dc75cB358380D2e3dE08A90 foundry-kit/v4/fixtures/PoolManager.hex
 FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4
 ```
+
+The first line after the export fetches the manager's code **at the pinned block** into the (git-ignored) fixture, for
+`test/fork/FixtureBlock.t.sol`, which holds that fixture to the chain. Without it that suite skips, the battery counts
+the skip as a failure, and a clean checkout's fork battery is red on it (V16, 2026-09-26: `passed 87, failed 0, skipped
+1`, BATTERY FAILED). The fetch is kept rather than the suite moved out of the profile, because "a skip is a failure" is
+the rule the whole kit keeps; it costs 3 requests. The CI `fork` job runs the same two lines.
+
+**`FORK_BLOCK`**, if you set it, must be a block number in plain decimal - digits only, no sign, no leading space, no
+dot, no exponent, no `0x`, no leading zero. Anything else stops the run in `setUp` with
+`EnvNotADecimalBlockNumber("FORK_BLOCK", <the value>)`; it never falls back to the pin (it did before 2026-09-26:
+`vm.envOr` returns its default for anything it cannot parse, so `abc`, an empty value, `-1` and `26050000.0` ran green at
+26 050 000, and `1e7` read as block 10 000 000). One thing the harness cannot see: forge 1.8.1 strips trailing
+whitespace and surrounding quotes from an environment value before a test reads it, so `FORK_BLOCK="26050000 "` is block
+26 050 000 - the number written, not a fallback (`forkBlockFrom`; `test_FORK_BLOCK_is_a_plain_decimal_number_or_a_revert_naming_it`,
+and `test_the_fork_is_mainnet_at_the_pinned_block` compares the variable with the fork's block as text).
 
 `RPC_URL` comes from the environment and from nowhere else: `foundry.toml` names it (`[rpc_endpoints] mainnet =
 "${RPC_URL}"`) and the harness forks the alias `mainnet`, so a trace shows `createSelectFork("mainnet", 26050000)` and
@@ -379,7 +397,7 @@ above holds here word for word.
 The `fork` profile runs `test/fork/` and the three example hooks' unit suites (`test/examples/CappedDynamicFeeHook.t.sol`,
 `ClaimsFeeHook.t.sol`, `DeltaFeeHook.t.sol`) and nothing else. The default profile does NOT run `test/fork/`
 (`no_match_path`): without an endpoint those suites can only skip, and the battery counts a skip as a failure. So the
-everyday `scripts/battery.sh foundry-kit/v4` is what it was, and the fork is one command more.
+everyday `scripts/battery.sh foundry-kit/v4` is what it was, and the fork is two commands more.
 
 **Without `RPC_URL` nothing is green.** Every suite skips with the reason in the skip itself:
 
@@ -392,8 +410,15 @@ and the battery then fails on the skips, as it should. `fork` without an endpoin
 (`test_fork_without_an_endpoint_is_a_skip_and_never_a_silent_fallback_to_source`), and an endpoint in the environment
 never turns `source` into a fork.
 
-**CI**: `.github/workflows/gates.yml` has a `fork` job that reads a repository secret named `RPC_URL` and runs the
-command above. This repository has no such secret, so the job skips every step and says so in a notice: its green
+**The wrong chain, the wrong block.** An endpoint of another chain is refused in `setUp` with `ForkNotMainnet(<its chain
+id>)`, a block before the manager existed with `ForkManagerHasNoCode(<block>)` - never a green run on something else.
+Both refusals are tests on the live fork (`test_a_fork_of_another_chain_is_refused`, with `vm.chainId(5)`;
+`test_a_block_before_the_manager_existed_is_refused`, at block 21 688 328), each seen red with its check removed from the
+harness. End to end: `FOUNDRY_CHAIN_ID=5` on the whole run, or an endpoint that answers `eth_chainId` with 5 or 137,
+fails in `setUp` with `ForkNotMainnet(5)` / `(137)` (measured by V16 and K16b, 2026-09-26).
+
+**CI**: `.github/workflows/gates.yml` has a `fork` job that reads a repository secret named `RPC_URL` and runs the two
+commands above. This repository has no such secret, so the job skips every step and says so in a notice: its green
 means "skipped". The fork has been run locally, on the machine the numbers below come from.
 
 ### How we know the address is the v4 PoolManager
@@ -414,7 +439,10 @@ address; and its code hash is the one the fixture path fetched, `0x785f1014…c7
   word and `balanceOf` masks it off. The first `deal` to a blocklisted account reverts inside stdStorage's slot search
   (panic 0x11); a `deal` to an account whose slot stdStorage found earlier in the same test writes the whole word and
   **quietly un-blocklists it**. `_fundReal` refuses a blocklisted USDC account by name (`DealWouldClearUsdcBlocklist`):
-  fund first, blocklist after.
+  fund first, blocklist after. **"Earlier in the same test" includes `setUp`**: every actor a suite funds there (the fork
+  suites' `trader`, `provider`, `lp2`) has its slot cached in every test, so a raw `deal` to it after blocklisting it is
+  silent and un-blocklists it (`test_a_raw_deal_on_an_account_funded_in_setUp_silently_unblocklists_it`). Top up a
+  real currency with `_fundReal`, never with a raw `deal`.
 
 ### What differs from the source manager, measured
 
@@ -449,15 +477,18 @@ withdrawal paid out of the manager's real ETH and USDC (C3).
 | --- | --- |
 | the swapper | it cannot pay in USDC and cannot be paid in it: both directions revert in the token's words; everybody else trades |
 | an LP | its USDC is stuck in the pool (the kit's helper pays the LP itself) until it is unblocked; then it all comes out |
-| **`DeltaFeeHook`** (keeps its fee as tokens) | once it holds USDC, **every swap on its pool reverts**: the fee is taken TO it when USDC is unspecified, the rebate is paid FROM it when USDC is specified. Before it holds any USDC, only the swaps whose fee is USDC die |
+| **`DeltaFeeHook`** (keeps its fee as tokens) | **every swap that would move USDC to or from it reverts**, in the token's words: a USDC fee (taken TO it when USDC is unspecified) or a USDC rebate (paid FROM it when USDC is specified). Once the pool's own reserve holds USDC (the reserve is per pool: a second pool of the same hook with no USDC reserve still lets the swaps that specify USDC through) that is every swap of the suite's size (400 USDC / 0.1 WETH) in all four orientations. What still goes through: a swap too small for either (999 units of USDC in; 1 gwei of WETH in), and - only in a block whose USDC rebate budget was spent before the blocklisting - the swaps that specify USDC (400 USDC in, 400 USDC out); in the next block they die again. Its LPs withdraw normally (it has no liquidity callbacks). Before it holds any USDC, only the swaps whose fee is USDC die |
 | `ClaimsFeeHook` (keeps its fee as ERC-6909 claims) | its pool keeps trading, since no swap moves USDC to or from it, and it still withdraws to a clean treasury; a blocklisted treasury names another recipient |
 | the manager | every USDC pool stops, with any hook or none: swaps both ways, and liquidity out |
 | nobody, USDC **paused** | nothing that moves USDC moves; after the unpause the same swap goes through and the LP's position comes out |
 
 The `DeltaFeeHook` row was seen red first, with the expectation that ignores the token ("the hook's blocklisting is
-the hook's problem; the swaps go through"): it failed on the first orientation. For a hook author this is
-`doctrine/V4-ACCOUNTING.md` item 28: **a hook that receives a currency inherits that currency's power to freeze it, and
-its pool freezes with it.**
+the hook's problem; the swaps go through"): it failed on the first orientation. An earlier version of this row said "every swap on its pool reverts"; a verifier (V16)
+found the exceptions and they are tests now (`test_a_blocklisted_delta_hook_still_passes_a_swap_too_small_for_a_usdc_fee_or_rebate`,
+`test_a_blocklisted_delta_hook_passes_usdc_specified_swaps_only_in_a_block_whose_rebate_budget_is_spent`,
+`test_a_blocklisted_delta_hooks_lps_still_withdraw`), each seen red with the old claim as its expectation. For a hook
+author this is `doctrine/V4-ACCOUNTING.md` item 28: **a hook that receives a currency inherits that currency's power to
+refuse, and every swap that moves that currency through the hook is refused with it.**
 
 ### What it cost
 
@@ -1418,7 +1449,7 @@ forge 1.8.1, solc 0.8.26, `evm_version = cancun`. Numbers, not adjectives:
 | native mutation on the example hook | in `src/examples/MUTANTS.md`, which is the only place that number lives |
 | `forge coverage --ir-minimum`, whole module, `src/HostileHook.sol` | **90.76 % of lines** (108/119), 12/13 branches (2026-09-24, after the file grew; the 11 lines at 0 are mapping errors, see the coverage paragraph above). From `test/HostileHook.t.sol` alone 63.87 %; the 86.67 % given here before was that measurement on the smaller file, and the 72.97 % before it was taken without `--ir-minimum` and mapped the wrong build |
 | invariant campaign | 64 runs × 64 depth, 4 096 calls; the census, not `reverts:` — see the root README |
-| clean build | about 25 s |
+| clean build | about 200 s and a 7.6 GB peak (2026-09-26, root `README.md`, *What you need*) |
 | `PoolManager` from source | **24 050 B**, 526 under the EIP-170 limit |
 | `PoolManager` etched from mainnet | **24 009 B**, keccak `0x785f1014…c7ce1293`, chain id 1 |
 | `CappedDynamicFeeHook` (one-block-late rule, 2026-09-23) | runtime **4 881 B** / initcode **5 636 B** in the default-profile build, **4 697 B** / **5 360 B** in the build the tests deploy (`address(hook).code.length` and `creationCode.length` in a test) - margins 19 695 / 43 516 and 19 879 / 43 792, `scripts/size.sh`. See below |
@@ -1791,7 +1822,8 @@ Written down because a list of gaps is the only honest end to a README.
   Not run on the fork: the invariant campaigns, the sandbox (`test/sim`), the native, multipool, edge and re-entrancy
   suites (they use `_setUpV4` and would run; nobody has run them there), a pool the chain already has (every pool here is
   fresh), a token with a transfer fee in a v4 pool, and any chain but Ethereum mainnet (the harness refuses another
-  chain id; that refusal has never fired, since no endpoint of another chain was tried).
+  chain id - `test_a_fork_of_another_chain_is_refused`, and end to end under `FOUNDRY_CHAIN_ID=5` or an endpoint that
+  answers another chain id - but no endpoint of another real chain was tried).
 * **`v4-periphery` is optional and untested.** `V4_WITH_PERIPHERY=1` installs it; nothing in this module compiles
   against it.
 

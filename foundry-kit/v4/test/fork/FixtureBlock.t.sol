@@ -10,7 +10,10 @@ import {V4Harness} from "../../src/V4Harness.sol";
 /// block where the code was different - or absent - fails here. Then it checks the same code is what the pinned fork
 /// block runs: the fixture path and the fork path test the same manager.
 ///
-/// Needs the fixture (`V4_FIXTURE`, default `fixtures/PoolManager.hex`) AND the fork; skipped with the reason otherwise.
+/// Needs the fixture (`V4_FIXTURE`, default `fixtures/PoolManager.hex`) AND the fork; skipped with the reason otherwise,
+/// and the battery counts that skip as a failure - which is why the documented fork command fetches the fixture first
+/// (README "The fork", "How to run it"; the CI `fork` job does the same). Without that step a clean checkout's fork
+/// battery was red on this one skip (V16).
 contract FixtureBlockTest is V4Harness {
     string internal fixturePath;
     string internal meta;
@@ -23,8 +26,11 @@ contract FixtureBlockTest is V4Harness {
                 string.concat(
                     "no fixture at ",
                     fixturePath,
-                    ": NOTHING WAS TESTED. RPC_URL=... scripts/fetch-bytecode.sh --block <n> <manager> ",
-                    fixturePath
+                    ": NOTHING WAS TESTED. The fork battery fetches it first, from the repository root: scripts/fetch-bytecode.sh --block ",
+                    vm.toString(DEFAULT_FORK_BLOCK),
+                    " ",
+                    vm.toString(MAINNET_POOL_MANAGER),
+                    " foundry-kit/v4/fixtures/PoolManager.hex (foundry-kit/v4/README.md, The fork)"
                 )
             );
             return;

@@ -37,7 +37,35 @@ contract ForkManagerTest is V4Harness {
     function test_the_fork_is_mainnet_at_the_pinned_block() public view {
         assertEq(block.chainid, 1, "not Ethereum mainnet");
         assertEq(block.number, forkBlock, "the fork is not at the block the harness pinned");
-        assertEq(forkBlock, vm.envOr("FORK_BLOCK", DEFAULT_FORK_BLOCK), "FORK_BLOCK / the constant was not honoured");
+        // NOT through `vm.envOr("FORK_BLOCK", ...)`, which returns its default for anything it cannot parse - this test
+        // used it, and "abc" ran green on the pin (K16b). The variable as forge hands it over, compared AS TEXT with the
+        // block the fork is at: a value that is not exactly that number fails here, whatever the harness made of it.
+        if (vm.envExists("FORK_BLOCK")) {
+            assertEq(vm.toString(forkBlock), vm.envString("FORK_BLOCK"), "the fork is not at the block FORK_BLOCK names");
+        } else {
+            assertEq(forkBlock, DEFAULT_FORK_BLOCK, "FORK_BLOCK is not set, and the fork is not at the pin");
+        }
+    }
+
+    /// @notice A FORK OF ANOTHER CHAIN IS REFUSED, by name. The harness's check, on this fork with its chain id changed
+    /// (`vm.chainId`): `ForkNotMainnet(5)`, before any manager is taken. The same refusal end to end, measured: the whole
+    /// run under `FOUNDRY_CHAIN_ID=5`, or an endpoint that answers `eth_chainId` with 5 or 137 -> `[FAIL: ForkNotMainnet(5)]
+    /// setUp()` (V16, K16b). Seen red with the check removed from the harness.
+    function test_a_fork_of_another_chain_is_refused() public {
+        vm.chainId(5);
+        vm.expectRevert(abi.encodeWithSelector(V4Harness.ForkNotMainnet.selector, 5));
+        this.takeForkedManagerExternal();
+    }
+
+    /// @notice ...and a block before the manager was deployed (it has code from 21 688 329 on) is refused by name too
+    function test_a_block_before_the_manager_existed_is_refused() public {
+        vm.rollFork(21_688_328);
+        vm.expectRevert(abi.encodeWithSelector(V4Harness.ForkManagerHasNoCode.selector, 21_688_328));
+        this.takeForkedManagerExternal();
+    }
+
+    function takeForkedManagerExternal() external {
+        _takeForkedManager();
     }
 
     /// @notice HOW WE KNOW THIS ADDRESS IS THE v4 POOLMANAGER, from the chain and not from a name in a document:

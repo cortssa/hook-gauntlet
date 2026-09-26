@@ -50,7 +50,7 @@ interface IUsdcBlocklist {
 /// can itself be tested - see `test/ManagerSelection.t.sol`.
 ///
 /// **A fork** (`V4_MANAGER=fork`, K16). Ethereum mainnet at a PINNED block (`DEFAULT_FORK_BLOCK`, overridable with
-/// `FORK_BLOCK`), through the endpoint in `RPC_URL`, reached by the alias `mainnet` in `foundry.toml` - so that a trace
+/// `FORK_BLOCK` - a block number in plain decimal, anything else a revert: `forkBlockFrom`), through the endpoint in `RPC_URL`, reached by the alias `mainnet` in `foundry.toml` - so that a trace
 /// shows `createSelectFork("mainnet", ...)` and never the endpoint. The manager is the deployed one at its canonical
 /// address, with its code AND its storage (owner, protocol-fee controller, every pool and every balance it holds), and
 /// the real currencies are there to use: USDC, WETH, ETH (`_fundReal`). The harness's hostile tokens are still deployed,
@@ -122,6 +122,9 @@ abstract contract V4Harness is Test {
     error ForkNotMainnet(uint256 chainId);
     /// @notice no code at the manager's address at the fork's block: a `FORK_BLOCK` before the manager was deployed
     error ForkManagerHasNoCode(uint256 blockNumber);
+    /// @notice an environment variable that must hold a block number in plain decimal (`FORK_BLOCK`) holds something
+    /// else: a word, nothing, a sign, a space in front, a dot, an exponent, hex, a leading zero. Never read as the pin.
+    error EnvNotADecimalBlockNumber(string variable, string value);
     /// @notice the fixture's metadata names no block. `fetch-bytecode.sh` has recorded one since K16: re-fetch.
     error FixtureNotBlockPinned(string metaPath);
     /// @notice USDC keeps the blocklist bit in the balance's own word: `deal` to a blocklisted account either reverts
@@ -250,10 +253,42 @@ abstract contract V4Harness is Test {
     /// Nothing is etched and nothing is deployed in its place; if the block is before the manager existed, or the endpoint
     /// is another chain, it reverts saying which - a fork of the wrong thing is not a fork run.
     function _forkManager() private {
-        forkBlock = vm.envOr("FORK_BLOCK", DEFAULT_FORK_BLOCK);
+        // NOT `vm.envOr("FORK_BLOCK", DEFAULT_FORK_BLOCK)`: forge 1.8.1's envOr hands back the default whenever it cannot
+        // parse the value, so "abc", "", "-1" and "26050000.0" ran green on the pin, and it reads "1e7" as 10 000 000
+        // (V16, 2026-09-26). The variable is read as text and held to `forkBlockFrom`.
+        bool set = vm.envExists("FORK_BLOCK");
+        forkBlock = forkBlockFrom(set, set ? vm.envString("FORK_BLOCK") : "");
         vm.createSelectFork(FORK_RPC_ALIAS, forkBlock);
+        _takeForkedManager();
+    }
+
+    /// @notice the block a fork run reads: the pin when `FORK_BLOCK` is not set; when it is, its value, which must be a
+    /// block number in plain decimal - digits only, no sign, no space in front, no dot, no exponent, no `0x`, no leading
+    /// zero ("0" itself is a number) - or this reverts naming the variable. Separated so that a test can hold it to that
+    /// without an environment. One thing it cannot see: forge 1.8.1 strips trailing whitespace and surrounding quotes
+    /// from an environment value before any cheatcode returns it (measured, K16b), so `FORK_BLOCK="26050000 "` arrives as
+    /// "26050000" - the number that was written, not a fallback.
+    function forkBlockFrom(bool isSet, string memory value) public pure returns (uint256 n) {
+        if (!isSet) return DEFAULT_FORK_BLOCK;
+        bytes memory b = bytes(value);
+        // 77 digits never overflow a uint256; nothing that long is a block number either
+        if (b.length == 0 || b.length > 77 || (b.length > 1 && b[0] == "0")) {
+            revert EnvNotADecimalBlockNumber("FORK_BLOCK", value);
+        }
+        for (uint256 i = 0; i < b.length; i++) {
+            uint8 c = uint8(b[i]);
+            if (c < 0x30 || c > 0x39) revert EnvNotADecimalBlockNumber("FORK_BLOCK", value);
+            n = n * 10 + (c - 0x30);
+        }
+    }
+
+    /// @notice what the fork IS, checked before its manager is taken: mainnet (else `ForkNotMainnet`), with code at the
+    /// manager's address (else `ForkManagerHasNoCode`). Internal and apart from `_forkManager` so that
+    /// `test/fork/ForkManager.t.sol` can hold it to both refusals on the live fork (`vm.chainId`, `vm.rollFork`): a fork
+    /// of another chain needs another endpoint, and forge's `FOUNDRY_CHAIN_ID=5` does the same for a whole run.
+    function _takeForkedManager() internal {
         if (block.chainid != FORK_CHAIN_ID) revert ForkNotMainnet(block.chainid);
-        if (MAINNET_POOL_MANAGER.code.length == 0) revert ForkManagerHasNoCode(forkBlock);
+        if (MAINNET_POOL_MANAGER.code.length == 0) revert ForkManagerHasNoCode(block.number);
         manager = IPoolManager(MAINNET_POOL_MANAGER);
         managerRuntimeSize = MAINNET_POOL_MANAGER.code.length;
         managerForkCodeHash = keccak256(MAINNET_POOL_MANAGER.code);

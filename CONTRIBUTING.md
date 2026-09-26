@@ -18,7 +18,9 @@ case - not when it adds a claim. In order of usefulness:
    (`scripts/selftest.sh`; `doctrine/VERIFY.md` 11b).
 6. **One verifier report** over an existing example: reproduce a claim by your own means and say what held and what
    broke, without fixing it.
-7. **A fork test or a block-pinned fixture** against a real chain: the one line left on the v4 module's gap list.
+7. **A fork suite the kit does not have yet** (the v4 module has an Ethereum mainnet fork since 2026-09-25): the invariant
+   campaigns, the sandbox or the native / multipool / edge / re-entrancy suites run on it, a pool the chain already has, a
+   fee-on-transfer token in a v4 pool, or another chain - the list is `foundry-kit/v4/README.md`, "What is left of the fork".
 
 Rules that every contribution keeps:
 
