@@ -1,4 +1,4 @@
-<!-- selftest: judge=3=false,5=false,8=false,10=false,11b=false,12=true rows=13b rc=0 -->
+<!-- selftest: judge=5=false,8=false,10=false,11b=false,12=true rows=13b rc=0 -->
 # STATE - next.sh fixture: the chain known, the real manager never run, 7b silenced by the wait for RPC_URL: row 12 (the black-box) is off until 7b has run - the next row that stands is 13b
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*

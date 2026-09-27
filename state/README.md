@@ -12,7 +12,10 @@ LOG.md          one entry per change                           - append only
 ## Installing
 
 Copy the three files into the project (a `.gauntlet/` directory works well, or the project root), then **empty the
-examples**. The examples in this directory describe a fictional hook called `BlockCapHook`, which caps how much
+examples**. Copy `state/.gitignore` into `<project>/.gauntlet/` too, wherever the three files go: the benches live in
+`<project>/.gauntlet/bench/` (`scripts/bench.sh`, `fuzz-long.sh`, `mutate.sh`: inside the project, never `$HOME` - and
+only once `.gauntlet/` exists: in a tree without it the scripts refuse and ask for `BENCH_ROOT` outside it), and it
+keeps them out of git while the state files and reports stay committable. The examples in this directory describe a fictional hook called `BlockCapHook`, which caps how much
 one address may swap per block and charges a surcharge above a threshold. It does not exist. Delete it.
 
 ## The rules that make it work
@@ -21,7 +24,7 @@ one address may swap per block and charges a surcharge above a threshold. It doe
    nothing. This keeps the log readable, which is the only reason anyone will read it.
 2. **Write incrementally.** An agent that dies on a rate limit halfway through a round should lose nothing. Open
    the report and update the state as you go, not at the end.
-3. **Separate what you measured from what you inferred.** Every entry ends with **what was not verified**. That
+3. **Separate what you measured from what you inferred.** Every entry ends with **what was not checked yet**. That
    line is the most useful one in the file and the first to be dropped by anyone wanting to look finished.
 4. **Numbers are read from outputs**, in that session, never from memory and never copied from another document.
 5. **If the files and the repository disagree, the repository wins** and you fix the files.
@@ -39,24 +42,40 @@ scripts/next.sh .gauntlet/STATE.md --judge 5=false,8=false,12=true    # the answ
 It refuses (exit 2, one line naming the flag) a flag that is missing, a value not on the flag's list, a line of the
 block that is not `name: value`, a `ceiling` of no known shape (`not agreed ...`, `undecided ...`, or `N model rounds
 ...; M used`), a `rehearsal: done` without a real date (`done (YYYY-MM-DD)`), a `blackbox: stopped` without its round
-id (`stopped (<round id>)`), and more `reasoned_high_or_medium` than high + medium open. Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
-the flags that made it true (exit 0). No row true: `no row is true: the table has a hole or a flag is stale` (exit 1,
-NEXT.md's STOP rule: say which in `STATE.md` and ask - do not change a flag to get moving).
+id (`stopped (<round id>)`), more `reasoned_high_or_medium` than high + medium open, a `dossier: skeleton` that does
+not say how many open findings it names (`skeleton (<K> open, <N> judges not done)`), an item of `waiting_on_owner`
+that says "to tell" in any shape but `high <id>[, <id>...] - to tell` or names a placeholder there (`none`, `TBD`,
+`nobody`, `n/a`, `?`), and more ids recorded to tell than highs open ("a recorded high is no longer open: remove it").
+Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
+the flags that made it true (exit 0). With the owner absent, nothing below row 3 standing AND no row left to judge -
+typically once row 9b's skeleton names the open findings, `waiting_on_owner` asks for their triage, and rows 5, 8, 9, 10
+are answered false - it prints `next: STOP - paused, waiting on the owner: <items>` (exit 0; STOP, not `row`, so that
+a caller walking the rows can tell the end of the route with the owner absent from a row): decided by the flags, not
+asked; run it again when the owner has answered. While a row still needs judgement it does not print that: exit 3, the
+questions, and one line, `if every answer is false: STOP - paused, waiting on the owner: <items>` - answer them and run
+it again. No row true and nothing waiting on the owner: `no row is true: the table has a hole or a flag is stale`
+(exit 1, NEXT.md's STOP rule: say which in `STATE.md` and ask - do not change a flag to get moving).
 
-What the flags cannot decide is not guessed. Rows 1 (a high is open, or a note item starts `pending: <id>`), 3 (`waiting_on_owner`), 5,
-8, 9 and 9b (a finding open, from any round, once round 1 has run or the ceiling is reached), 10 (after a round, with no bytecode change since),
+Row 1 is quiet by the flags in one case only: the owner absent, and the ids of the items `high <id>[, <id>...] - to
+tell` of `waiting_on_owner` (between commas or spaces, case aside, each once) are exactly as many as `open_findings`
+high - then the `because:` line of whatever is given names those ids. Otherwise, with a high open, it is a question
+(the owner present: answer `--judge 1=false` once they have been told; a `told:` note is not read). Row 9b is quiet once
+the dossier names the open findings: `skeleton (<K> open, ...)` with K the number open (high + medium + low;
+informational findings are not counted), or `complete`. What the flags cannot decide is not guessed. Rows 1 (a high
+open, not every one recorded to tell), 5, 8, 9 and 9b (a finding open, from any round, once round 1 has run or the ceiling is reached), 10 (after a round, with no bytecode change since),
 11b, 12 (did the spec's promises change?), 16 and 18b
 need something `STATE.md` does not carry, and are printed `needs judgement: row <id> - <the question>`; the row after
 them is printed as the answer only if they are all false (exit 3). Answer with `--judge <row>=true|false`: the answers
-are printed back, so the judgement is on the record. Row 3: answer `false` each row below that depends on the owner's
-answer, and 3 itself `false` once none left does (row 7b, decided by the flags, is off by itself while
+are printed back, so the judgement is on the record. Row 3 is decided by the flags and never answered (`--judge 3=...`
+is refused: an answer `true` once gave the pause over rows the flags made true below it): answer `false` each row below
+that depends on the owner's answer (row 7b, decided by the flags, is off by itself while
 `waiting_on_owner` asks for the endpoint or the chain - an item that contains `RPC_URL`, or that IS the chain question:
 `chain`, or an item starting with the word `chain`, `target chain` or `which chain`, in any case - `chain-id`, `chain_id`
 and `chains` are other words; `off-chain`, `cross-chain` or the word inside
 a triage or a severity question do not count; rows 12 and 16 are off
-while 7b is owed, so when the wait silences 7b and no other row stands, row 3 is given: stop and say what is waiting).
+while 7b is owed, so when the wait silences 7b and no other row stands, the route pauses: `next: STOP - paused, ...`).
 A note is read by its name only at the start of a note item (a note line, or a part of one after `·` or `;`, a Markdown
-list marker `- `, `* ` or `+ ` before it allowed): `pending: <id>` for row 1, `real manager:` for row 7b. A ceiling the
+list marker `- `, `* ` or `+ ` before it allowed): `real manager:` for row 7b. A ceiling the
 operator set with the owner absent is read in one form only, `<N> model rounds, set by the operator (owner absent); <M>
 used` (`doctrine/COST.md` 1); "operator" in any other shape or case is refused, never read as the owner's. Two rows are gates, not destinations (`NEXT.md`): when true they are
 printed `in force`, the rows they name are off wherever they stand, and the reading goes on - row 2 (ceiling reached)
@@ -79,7 +98,7 @@ independently called four state files bureaucracy that an agent maintains instea
 top of the `LOG.md` entry that closes a round, in a fixed shape so that `grep '^ROUND ' LOG.md` is the history:
 
 ```
-ROUND r05 | phase 4 | regression | vendor-a/large | bench $HOME/.gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7
+ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7
 ```
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
@@ -103,7 +122,7 @@ field left out so that every field after it moves one place - and nobody notices
 with the script, from named arguments; it checks each one and refuses (exit 2, nothing written) a malformed line:
 
 ```sh
-scripts/round.sh .gauntlet/LOG.md --id r05 --phase 4 --type regression --model "vendor-a/large" --bench "~/hg-a05" \
+scripts/round.sh .gauntlet/LOG.md --id r05 --phase 4 --type regression --model "vendor-a/large" --bench .gauntlet/bench/a05 \
   --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate pass \
   --tokens 230k --minutes 95 --files-read 41 --tests-written 6 --report reports/r05.md --conf 0.7
 scripts/round.sh --json .gauntlet/LOG.md      # the history, one JSON object per ROUND line

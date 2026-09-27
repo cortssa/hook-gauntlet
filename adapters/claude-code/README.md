@@ -26,10 +26,14 @@ the ROUND lines of `LOG.md` and you will want it to be honest.
 
 1. **Write the brief to a file** in the owner's project, from the template in `briefs/`. Do not improvise it in
    the prompt. The brief is the artifact that makes a round reproducible and comparable.
-2. **Create the bench** (`scripts/` has the helper): a copy of the project at `$HOME/.gauntlet/bench/<round>` (`BENCH_ROOT` to change it), dependencies
+2. **Create the bench** (`scripts/` has the helper): a copy of the project at `<project>/.gauntlet/bench/<round>` (`BENCH_ROOT` to change it; never `$HOME`), dependencies
    symlinked from a shared directory, never the shared working tree itself.
-   For a black-box round, build the bench **without the implementation source** and check it by listing the bench
-   before you launch.
+   The default is only for a project with the kit's convention installed (`<project>/.gauntlet/` exists); in someone
+   else's tree (`doctrine/RETROFIT.md`) the scripts refuse and ask for `BENCH_ROOT` outside it.
+   For a black-box round, build the bench **without the implementation source** (`briefs/black-box.md`:
+   `BENCH_EXCLUDE="src script"`) and **with `BENCH_ROOT` outside the project** - a source-free bench under
+   `<project>/.gauntlet/bench` has the source at `../../..`, and `scripts/bench.sh` refuses it, saying so - then check
+   it by listing the bench before you launch.
 3. **Launch the subagent** with: the path to the brief, the path to the bench, and nothing else. If you find
    yourself explaining the task in the prompt, the brief is incomplete - fix the brief.
 4. **Let it write its own report** incrementally in the project. Do not ask it to return the findings in its final

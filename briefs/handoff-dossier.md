@@ -19,11 +19,13 @@ published guides; the dossier's author should cite the ones they checked against
 # {{PROJECT}} {{REVISION}} - dossier for security review
 
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
-**Not deployed. Not audited by humans.** Prepared with AI agents under the owner's direction; every claim below carries
+**Not deployed. No human security review yet.** Prepared with AI agents under the owner's direction; every claim below carries
 its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
 **Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{no / yes / yes, black-box: not run - ceiling reached}}{{ · ceiling set by the operator, owner absent - only when `STATE.md` says `ceiling: N model rounds, set by the operator (owner absent); M used`}}{{ · black-box: stopped at <step> - only when `STATE.md` says `blackbox: stopped (<round id>)`}} · skeleton: {{K}} findings open** -
 the status line: the one line every flag in `doctrine/NEXT.md` points at. A dossier can be complete and thin at the
-same time; this line says which one it is. A ceiling the operator set with the owner absent (`doctrine/COST.md` 1,
+same time; this line says which one it is. In `skeleton: {{K}} findings open`, K is the number of findings still open,
+high + medium + low (`open_findings` in `STATE.md`); informational findings are NOT counted in it - the same K that
+`STATE.md` writes as `dossier: skeleton (K open, ...)` and `NEXT.md` row 9b reads against `open_findings`. A ceiling the operator set with the owner absent (`doctrine/COST.md` 1,
 `doctrine/NEXT.md` row 3) is said here and in section 8 as the operator's, never as one the owner agreed.
 
 ## Start here
@@ -56,9 +58,8 @@ lib/hook-gauntlet/scripts/doctor.sh   # what this machine lacks, with the comman
 
 Two to four sentences, before the reader hits a table: what the hook does, the round count and model families spent
 on it, the headline finding if there was one, and the one sentence the reader most needs before section 1 - whether
-anything here is still moving. No word a paid auditor would have to walk back later ("safe", "secure", "audited",
-"verified", "fully verified", "battle-tested": the list and the reason are in `AGENTS.md` section 1, with the phrase
-to use instead) - point at the evidence label (`doctrine/EVIDENCE.md`). The same holds for the Start here page. Write it last, after every other section
+anything here is still moving. No word a paid auditor would have to walk back later - none of the words `AGENTS.md` section 1
+lists, not even negated (the list, the reason and the phrase to use instead are there) - point at the evidence label (`doctrine/EVIDENCE.md`). The same holds for the Start here page. Write it last, after every other section
 exists: it is the only section with no file to assemble from. Three honest sentences beat four padded ones.
 
 ## 1. Scope sheet (must)
@@ -117,8 +118,8 @@ Every finding that was accepted rather than fixed: what an attacker achieves, wh
 why it was not fixed, and who accepted it. -> `SPEC.md` section 6. Refusals with their reasons -> `DECISIONS.md`.
 Every finding carries a status: `accepted` (with the owner's line), `fixed` (with the regression test), or
 `open - owner triage pending`. A dossier with an open finding is a **skeleton** (`doctrine/NEXT.md` row 9b): sections
-0, 4, 5, 6, 7, 8, 9 filled honestly, the open ids listed here by id and severity, and the status line above section 0 carrying `skeleton: N findings
-open`. Sections 1, 2, 3 and 10 are filled as far as they are known (10 only if a fresh agent can actually run it; else
+0, 4, 5, 6, 7, 8, 9 filled honestly, the open ids listed here by id and severity, and the status line above section 0 carrying `skeleton: K findings
+open` (K: high + medium + low still open, informational not counted). Sections 1, 2, 3 and 10 are filled as far as they are known (10 only if a fresh agent can actually run it; else
 `not yet`). In a skeleton, a cell that waits on the owner for something OTHER than triage (a not-run judge's reason in
 section 6, a full-mode reason while the mode is undecided, the chain, the framework self-score, the decline of
 promotion) reads `owner decision pending: <what>` - never `triage pending`, which is for findings only - and each such
@@ -135,7 +136,7 @@ An auditor judges new findings against this list; leaving something out of it is
 
 ## 5. Candidates raised and refuted (must)
 
-Every idea that was chased and found safe - a class walked in `doctrine/HOOK-ATTACKS.md`, a shape a round's brief
+Every idea that was chased and refuted - a class walked in `doctrine/HOOK-ATTACKS.md`, a shape a round's brief
 named under "where to press hardest", a suspicion an owner or an agent raised in `DECISIONS.md` - listed even though
 it never became a finding. One line each: the candidate, the round or judge that refuted it, and the test or
 argument that closed it, with its evidence label. Do not fold this into section 4: an accepted trade-off and an
@@ -147,7 +148,7 @@ attack that was tried and failed are not the same claim, and merging them hides 
 
 Goes red the same way section 9 (what was NOT checked) does: an empty table with no line explaining why nothing was
 raised this route is not a credible claim on any hook that went through more than one adversarial round. A reader
-who finds a class missing from both section 4 and this one cannot tell "safe" from "never looked at" - this section
+who finds a class missing from both section 4 and this one cannot tell "looked at and refuted" from "never looked at" - this section
 is what tells them apart.
 
 ## 6. What the judges said (must; the rows of `doctrine/JUDGES.md` - its row 1 is split in two here)
@@ -207,7 +208,7 @@ include one.
 
 A professional review ends with a report and then a **fix review**. Expect to supply: a written response to every
 finding (fixed / acknowledged / disputed, with the reason); **one commit per fix**, so each can be reviewed alone; a
-changelog between the audited commit and the fixed one; and the re-run of section 6 on the fixed code. Findings come
+changelog between the commit the auditors reviewed and the fixed one; and the re-run of section 6 on the fixed code. Findings come
 back marked resolved, partially resolved or acknowledged - "acknowledged" is public, and it is the owner's name on it.
 Reports also carry a disclaimer that the review is not a guarantee; neither is this dossier.
 

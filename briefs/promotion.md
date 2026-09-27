@@ -9,14 +9,14 @@ in your manifest, never in the guard - **do not fix the guard**.
 Promote code that has stopped moving. If a promoted revision has to change afterwards - and the late rounds exist
 to make that happen - reopen it on purpose: `doctrine/CHANGES.md` section 4.
 
-The copy is also the one step of the whole route that nobody has audited, because it did not exist before. Plan an
+The copy is also the one step of the whole route that no round has looked at, because it did not exist before. Plan an
 audit round **against the promoted artifact**, not only against the working tree.
 
 ---
 
 # PROMOTION {{REVISION}} - executor, with gates
 
-Owner's decision ({{DATE}}): **{{CHOICE}}**. The working tree already is the verified {{REVISION}}
+Owner's decision ({{DATE}}): **{{CHOICE}}**. The working tree already is {{REVISION}}, the revision the gates passed on
 ({{BASELINE_TESTS}} tests, size {{SIZE}}, fuzz clean, rounds {{ROUNDS}}). Promote it to `{{CANONICAL_DIR}}`.
 
 Read first: `{{REVISION_NOTES}}` in full, the existing `{{MANIFEST}}`, the drift guard `{{GUARD}}`, and the voting

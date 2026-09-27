@@ -1,0 +1,21 @@
+<!-- selftest: judge=none rows=2,5,8,9,10,STOP? rc=3 -->
+# STATE - next.sh fixture: the owner away at the ceiling, the high recorded to tell, the skeleton naming the 2 open - but rows 5, 8, 9 and 10 not answered yet: no "next: STOP" (it would say more than is true), the questions and the conditional line, exit 3
+
+*A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*
+
+```
+phase:                     4
+bytecode_changed_since:    last_battery=no  last_long_fuzz=no  last_other_free_judges=no  last_audit_round=no  last_promotion=n/a
+battery:                   green
+blackbox:                  never_run
+open_findings:             high=1 medium=1 low=0 reasoned_high_or_medium=0
+last_audit_round:          r02 discovery 1H 1M 0L
+last_other_round:          none
+ceiling:                   2 model rounds agreed (light mode); 2 used
+real_manager_battery:      n/a (chain not chosen)
+waiting_on_owner:          high F-1 - to tell · triage of F-1 F-2
+location:                  .gauntlet/
+dossier:                   skeleton (2 open, 3 judges not done)
+rehearsal:                 n/a (no runbook)
+notes:                     static triage: forge lint only, Slither not installed · fork: n/a - no chain
+```

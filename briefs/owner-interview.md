@@ -22,6 +22,11 @@ answer is no, this is **sketch mode** (`doctrine/CHANGES.md` section 1): help th
 judges only, and come back to this interview when the design has stopped moving. Interviewing a moving idea
 produces a spec that is wrong by Friday.
 
+**Owner absent** (an exercise, or a hook handed over with no one to ask): sketch mode is the owner's to declare, never
+yours. A hook handed over as code with a spec is NOT a sketch - the route starts here, at phase 0, with the code and the
+spec as the sources the answers are read from. Write it in `DECISIONS.md` as one entry, `Q0: not a sketch`, with
+`source: assumed, owner absent` (the owner may overturn it), and continue (`doctrine/NEXT.md` row 0).
+
 ## 1. What it does
 
 1. In one sentence a stranger would understand: what does this hook do that the pool would not do without it?
@@ -79,7 +84,9 @@ produces a spec that is wrong by Friday.
     expected to have. It sizes questions 20 and 22 with somebody else's ruler, and the dossier reports against it. If
     the idea is too young to score, say so and score it at the end of phase 1.)*
 23. Is any part of this confidential? Names, addresses, mechanics that must not appear in reports or briefs? If
-    so, write the forbidden list now and check it before anything leaves the project.
+    so, write the forbidden list now and check it before anything leaves the project (`git grep -F -f <list>` reads
+    what is tracked, which is what leaves; a plain `grep -r` also reads the benches under `.gauntlet/bench/`, copies
+    of the project).
 24. Which model families are available to you? *(At least one round should run on a different vendor. If only one
     family is available, that is a stated limit of the result, not a reason to skip the round.)*
 

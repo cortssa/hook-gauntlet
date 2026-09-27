@@ -1,5 +1,5 @@
 <!-- selftest: judge=1=true rows=1 rc=0 -->
-# STATE - next.sh fixture: row 1 - a high reproduces
+# STATE - next.sh fixture: row 1 - a high reproduces, the owner present and not recorded to tell: the question is asked (answered true: tell them)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*
 

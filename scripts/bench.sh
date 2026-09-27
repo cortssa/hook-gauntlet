@@ -12,7 +12,19 @@
 # that does not contain the code. BENCH_EXCLUDE="src" does that.
 #
 # Usage:   scripts/bench.sh <name> [project-dir]
-# Env:     BENCH_ROOT     where benches live (default: $HOME/.gauntlet/bench)
+# Env:     BENCH_ROOT     where benches live (default: <project>/.gauntlet/bench - inside the project, in the one directory
+#                         no copy ever enters: `.gauntlet` is left out of every bench, so a bench never holds a bench;
+#                         never $HOME, which is shared by every project and every agent on the machine). The project's
+#                         `.gauntlet/.gitignore` (state/.gitignore, installed with the state files) keeps it out of git.
+#                         The default applies only where the kit's convention is installed - `<project>/.gauntlet/` already
+#                         exists: in a tree without it (someone else's hook, doctrine/RETROFIT.md: a bench of your own,
+#                         never their working tree) the run is REFUSED before anything is written, and asks for a
+#                         BENCH_ROOT outside the project. A root inside the project anywhere but under a `.gauntlet/` is
+#                         refused (a refresh would copy the bench into itself), and so is one that contains the project.
+#                         A bench that withholds the SOURCE (a BENCH_EXCLUDE pattern whose last component matches `src`:
+#                         "src", "src script", "v4/src") is refused anywhere inside the project, `.gauntlet/` included:
+#                         what it withholds is what it HOLDS, and from <project>/.gauntlet/bench/<name> `../../..` is the
+#                         project, source and all. Set BENCH_ROOT to a directory outside the project (briefs/black-box.md).
 #          BENCH_EXCLUDE  extra paths to leave out, space separated (e.g. "src script", or "*.hex *.json"). Two meanings,
 #                         told apart per path on every refresh: a matching path that the PROJECT also has is withheld -
 #                         never copied, and a stale copy of it left in the bench is removed; a matching path only the
@@ -51,6 +63,9 @@
 #          anything is written: a refresh deletes whatever the project does not have, and a name reused for somebody's
 #          working copy once let it wipe one. The refusal is never bypassed here: pick a name that does not exist.
 #          (Benches made before the marker existed are refused too; remove one by hand, once, after reading it.)
+#          In a bench that withholds (BENCH_EXCLUDE set) the marker names the project by a hash of its path (cksum), not
+#          by the path - a black-box reader must not be handed the way to the source - and it is rewritten on every run,
+#          so a marker an earlier version wrote with the path does not survive a refresh.
 # Output:  the absolute path of the bench, on stdout, as the last line.
 # Exit:    0 created or refreshed, 1 usage or copy failure, or a directory under that name that is not a bench.
 
@@ -63,11 +78,23 @@ if [ -z "$NAME" ] || [ "$NAME" != "${NAME##*/}" ] || [ "$NAME" = "." ] || [ "$NA
   exit 1
 fi
 
-BENCH_ROOT="${BENCH_ROOT:-$HOME/.gauntlet/bench}"
 BENCH_EXCLUDE="${BENCH_EXCLUDE:-}"
 LINK_LIB="${LINK_LIB:-1}"
 
 SRC="$(cd "$PROJECT" && pwd)" || { echo "bench: cannot enter $PROJECT"; exit 1; }
+ROOT_DEFAULT=0; [ -n "${BENCH_ROOT:-}" ] || ROOT_DEFAULT=1
+BENCH_ROOT="${BENCH_ROOT:-$SRC/.gauntlet/bench}"
+
+# a bench that withholds the source: a BENCH_EXCLUDE pattern whose last path component matches `src` (as a glob: "src",
+# "/src/", "v4/src", "s*" - the patterns the copy below leaves out by name, at any depth)
+WITHHOLDS_SRC=0
+set -f
+for e in $BENCH_EXCLUDE; do
+  b="${e%/}"; b="${b##*/}"
+  # shellcheck disable=SC2194,SC2254   # a constant word against a pattern: the pattern is meant to match as a glob
+  case src in $b) WITHHOLDS_SRC=1 ;; esac
+done
+set +f
 
 BENCH_KEEP="${BENCH_KEEP:-}"
 LINK_FROM="${LINK_FROM:-}"
@@ -101,15 +128,38 @@ DEST="$BENCH_ROOT/$NAME"
 SRC_REAL="$(cd "$SRC" && pwd -P)"
 
 refuse_overlap() { # refuse_overlap <resolved path of the bench>
-  case "$1/" in "$SRC_REAL"/*) ;; *) case "$SRC_REAL/" in "$1"/*) ;; *) return 0 ;; esac ;; esac
+  # a source-free bench inside the project is not source-free: `../../..` from <project>/.gauntlet/bench/<name> is the
+  # project (V26: "isolation verified", and `ls ../../../src` listed the source). Anywhere inside it, `.gauntlet/` included.
+  if [ "$WITHHOLDS_SRC" = 1 ]; then
+    case "$1/" in "$SRC_REAL"/*)
+      echo "bench: a bench that withholds the source (BENCH_EXCLUDE=\"$BENCH_EXCLUDE\") would be inside the project ($1): from there"
+      echo "       ../ leads back to $SRC_REAL and its source, so it withholds nothing. Refusing: set BENCH_ROOT=<a directory outside the project>."
+      return 1 ;;
+    esac
+  fi
+  # ... with ONE place inside the project allowed: strictly under a `.gauntlet` directory (the default root is
+  # <project>/.gauntlet/bench). No copy below enters a `.gauntlet` (rsync and tar exclude the name at any depth, the
+  # searches prune it), so the bench is never copied into itself and nothing in it is the project's.
+  case "$1/" in
+    "$SRC_REAL"/*) case "/${1#"$SRC_REAL"/}/" in */.gauntlet/?*/*) return 0 ;; esac ;;
+    *) case "$SRC_REAL/" in "$1"/*) ;; *) return 0 ;; esac ;;
+  esac
   echo "bench: the bench ($1) and the project ($SRC_REAL) overlap. A bench is rebuilt by DELETING what is in it:"
-  echo "       refusing. Pick a BENCH_ROOT outside the project, and a name that is not the project's own folder."
+  echo "       refusing. Leave BENCH_ROOT unset (<project>/.gauntlet/bench), or pick one outside the project, and a name that is not the project's own folder."
   return 1
 }
 
 probe="$BENCH_ROOT"
 while [ ! -d "$probe" ]; do probe="$(dirname "$probe")"; done
 refuse_overlap "$(cd "$probe" && pwd -P)${BENCH_ROOT#"$probe"}/$NAME" || exit 1
+# the default root is inside the project: only where the kit's convention is installed (<project>/.gauntlet/ exists). In
+# a tree without it - an existing hook, someone else's working tree (doctrine/RETROFIT.md) - nothing is written into it.
+if [ "$ROOT_DEFAULT" = 1 ] && [ ! -d "$SRC/.gauntlet" ]; then
+  echo "bench: BENCH_ROOT is not set, and $SRC has no .gauntlet/ (the kit's convention is not installed there): the default"
+  echo "       bench would be written into that tree - doctrine/RETROFIT.md: a bench of your own, never their working tree."
+  echo "       Refusing, nothing written: set BENCH_ROOT=<a directory outside the project>."
+  exit 1
+fi
 
 MARKER=".gauntlet-bench"
 if { [ -e "$DEST" ] || [ -L "$DEST" ]; } && [ ! -f "$DEST/$MARKER" ]; then
@@ -123,8 +173,16 @@ if ! refuse_overlap "$(cd "$DEST" && pwd -P)"; then
   [ "$made" -eq 1 ] && rmdir "$DEST" 2> /dev/null
   exit 1
 fi
-[ -f "$DEST/$MARKER" ] || printf 'a bench made by hook-gauntlet scripts/bench.sh (name %s, from %s). A refresh deletes what the project does not have.\n' \
-  "$NAME" "$SRC_REAL" > "$DEST/$MARKER" || { echo "bench: cannot write the $MARKER marker into $DEST"; exit 1; }
+if [ -n "$BENCH_EXCLUDE" ]; then
+  # a bench that withholds: the project by a hash of its path, not the path (the reader of this bench is not to be
+  # pointed at the source); rewritten every run, so an older marker with the path does not survive a refresh
+  printf 'a bench made by hook-gauntlet scripts/bench.sh (name %s, withholding: %s; from a project whose path has cksum %s). A refresh deletes what the project does not have.\n' \
+    "$NAME" "$BENCH_EXCLUDE" "$(printf '%s' "$SRC_REAL" | cksum | cut -d ' ' -f 1)" > "$DEST/$MARKER" \
+    || { echo "bench: cannot write the $MARKER marker into $DEST"; exit 1; }
+else
+  [ -f "$DEST/$MARKER" ] || printf 'a bench made by hook-gauntlet scripts/bench.sh (name %s, from %s). A refresh deletes what the project does not have.\n' \
+    "$NAME" "$SRC_REAL" > "$DEST/$MARKER" || { echo "bench: cannot write the $MARKER marker into $DEST"; exit 1; }
+fi
 
 # ... and it never gets a symlinked lib/: lib -> <project>/lib means lib/../src IS the source it was built to withhold.
 if [ -n "$BENCH_EXCLUDE" ] && [ "$LINK_LIB" = "1" ]; then

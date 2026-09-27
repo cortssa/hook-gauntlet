@@ -1,4 +1,4 @@
-<!-- selftest: judge=3=false,5=false rows=7b rc=0 -->
+<!-- selftest: judge=5=false rows=7b rc=0 -->
 # STATE - next.sh fixture: after r02, the owner away, the triage of F-2 (cross-chain replay) waiting; the chain known, the real manager never run: the item is a triage, not the chain question - row 7b, a local judge, does not wait on it (a verifier's G12)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*

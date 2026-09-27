@@ -1,4 +1,4 @@
-<!-- selftest: judge=3=false,5=false,11b=false rows=11 rc=0 -->
+<!-- selftest: judge=5=false,11b=false rows=11 rc=0 -->
 # STATE - next.sh fixture: before round 1, the owner was asked to set RPC_URL - the item NAMES RPC_URL without starting with it: row 7b waits on the owner all the same, row 3 skips it, round 1 goes on (row 11)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*

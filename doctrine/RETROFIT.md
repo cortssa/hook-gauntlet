@@ -1,5 +1,10 @@
 # Arriving at a hook that already exists
 
+*An existing hook with **no tests and no history** - no audits, no reports, no log, nothing to derive a flag from -
+does not start here: it takes the new-project route from phase 0 (`QUICKSTART.md`), the code as the sketch to specify
+(phases 0 and 1 write its spec; this is not `phase: sketch`, which only the owner declares - `NEXT.md` row 0). This
+file is for a project with tests, audits or a history to derive the flags from.*
+
 `AGENTS.md` offers two ways in: from an idea, or "test an existing hook hard". Everything else in this kit is written
 for the first. This file is for the second: a project with its own history, its own documents, possibly in another
 language, and an owner who may have told you **not to modify it**.
@@ -43,7 +48,16 @@ language the eventual auditor may not read, say so in the dossier (`briefs/hando
 
 On a finished project the cheapest useful thing is `JUDGES.md` from top to bottom, on a COPY, changing no bytecode:
 
-1. A bench of your own (`scripts/bench.sh`), never their working tree. Reproduce THEIR battery first, and their numbers.
+1. A bench of your own (`scripts/bench.sh`), never their working tree: set `BENCH_ROOT` to a directory OUTSIDE their
+   tree. No script of the kit writes into a tree where its convention is not installed (`<project>/.gauntlet/` does
+   not exist): each refuses before writing anything, says why, and asks for a place outside it -
+   - `bench.sh`, `mutate.sh`, `fuzz-long.sh`: their default bench (`<project>/.gauntlet/bench`) - set `BENCH_ROOT`;
+   - `battery.sh`, `size.sh`, `census.sh` (the run and the `--aggregate` gate), `mutate.sh` and `fuzz-long.sh`
+     (`USE_BENCH=0` too): their reports (`<project>/.gauntlet/reports/` by default) - set `OUT_DIR` outside the tree.
+   A bench is yours: `bench.sh` marks it (`.gauntlet-bench`), and the scripts write their reports inside it, so the
+   simplest way is to run everything in the bench, `USE_BENCH=0` for `fuzz-long.sh` there. `OUT_DIR` moves the reports
+   only: a battery, a census or a long fuzz run IN their tree still leaves forge's `out/` and `cache/` (and the census
+   file, the corpus) in it. Reproduce THEIR battery first, and their numbers.
    If you cannot, stop: everything after that is about a different project.
 2. Each row of the ladder, with the result read from the output. Expect to diverge (`AGENTS.md` section 6b): a hook
    near the size limit will not compile for plain `forge coverage`; mass mutation must be aimed at one file and at the

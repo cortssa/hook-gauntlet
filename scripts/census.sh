@@ -42,7 +42,9 @@
 #                       thing. The default is deliberately low because a campaign's reach is a sample - the kit's own vault
 #                       example measured between 42 and 80 per cent on sixteen campaigns of the same tree - and a gate that
 #                       sits inside the noise is a gate that fails by luck. Set yours below your measured range, not in it.
-#          OUT_DIR      where the report goes        (default: <project>/.gauntlet/reports; a relative one is under <project>)
+#          OUT_DIR      where the report goes        (default: <project>/.gauntlet/reports; a relative one is under <project>).
+#                       Inside a project with no .gauntlet/ (someone else's tree, doctrine/RETROFIT.md) both modes refuse
+#                       before writing anything, exit 2 - unless it is a bench or the kit's own (scripts/lib/owner-tree.sh)
 #          CENSUS_TABLE_ONLY  1: --aggregate prints the table and nothing else - no gate record, no verdict line. For a
 #                       caller that judges nothing (fuzz-long.sh prints the long campaign's table with no CORE, and a
 #                       "PASSED - 0 CORE actions" under it would read as a gate that was never run).
@@ -221,6 +223,11 @@ if [ "${1:-}" = "--aggregate" ]; then
   TSV="$2"; GPROJECT="${3:-.}"
   proj_abs="$(cd "$GPROJECT" 2> /dev/null && pwd -P)" || { echo "census gate: FAILED - cannot enter the project $GPROJECT"; exit 2; }
   gate_out="${OUT_DIR:-.gauntlet/reports}"; case "$gate_out" in /*) ;; *) gate_out="$proj_abs/$gate_out" ;; esac
+  # never into a tree without the kit's convention (V26b: QUICKSTART's own line made <proj>/.gauntlet/ in one): refused
+  # before the record's directory is made (scripts/lib/owner-tree.sh)
+  # shellcheck source=lib/owner-tree.sh
+  . "$(cd "$(dirname "$0")" && pwd)/lib/owner-tree.sh" || { echo "census gate: FAILED - scripts/lib/owner-tree.sh is missing"; exit 2; }
+  report_dir_allowed census "$proj_abs" "$gate_out" || { echo "census gate: FAILED - no record written: its directory is refused (above)"; exit 2; }
   mkdir -p "$gate_out" || { echo "census gate: FAILED - cannot create $gate_out"; exit 2; }
   record="$gate_out/06-census-gate.txt"
   tsv_dir="$(cd "$(dirname "$TSV")" 2> /dev/null && pwd -P)"
@@ -279,13 +286,19 @@ PROJECT="${1:-.}"
 MATCH="${MATCH:---match-contract Invariant}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 cd "$PROJECT" || { echo "census: cannot enter $PROJECT"; exit 2; }
+OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
+# shellcheck source=lib/owner-tree.sh
+. "$HERE/lib/owner-tree.sh" || { echo "census: $HERE/lib/owner-tree.sh is missing"; exit 2; }
+# never into a tree without the kit's convention: refused before anything is written (scripts/lib/owner-tree.sh). OUT_DIR
+# moves the reports only: the campaign writes where it runs (forge's out/ and cache/, and census/, which the harness
+# writes) - run it on a bench of someone else's tree to keep those out of it too
+report_dir_allowed census "$(pwd -P)" "$OUT_DIR" || { echo "census: NOTHING MEASURED."; exit 2; }
 forge_dotenv_check census "$(pwd -P)" || { echo "census: NOTHING MEASURED."; exit 2; }
 # the machine's ~/.foundry/foundry.toml: what it changes in this run is named
 forge_global_config census
 # a cache written at another path: the campaign ran the OLD code over a new source (measured: a planted mutant tabled,
 # rc 0), so its record is removed and the campaign builds from nothing
 forge_cache_rehome census; [ "$?" -ne 2 ] || { echo "census: NOTHING MEASURED."; exit 2; }
-OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 mkdir -p "$OUT_DIR" census
 # one corpus per manager, for the reason given in battery.sh: this script runs the same campaigns, and a corpus recorded
 # against one deployment layout, replayed against another, invents a counterexample - and PERSISTS it in cache/invariant,

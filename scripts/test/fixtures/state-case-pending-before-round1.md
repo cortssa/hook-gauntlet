@@ -1,4 +1,4 @@
-<!-- selftest: judge=1=false,5=false,11b=false rows=11 rc=0 -->
+<!-- selftest: judge=5=false,11b=false rows=11 rc=0 -->
 # STATE - next.sh fixture: a phase-3 pending medium before round 1: no triage is asked before a round (rows 9 and 9b are off), it rides into round 1 (row 11)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*

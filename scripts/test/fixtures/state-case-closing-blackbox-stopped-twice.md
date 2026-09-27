@@ -15,7 +15,7 @@ ceiling:                   8 model rounds (adversarial + black-box) agreed in ph
 real_manager_battery:      current
 waiting_on_owner:          none
 location:                  .gauntlet/
-dossier:                   skeleton
+dossier:                   skeleton (0 open, 1 judge not done)
 rehearsal:                 n/a (no runbook)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block; round b1 stopped (retried once, stopped again at step 2; counts as spent)
 ```

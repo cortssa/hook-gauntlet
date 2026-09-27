@@ -9,7 +9,9 @@
 # stale artifacts is the most expensive kind of green.
 #
 # Usage:   scripts/battery.sh [project-dir]
-# Env:     OUT_DIR      where to write the logs   (default: <project>/.gauntlet/reports)
+# Env:     OUT_DIR      where to write the logs   (default: <project>/.gauntlet/reports; a relative one is under <project>).
+#                       Inside a project with no .gauntlet/ (someone else's tree, doctrine/RETROFIT.md) it refuses before
+#                       running or writing anything, exit 2 - unless it is a bench or the kit's own (scripts/lib/owner-tree.sh)
 #          FORGE_FLAGS  extra flags for forge     (e.g. --offline). The kit's own variable (forge does not read it):
 #                       allowed, and when set the test line names it next to the filter - a path or a --match-* in it
 #                       narrows the run like any filter (an endpoint or a key is printed as <set>, by its shape:
@@ -31,7 +33,7 @@
 #          and a line says so: forge's incremental build there left tests running the OLD code. (scripts/lib/forge-env.sh)
 # Exit:    0 all steps passed, 1 something failed - a failed test fails it whatever forge's exit code (`--allow-failure`
 #          in FORGE_FLAGS exits 0 over one). The summary names which, and the test line names the filter in force.
-#          2 nothing run: a line break in FORGE_FLAGS, or a variable the re-run could not remove.
+#          2 nothing run: a line break in FORGE_FLAGS, or a variable the re-run could not remove, or OUT_DIR refused (above).
 
 set -uo pipefail
 
@@ -42,6 +44,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/parse.sh" || { echo "battery: $HERE/lib/parse.sh is missing"; exit 1; }
 # shellcheck source=lib/forge-env.sh
 . "$HERE/lib/forge-env.sh" || { echo "battery: $HERE/lib/forge-env.sh is missing"; exit 1; }
+# shellcheck source=lib/owner-tree.sh
+. "$HERE/lib/owner-tree.sh" || { echo "battery: $HERE/lib/owner-tree.sh is missing"; exit 1; }
 # forge's environment by allowlist (see the header): may re-run this script, once, without what it removed
 forge_env_clean battery "FOUNDRY_PROFILE FORGE_FLAGS" "$0" "$@"
 # never a filter inherited from the environment (see the header): the battery runs every test the project has
@@ -49,6 +53,10 @@ if [ -n "${TEST_FLAGS+x}" ]; then echo "battery: ignoring TEST_FLAGS from the en
 
 PROJECT="${1:-.}"
 cd "$PROJECT" || { echo "battery: cannot enter $PROJECT"; exit 1; }
+OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
+# never into a tree without the kit's convention (V26b: the battery made <proj>/.gauntlet/reports in one): refused before
+# anything runs or is written - forge's own out/ and cache/ included (scripts/lib/owner-tree.sh)
+report_dir_allowed battery "$(pwd -P)" "$OUT_DIR" || { echo "battery: nothing run."; exit 2; }
 if ! forge_dotenv_check battery "$(pwd -P)"; then echo "BATTERY FAILED"; exit 1; fi
 # the machine's ~/.foundry/foundry.toml: what it changes here is named; a filter from it is refused (the header says why)
 forge_global_config battery
@@ -58,7 +66,6 @@ if [ -n "$FORGE_GLOBAL_NARROW" ]; then
   echo "BATTERY FAILED"; exit 1
 fi
 
-OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 mkdir -p "$OUT_DIR"
 

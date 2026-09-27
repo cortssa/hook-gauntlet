@@ -11,9 +11,10 @@
 # report, what the owner wants, whether the spec's promises changed) is printed as "needs judgement: row <id> - <the
 # question>", and the evaluation goes on to the first row the flags alone make true, printed as the answer ONLY IF every
 # row needing judgement above it is false (exit 3). The agent answers with --judge, and the answers are echoed in the
-# output, so the judgement is on the record, not in anyone's head. Rows that need judgement: 1 (when a high or a pending
-# finding is open), 3, 5, 8, 9 and 9b (a finding open, once round 1 has run or the ceiling is reached), 10 (after a
-# round, with no bytecode change since), 11b, 12, 16, 18b.
+# output, so the judgement is on the record, not in anyone's head. Rows that need judgement: 1 (a high open that the
+# flags do not show recorded to tell), 5, 8, 9 and 9b (a finding open, once round 1 has run or the ceiling is reached; 9b
+# only while the dossier does not name them yet), 10 (after a round, with no bytecode change since), 11b, 12, 16, 18b.
+# Not row 3: the flags decide it (below).
 #
 # The rows are DATA (the ROWS table below): a new row of NEXT.md is one line here, not new parser code. The action a row
 # prints is read from NEXT.md itself, as NEXT.md words it. And every run checks the two against each other (the drift
@@ -37,16 +38,34 @@
 #     `chain-id`, `chain_id`, `chains` are other words) - `off-chain`, `cross-chain` or the word inside another question
 #     do not count: its action waits on the owner, so row 3 skips it;
 #   - rows 12 and 16 are off while 7b is owed (`real_manager_battery` `never` or `stale` - the chain is known - and no
-#     `real manager:` note); when 7b is silenced by the wait and no other row stands, row 3 is given, as NEXT.md's row 3
-#     says: it stops and says what is waiting (an answer 3=false does not make the rows the wait turned off stand);
+#     `real manager:` note); when 7b is silenced by the wait and no other row stands, that is row 3's pause, as NEXT.md's
+#     row 3 says: it stops and says what is waiting (no answer makes the rows the wait turned off stand: row 3 is not
+#     answered);
 #   - rows 9 and 9b count every open finding, from any round - a phase-3 `pending:` one too, once round 1 has run; before
 #     round 1 (`last_audit_round: none`) they are off, pending findings ride into round 1 - unless the ceiling is reached
 #     (row 2: round 1 will not run, every open finding goes to 9 or 9b);
 #   - `blackbox: stopped (<round id>)` (a black-box round stopped twice, row 11b): rows 12 and 15 do not fire on it, rows
 #     16 and 18b take it;
+#   - row 1 goes quiet only by the flags' record of the owner absent: the items `high <id>[, <id>...] - to tell` of
+#     waiting_on_owner (ids between commas or spaces, compared case-insensitively, each once; a placeholder - none, TBD,
+#     nobody, n/a, ? - refused) naming EXACTLY as many ids as open_findings high (more is refused: a recorded high is no
+#     longer open, remove it). Then the row is false, and the because: line of whatever is given names those ids - a
+#     quiet row 1 always leaves a trace. Otherwise, with a high open, it is a question (the owner present: answered
+#     1=false once told); a `told:` note is not read. A provisional high from phase 3 counts in open_findings high like
+#     any other (NEXT.md row 6b);
+#   - row 9b is quiet once the dossier names the open findings: `dossier: skeleton (<K> open, ...)` with K the number
+#     open (high + medium + low; informational findings are not counted), or `complete`; `none`, or a skeleton naming
+#     another number (stale), keeps it standing;
+#   - row 3 ends the route with the owner absent: when waiting_on_owner is not `none` and no row below stands on the flags
+#     and none is left to judge, the answer is `next: STOP - paused, waiting on the owner: <items>` (exit 0) - decided
+#     by the flags, never asked, and never answered: `--judge 3=...` is REFUSED (V26b: `3=true` gave that STOP over row
+#     6 and row 9b, which the flags made true - the answer to row 3 could hide the rows below; an answer refused hides
+#     nothing, where one ignored would still stand on the record as judged). A row below that waits on the owner's
+#     answer is skipped the way the table skips it: a row that needs judgement is answered false, row 7b is off by the
+#     flags. While rows still need judgement (above or below row 3), the pause is not given: exit 3, the questions, and
+#     one line, `if every answer is false: STOP - paused, waiting on the owner: <items>`;
 #   - a note is read by its name only at the START of a note item (a note line, or a part of one after the middle dot
-#     or ";", a Markdown list marker `- ` / `* ` / `+ ` before it allowed): `pending: <id>` for row 1, `real manager:`
-#     for row 7b;
+#     or ";", a Markdown list marker `- ` / `* ` / `+ ` before it allowed): `real manager:` for row 7b;
 #   - the ceiling the OPERATOR set in full mode with the owner absent (`<N> model rounds, set by the operator (owner
 #     absent); <M> used`) is a ceiling like the owner's: row 2 fires on it; "operator" in any other shape or case is refused;
 #   - rows 13b and 14 count a finding against "closed with 0 high and 0 medium" only while it is OPEN in `open_findings`
@@ -62,13 +81,18 @@
 #          scripts/next.sh --check-table [<NEXT.md>]     the drift guard alone
 #   STATE.md defaults to .gauntlet/STATE.md, then ./STATE.md. --table defaults to the kit's doctrine/NEXT.md.
 #   --judge answers a row that needs judgement: `true` makes it true (it is then given, if it is the first), `false`
-#   passes it. Row 3 (waiting on the owner): answer each row below that depends on the owner's answer `false`, and 3
-#   itself `false` once nothing left depends on it - or `true` when nothing below stands, and stop.
+#   passes it. Row 3 (waiting on the owner) is not one: `--judge 3=...` is refused - answer `false` each row below that
+#   depends on the owner's answer; when nothing below stands and nothing is left to judge, the pause is given.
 # Output:  zero or more "in force: row <2|14> - ..." and "needs judgement: row <id> - <question>" lines,
-#          then "next: row <id> - <the action, as NEXT.md words it>" and "because: <the flags that made it true>".
-# Exit:    0 the row given is the first true one; 1 no row is true: the table has a hole or a flag is stale (NEXT.md's
-#          STOP rule); 2 REFUSED - a flag missing, of an unknown value, a malformed line, a bad --judge, or the table and
-#          NEXT.md disagree: one line on stderr naming what; 3 a row above the one given needs judgement (named).
+#          then "next: row <id> - <the action, as NEXT.md words it>" and "because: <the flags that made it true>" -
+#          or, the owner absent, nothing below row 3 standing and nothing left to judge, "next: STOP - paused, waiting on
+#          the owner: <items>" (STOP, not "row": a caller that walks the rows stops here, and runs this again when the
+#          owner has answered) - or, with rows still to judge and nothing below standing on the flags, the questions and
+#          "if every answer is false: STOP - paused, waiting on the owner: <items>" (exit 3: answer them, run it again).
+# Exit:    0 the row given is the first true one, or the pause; 1 no row is true and nothing waits on the owner: the
+#          table has a hole or a flag is stale (NEXT.md's STOP rule); 2 REFUSED - a flag missing, of an unknown value, a
+#          malformed line, a bad --judge, or the table and NEXT.md disagree: one line on stderr naming what; 3 a row above
+#          the one given needs judgement (named), or rows still need judgement before the pause can be given.
 
 set -uo pipefail
 
@@ -88,10 +112,10 @@ refuse() { echo "next: REFUSED - $*" >&2; exit 2; }
 #   <name>=<v>[,<v>...] (one of) | <name>!=<v> | <name>><n> (a number above n) | row:<id> (that row's condition) | -
 #   (always). Names: the flags of STATE.md, and the parts parse_state below derives from them.
 ROWS='
-0   | 8591339f | act  | -                   | phase=sketch | -
-1   | 1b0ac5fe | act  | -                   | open_findings.high>0 ; notes.pending=yes | does a high finding reproduce (open_findings high, or a provisional high on a pending: note) that the owner has not been told of?
+0   | 9764dc92 | act  | -                   | phase=sketch | -
+1   | d2febaae | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high) that the owner has not been told of? The owner present: false once they have been told (a told: note is not read); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
 2   | 64c00456 | gate | 11,11b,12,13,13b,15 | ceiling=reached | -
-3   | 8949c656 | act  | -                   | waiting_on_owner!=none | does nothing below stand without the owner'"'"'s answer ({waiting_on_owner})? Answer false each row below that depends on it, and 3=false once none left does
+3   | 8949c656 | act  | -                   | waiting_on_owner!=none | -
 4   | a019d2cf | act  | -                   | phase=0,1 | -
 4b  | 2473e53b | act  | -                   | phase=2,3 | -
 5   | 2a2d739a | act  | -                   | - | has the fuzzer reported a violation of a promise that is not yet a deterministic test?
@@ -101,7 +125,7 @@ ROWS='
 7b  | 49e41051 | act  | -                   | real_manager.owed=yes waiting_on_owner.real_manager=no | -
 8   | c328f377 | act  | -                   | any_round=yes | is there an ACCEPTED or FIXED finding (triaged in row 9) from outside the fuzzer with no rule for it yet (an invariant or action, or a unit test and a not fuzzable: note)?
 9   | 5608652c | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | is a finding from any round still open (not fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name - one triaged fix at the cause whose fix is not written yet is still open; a phase-3 pending: finding is one too, now that round 1 has run or the ceiling is reached), and is the owner there to answer, or is it already triaged fix at the cause?
-9b  | 9ccc797e | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | do open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached) wait on the owner'"'"'s triage while the owner is not available?
+9b  | ca42a9ba | act  | -                   | last_audit_round!=none open_findings.total>0 dossier.lists_open=no ; ceiling=reached open_findings.total>0 dossier.lists_open=no | do open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached), which the dossier does not name yet, wait on the owner'"'"'s triage while the owner is not available?
 10  | 75485129 | act  | -                   | any_round=yes bytecode_changed_since.last_audit_round=no | did only documents, comments, scripts or tests change since the last round, making claims about the code?
 11b | 39b95289 | act  | -                   | - | was a model round STOPPED by the environment (the harness, the provider'"'"'s classifier) before delivering, and not yet retried - or stopped again, and not yet recorded (notes: round <id> stopped; a black-box round also blackbox: stopped (<id>))?
 11  | 29326122 | act  | -                   | last_audit_round=none battery=green | -
@@ -193,7 +217,9 @@ load_table() { # load_table <NEXT.md>: fills ACTION, and refuses when its rows a
 
 # ------------------------------------------------------------------------------------------------ STATE.md's flags
 FLAGS="phase bytecode_changed_since battery blackbox open_findings last_audit_round last_other_round ceiling real_manager_battery waiting_on_owner location dossier rehearsal notes"
-declare -A RAW=() V=()
+declare -A RAW=() V=() RECORDED=() SHOW_NOTE=()
+declare -a RECORDED_ORDER=()
+ROW1_QUIET=""
 declare -a NOTE_LINES=()
 
 # enum <flag> <allowed...>: the value's first word is one of them, and anything after it is a comment in parentheses
@@ -329,16 +355,59 @@ parse_state() {
   # local judge, does not wait on it (a verifier's G03 and G12)
   local item; local -a items=()
   V[waiting_on_owner.real_manager]=no
+  # row 1 with the owner absent: the highs recorded to tell are the items `high <id>[, <id>...] - to tell` (both real walks
+  # wrote several ids in one item, between commas or between spaces). Each id once, compared case-insensitively; a
+  # placeholder, a word between the ids, or an item that says "to tell" in any other shape is refused - never counted,
+  # never ignored
+  local re_tell='^high[[:space:]]+(.*[^[:space:]])[[:space:]]+-[[:space:]]+to[[:space:]]+tell([[:space:]]|$)'
+  local re_tell_empty='^high[[:space:]]+-[[:space:]]+to[[:space:]]+tell([[:space:]]|$)'
+  local id key; local -a ids=()
   if [ "${V[waiting_on_owner]}" != none ]; then
     IFS=';' read -ra items <<< "${val//$'\302\267'/;}"
     for item in "${items[@]}"; do
       case "$item" in *RPC_URL*) V[waiting_on_owner.real_manager]=yes ;; esac
       item="$(trim "$item")"
       [[ ${item,,} =~ ^(target[[:space:]]+|which[[:space:]]+)?chain([^a-z0-9_-]|$) ]] && V[waiting_on_owner.real_manager]=yes
+      if [[ $item =~ $re_tell_empty ]]; then
+        refuse "waiting_on_owner: '$item' names no finding id (high <id>[, <id>...] - to tell)."
+      elif [[ $item =~ $re_tell ]]; then
+        read -ra ids <<< "${BASH_REMATCH[1]//,/ }"
+        [ "${#ids[@]}" -gt 0 ] || refuse "waiting_on_owner: '$item' names no finding id (high <id>[, <id>...] - to tell)."
+        for id in "${ids[@]}"; do
+          case "${id,,}" in
+            none | tbd | nobody | n/a | '?') refuse "waiting_on_owner: in '$item', '$id' is a placeholder, not a finding id (high <id>[, <id>...] - to tell: the ids of the open highs)." ;;
+            and | or | '&' | plus) refuse "waiting_on_owner: in '$item', '$id' is a word, not a finding id (ids between commas or spaces: high F-1, F-2 - to tell)." ;;
+          esac
+          [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
+            || refuse "waiting_on_owner: in '$item', '$id' is not one finding id (high <id>[, <id>...] - to tell)."
+          key="${id,,}"
+          [ -n "${RECORDED[$key]+x}" ] && continue
+          RECORDED[$key]="$id"; RECORDED_ORDER+=("$id")
+        done
+      elif [[ ${item,,} == *"to tell"* ]]; then
+        refuse "waiting_on_owner: '$item' is not 'high <id>[, <id>...] - to tell' (NEXT.md row 1: the ids of the open highs, then ' - to tell')."
+      fi
     done
   fi
   enum location .gauntlet/ root
-  enum dossier none skeleton complete
+  # the skeleton says how many open findings it names (row 9b reads it): skeleton (<K> open, <N> judges not done)
+  val="${RAW[dossier]}"
+  if [[ $val =~ ^skeleton([^A-Za-z0-9_]|$) ]]; then
+    local re_skel='^skeleton[[:space:]]+[(]([0-9]+)[[:space:]]+open([,;[:space:]][^()]*)?[)]$'
+    [[ $val =~ $re_skel ]] \
+      || refuse "dossier: '$val' is not skeleton (<K> open, <N> judges not done): row 9b reads K, the number of open findings the skeleton names."
+    V[dossier]=skeleton; V[dossier.open]=$((10#${BASH_REMATCH[1]}))
+  else
+    enum dossier none skeleton complete
+  fi
+  # row 9b is done once the dossier names what is open: a skeleton naming exactly the number open, or a complete dossier
+  V[dossier.lists_open]=no
+  case "${V[dossier]}" in
+    complete) V[dossier.lists_open]=yes ;;
+    skeleton) [ "${V[dossier.open]}" -ne "${V[open_findings.total]}" ] || V[dossier.lists_open]=yes
+      SHOW_NOTE[dossier.lists_open]="the skeleton names ${V[dossier.open]}, open_findings has ${V[open_findings.total]} open" ;;
+    none) SHOW_NOTE[dossier.lists_open]="dossier: none" ;;
+  esac
   local re_na='^n/a([[:space:]]+[(].*[)])?$' re_ny='^not yet([[:space:]]+[(].*[)])?$'
   local re_done='^done[[:space:]]+[(]([0-9]{4})-([0-9]{2})-([0-9]{2})[)]$'
   val="${RAW[rehearsal]}"
@@ -348,17 +417,30 @@ parse_state() {
   else refuse "rehearsal: '$val' is not one of: n/a (no runbook) | not yet | done (YYYY-MM-DD), a real date."; fi
   # a note is read by its name only at the START of a note item: a note line (the value of notes:, or an indented line
   # under it), or a part of one after the middle dot or ";" - never where the words merely appear
-  V[notes.pending]=no; V[notes.real_manager]=no
+  V[notes.real_manager]=no
   for line in "${NOTE_LINES[@]}"; do
     IFS=';' read -ra items <<< "${line//$'\302\267'/;}"
     for item in "${items[@]}"; do
       item="$(trim "$item")"
-      # a note written as a Markdown list item (`- real manager: ...`, `* pending: ...`) is read like a plain one
+      # a note written as a Markdown list item (`- real manager: ...`) is read like a plain one
       if [[ $item =~ ^[-*+][[:space:]]+(.*)$ ]]; then item="${BASH_REMATCH[1]}"; fi
-      [[ $item =~ ^pending:[[:space:]]+[A-Za-z0-9][A-Za-z0-9._-]*([[:space:]]|$) ]] && V[notes.pending]=yes   # row 1
       [[ $item =~ ^real\ manager: ]] && V[notes.real_manager]=yes                                            # row 7b
     done
   done
+  # row 1: quiet by the flags only when the ids recorded to tell are EXACTLY the number of highs open. More ids than
+  # highs open is a stale entry (a high fixed or re-triaged since): refused, so that it is read and removed - never a
+  # silent pass. Fewer (or none): the row is a question. A told: note is not read (V26: a told: of a closed high, or
+  # told: none, quieted it with nothing on the record).
+  local rec_n="${#RECORDED_ORDER[@]}" rec_ids=""
+  [ "$rec_n" -eq 0 ] || rec_ids="$(printf '%s, ' "${RECORDED_ORDER[@]}")"; rec_ids="${rec_ids%, }"
+  [ "$rec_n" -le $((10#$h)) ] \
+    || refuse "waiting_on_owner: $rec_n high(s) recorded to tell ($rec_ids), open_findings has high=$((10#$h)): a recorded high is no longer open: remove it."
+  V[open_findings.high_not_recorded]=$(( 10#$h - rec_n ))
+  SHOW_NOTE[open_findings.high_not_recorded]="high=$((10#$h)), recorded to tell in waiting_on_owner: $rec_n${rec_ids:+ ($rec_ids)}"
+  if [ $((10#$h)) -gt 0 ] && [ "$rec_n" -eq $((10#$h)) ]; then
+    if [ "$rec_n" -eq 1 ]; then ROW1_QUIET="row 1 is quiet: the 1 high open is recorded to tell in waiting_on_owner ($rec_ids)"
+    else ROW1_QUIET="row 1 is quiet: the $rec_n highs open are recorded to tell in waiting_on_owner ($rec_ids)"; fi
+  fi
   # row 7b is owed (and rows 12 and 16 wait on it): the chain is known, the real-manager battery never ran or is stale,
   # and no real manager: note says what replaced it
   V[real_manager.owed]=no
@@ -376,8 +458,9 @@ real_date() { # real_date <YYYY> <MM> <DD>: 0 when it is a day of the calendar
 
 # ------------------------------------------------------------------------------------------------ evaluating a row
 CEIL_SHOW=""
-show() { # show <name>: name=value, as the because: line prints it
+show() { # show <name>: name=value, as the because: line prints it (with what it was derived from, for a derived one)
   if [ "$1" = ceiling ] && [ -n "$CEIL_SHOW" ]; then printf 'ceiling=%s (%s)' "${V[ceiling]}" "$CEIL_SHOW"
+  elif [ -n "${SHOW_NOTE[$1]:-}" ]; then printf '%s=%s (%s)' "$1" "${V[$1]}" "${SHOW_NOTE[$1]}"
   else printf '%s=%s' "$1" "${V[$1]}"; fi
 }
 have() { [ -n "${V[$1]+x}" ] || refuse "next.sh's row data names '$1', which is not a flag it reads (a bug in ROWS)."; }
@@ -432,6 +515,8 @@ for a in "${answers[@]}"; do
   k="${a%%=*}"; v="${a#*=}"
   case "$a" in *=*) ;; *) refuse "--judge '$a' is not <row>=true|false." ;; esac
   [ -n "${KIND[$k]+x}" ] || refuse "--judge $a: NEXT.md has no row $k."
+  # row 3: its answer used to be read, and 3=true gave the pause over rows the flags made true below it (V26b)
+  [ "$k" != 3 ] || refuse "--judge $a: row 3 is decided by the flags: waiting_on_owner and the rows below. Answer false each row below that waits on the owner's answer; with none standing and none left to judge, the pause is given."
   [ "${ASK[$k]}" != "-" ] || refuse "--judge $a: row $k is decided by the flags, not by judgement."
   case "$v" in true | false) ;; *) refuse "--judge $a: the answer is true or false." ;; esac
   [ -z "${JUDGE[$k]+x}" ] || refuse "--judge: row $k is answered twice."
@@ -454,7 +539,29 @@ for id in "${IDS[@]}"; do
   cond_true "${COND[$id]}" || continue
   for x in ${OFFS[$id]//,/ }; do OFF[$x]="$id"; done
 done
+# The lines before the answer - gates in force, rows that need judgement - are kept in order and printed with it.
+declare -a SAID=()
 pending=""
+said() { local x; for x in ${SAID[@]+"${SAID[@]}"}; do printf '%s\n' "$x"; done; }   # the lines kept so far, in order
+# because <why>: the because: line of what is given - with the trace of a row 1 the flags quieted (the ids that did)
+because() { local w="$1"; [ -z "$ROW1_QUIET" ] || w="${w:+$w; }$ROW1_QUIET"; echo "because: ${w:-the row holds whatever the flags say}"; }
+# paused <why>: NEXT.md row 3, "if none, stop and say what is waiting" - the end of the route with the owner absent (after
+# row 9b's skeleton, typically). A distinct first word, STOP, so that a caller walking the rows can tell it from one.
+# Given ONLY when it is true: while a row still needs judgement nothing is given - the questions, and one line saying
+# what an all-false answer gives (V26: "next: STOP" and "no row below row 3 stands" were printed while rows 5, 8, 9,
+# 10 - or the black-box, below the ceiling - were still to judge).
+paused() {
+  said
+  if [ -n "$pending" ]; then
+    [ -z "$JUDGED" ] || echo "judged: $JUDGED"
+    echo "if every answer is false: STOP - paused, waiting on the owner: ${V[waiting_on_owner]}"
+    exit 3
+  fi
+  echo "next: STOP - paused, waiting on the owner: ${V[waiting_on_owner]}"
+  because "$1"
+  [ -z "$JUDGED" ] || echo "judged: $JUDGED"
+  exit 0
+}
 for id in "${IDS[@]}"; do
   [ -z "${OFF[$id]+x}" ] || continue
   cond_true "${COND[$id]}" || continue
@@ -464,12 +571,16 @@ for id in "${IDS[@]}"; do
     case "${JUDGE[$id]:-}" in
       false) continue ;;
       true) why="${why:+$why; }judged true: $q" ;;
-      *) echo "needs judgement: row $id - $q"; pending="${pending:+$pending,}$id"; continue ;;
+      *) SAID+=("needs judgement: row $id - $q"); pending="${pending:+$pending,}$id"; continue ;;
     esac
   fi
-  if [ "${KIND[$id]}" = gate ]; then echo "in force: row $id - ${ACTION[$id]}"; echo "  because: $why"; continue; fi
+  if [ "${KIND[$id]}" = gate ]; then SAID+=("in force: row $id - ${ACTION[$id]}" "  because: $why"); continue; fi
+  # row 3 true: its action - the pause - is taken only when no row below stands (after the loop), never here: the rows
+  # below are read on, and the first that stands is given (V26b: taken here on 3=true, the pause hid rows 6 and 9b)
+  [ "$id" != 3 ] || continue
+  said
   echo "next: row $id - ${ACTION[$id]}"
-  echo "because: ${why:-the row holds whatever the flags say}"
+  because "$why"
   [ -z "$JUDGED" ] || echo "judged: $JUDGED"
   if [ -n "$pending" ]; then
     echo "only if every row that needs judgement above is false (rows $pending): answer them with --judge <row>=true|false."
@@ -477,15 +588,21 @@ for id in "${IDS[@]}"; do
   fi
   exit 0
 done
-# NEXT.md row 3: "take the first [row] that does not [depend on the answer]; if none, stop and say what is waiting". When
-# the wait is what turned 7b off (and 12 and 16 wait on 7b) and nothing else stands, that is row 3 - not a hole.
-if [ -z "$pending" ] && [ -z "${OFF[3]+x}" ] && [ "${V[waiting_on_owner]}" != none ] \
-  && [ "${V[waiting_on_owner.real_manager]}" = yes ] && [ "${V[real_manager.owed]}" = yes ]; then
-  echo "next: row 3 - ${ACTION[3]}"
-  echo "because: waiting_on_owner=${V[waiting_on_owner]}: row 7b waits on that answer (an item names RPC_URL or is the chain question), rows 12 and 16 wait on 7b (real_manager_battery=${V[real_manager_battery]}), and no other row below stands - stop and say what is waiting"
-  [ -z "$JUDGED" ] || echo "judged: $JUDGED"
-  exit 0
+# No row below stands on the flags. With the owner absent that is row 3's end, not a hole: "take the first [row] that
+# does not [depend on the answer]; if none, stop and say what is waiting" (NEXT.md) - decided by the flags (row 3 is
+# never answered), and given only once no row is left to judge (paused). The because line says what stood last: the
+# skeleton that names the open findings (row 9b done), and the wait that turned 7b off (and 12 and 16 with it).
+if [ "${V[waiting_on_owner]}" != none ]; then
+  why="waiting_on_owner=${V[waiting_on_owner]}, and no row below row 3 stands"
+  if [ "${V[open_findings.total]}" -gt 0 ] && [ "${V[dossier.lists_open]}" = yes ]; then
+    why="$why; the dossier names the ${V[open_findings.total]} open finding(s) (dossier=${V[dossier]}: row 9b is done)"
+  fi
+  if [ "${V[waiting_on_owner.real_manager]}" = yes ] && [ "${V[real_manager.owed]}" = yes ]; then
+    why="$why; row 7b waits on that answer (an item names RPC_URL or is the chain question), rows 12 and 16 wait on 7b (real_manager_battery=${V[real_manager_battery]})"
+  fi
+  paused "$why - stop and say what is waiting; run this again when the owner has answered"
 fi
+said
 [ -z "$JUDGED" ] || echo "judged: $JUDGED"
 if [ -n "$pending" ]; then
   echo "no row below them is true on the flags alone: if every row that needs judgement (rows $pending) is false, no row is true: the table has a hole or a flag is stale."

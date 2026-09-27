@@ -4,19 +4,19 @@
 
 Append only, newest at the bottom. **One entry per change.** Reading something is not an entry. Each entry says:
 date and model, what changed, why, which files, the verification with numbers read from outputs, and **what was
-not verified**.
+not checked yet**.
 
 ---
 
 ## 2026-03-09 (orchestrator) - round 5 launched
 
-- Brief `briefs/r05.md` from `<kit>/briefs/audit-round.md`. Bench `$HOME/.gauntlet/bench/a05`, dependencies symlinked.
+- Brief `briefs/r05.md` from `<kit>/briefs/audit-round.md`. Bench `.gauntlet/bench/a05`, dependencies symlinked.
   Aimed at the r04 change to the budget accounting and at the two trade-offs nobody had re-measured.
 - Baseline given to the auditor, all read from `runs/r04/battery.txt`: 83 passing, hook 20 986 bytes, fork gas for
   the capped swap 149 302.
-- Not verified: that the auditor's bench reproduces the baseline. That is its first task and its report must say so.
+- Not checked yet: that the auditor's bench reproduces the baseline. That is its first task and its report must say so.
 
-ROUND r05 | phase 4 | regression | vendor-a/large | bench $HOME/.gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min | reports/r05.md
+ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min | reports/r05.md
 
 ## 2026-03-13 (executor) - r05 findings applied
 
@@ -30,11 +30,11 @@ ROUND r05 | phase 4 | regression | vendor-a/large | bench $HOME/.gauntlet/bench/
 - **Verification:** 88 passing (84 + 2 fork + 2 invariant). Hook 21 104 bytes, margin 3 472 (was 20 986 / 3 590).
   Long fuzz `runs: 1000, calls: 128000`; census: swap succeeded in 912 of 1000 runs, 0 unexplained reverts. Each of the 5 regressions was **mutated** and each went red,
   then green again when restored; output in `runs/r05/mutants.txt`.
-- **Not verified:** the gas cost of the new guard on the *sell* path was measured only on the mock, not on the
+- **Not checked yet:** the gas cost of the new guard on the *sell* path was measured only on the mock, not on the
   fork. The fork is the reference. Carried into the round 6 brief as the first thing to press on.
 
 ## 2026-03-14 (scribe) - record brought up to date
 
 - `STATE.md` rewritten for r05. ROUND line for r05 written; the triage counts went to `DECISIONS.md` once the
   executor finished. `DECISIONS.md` entry D-06 added for the undecided item.
-- Not verified: nothing to verify, no code changed.
+- Not checked yet: nothing to check, no code changed.

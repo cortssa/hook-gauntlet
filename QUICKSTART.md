@@ -1,5 +1,9 @@
 # Quickstart - from a clone to your first adversarial round, in ten steps
 
+*This page is the route for a new project - and for an existing hook with no tests and no history: from phase 0, the
+code as the sketch to specify (not `phase: sketch`, which only the owner declares: `doctrine/NEXT.md` row 0). A project
+with tests, audits or a history to derive the flags from starts at `doctrine/RETROFIT.md` instead.*
+
 Every command below was run on 2026-09-23 (`scripts/doctor.sh`: 2026-09-25) on Linux (WSL) with forge 1.8.1 and forge-std 1.16.2. Each step says what
 "done" looks like, read from the output. The route ends in **audit-ready**; it never deploys, never broadcasts, never
 holds a key. If a step needs a decision only you can make, it says so - the kit's agents stop there and ask.
@@ -91,6 +95,7 @@ The kit keeps nothing about your hook in its own tree. In your project:
 ```sh
 mkdir -p .gauntlet/briefs .gauntlet/reports
 cp <kit>/state/STATE.md <kit>/state/DECISIONS.md <kit>/state/LOG.md .gauntlet/   # <kit> = where step 1 cloned it
+cp <kit>/state/.gitignore .gauntlet/   # the benches live in .gauntlet/bench/ (step 9): copies of the project, never committed
 ```
 
 Then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines but keep, in `STATE.md`, the section headers and the flag block at the top (the title is the one line that
@@ -138,7 +143,10 @@ and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `
 `v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, `permit2/`, `openzeppelin-contracts/` (the last two matter only with the
 periphery installed, `V4_WITH_PERIPHERY=1`), and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
 carry because the module reaches its own sources directly: `gauntlet-v4/=<kit>/foundry-kit/v4/src/` for `V4Harness` and
-`HookMiner`), and its scenarios from `foundry-kit/v4/test/`. In each test's `setUp`: `_setUpV4();` then
+`HookMiner`), and its scenarios from `foundry-kit/v4/test/`. Offline, this recipe is also the substitute for the
+official `v4-template` layout that phase 2's gate names (`AGENTS.md` section 3): write it in the dossier's section 8 as a
+divergence - the question (does the hook build the way Uniswap's template builds a hook?), this recipe as the answer,
+and why the template was not fetched. In each test's `setUp`: `_setUpV4();` then
 `hook = MyHook(_deployHook(type(MyHook).creationCode, abi.encode(manager), <its flags>));` - the harness mines the address
 and refuses to run before the routers exist (`foundry-kit/v4/README.md`, "Address mining for the flag bits"). Every test that creates the PoolManager is then compiled under the
 restricted via-IR profile, so the hook the tests, the fuzz and the mutants deploy is the `<Hook>.manager.json` build, not the
@@ -162,7 +170,7 @@ Deterministic tools on your machine, no model. Run them on your project director
 | dirty memory, junk bits | `forge test --brutalize` in `<proj>` | the same suite green (`doctrine/JUDGES.md` row 6) |
 | long fuzz | `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
 | campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
-| mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is read by mutate.sh only - the battery ignores it; set it on the command line, not with `export`. It is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies reached by RELATIVE paths outside the project: `COPY_ROOT=<their common parent>`; absolute remappings need nothing; the mutated copy goes under `BENCH_ROOT`, else `TMPDIR`, else `/tmp`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
+| mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is read by mutate.sh only - the battery ignores it; set it on the command line, not with `export`. It is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies reached by RELATIVE paths outside the project: `COPY_ROOT=<their common parent>`; absolute remappings need nothing; the mutated copy goes under `BENCH_ROOT`, else `<proj>/.gauntlet/bench`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
 | the kit's own suites on an Ethereum mainnet fork | `export RPC_URL=…` (in your own terminal), then `scripts/fetch-bytecode.sh --block 26050000 0x000000000004444c5dc75cB358380D2e3dE08A90 foundry-kit/v4/fixtures/PoolManager.hex`, then `FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4` (the default battery never runs the fork suites; `foundry-kit/v4/README.md`, "The fork") | `BATTERY PASSED` with `suites test/examples=3 test/fork=6`; fork tests for YOUR hook on YOUR chain are still yours to write (`AGENTS.md` phase 3) |
 | simulation sandbox (optional) | step 4, on your binding | `doctrine/SIMULATE.md` §5 says what goes in the dossier |
@@ -173,7 +181,8 @@ A tool that does not fit your hook is not a reason to skip the question: answer 
 ## 9. Your first adversarial round
 
 ```sh
-scripts/bench.sh r01 <proj>            # a copy in $HOME/.gauntlet/bench/r01 (BENCH_ROOT to change the root), dependencies linked;
+scripts/bench.sh r01 <proj>            # a copy in <proj>/.gauntlet/bench/r01 (BENCH_ROOT to change the root; never $HOME), dependencies linked;
+                                       # the default only once <proj>/.gauntlet/ exists (step 5 installs it): without it, refused - BENCH_ROOT outside
                                        # .gauntlet/ stays in the project: the auditor reads SPEC.md and the brief there, not in the bench
                                        # dependencies outside the project's own lib/: LINK_FROM=<dir with forge-std> scripts/bench.sh r01 <proj>
                                        # (when foundry.toml already points outside the project - an absolute `libs` path or absolute
@@ -195,7 +204,13 @@ black-box round (`briefs/black-box.md`, a bench WITHOUT the source) belongs earl
 `NEXT.md` row 18 (after promotion, and rehearsal if there is a runbook) or 18b (the owner declined promotion in writing: light
 mode's default, or a full-mode owner's own decision) sends you to the handoff dossier, `briefs/handoff-dossier.md` - and row 9b, when findings are open and the
 owner is not there to triage, sends you to the same file as a skeleton: what the judges said read from their outputs,
-every divergence, and a non-empty list of what was **not** checked. Then its reading copy for the auditor, the Markdown
+every divergence, and a non-empty list of what was **not** checked. With the owner absent that is where the route ENDS
+until they answer: once `STATE.md` says `dossier: skeleton (K open, ...)` with K the number open and
+`waiting_on_owner: triage of <ids>` (the highs among them also `high <id>[, <id>...] - to tell`, every open high named),
+`scripts/next.sh` prints `next: STOP - paused, waiting on the owner: <items>` (exit 0) - decided by the flags, once no row
+is left to judge. While one is (rows 5, 8, 9, 10 after a round, 11b and 12 below the ceiling), it prints the questions
+and `if every answer is false: STOP - paused, waiting on the owner: <items>` (exit 3): answer them with `--judge`, and
+run it again. Then its reading copy for the auditor, the Markdown
 staying the record: `python3 scripts/dossier-pdf.py .gauntlet/DOSSIER.md` (needs `reportlab`; without it, exit 2 and
 nothing written - the Markdown goes alone). **STOP there.** The next step is a human audit.
 Never `forge script --broadcast`, never `cast send`: the kit has no step that deploys.

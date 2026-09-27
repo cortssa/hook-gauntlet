@@ -10,17 +10,21 @@
 # its constructor arguments, and the phase-2 gate (AGENTS.md) asks for both margins. This script used to print only
 # the runtime one.
 #
-# Usage:   scripts/size.sh [project-dir] [ContractName ...]      (no names = every contract forge reports)
+# Usage:   scripts/size.sh [project-dir] [ContractName ...]      (no names = every contract forge reports; a name also
+#          takes that contract's other builds, `<Name>.<profile>` - the `.manager` build of a v4 hook, QUICKSTART 7b)
 # Env:     BASELINE    a file written by an earlier run; prints the delta per contract
 #          MIN_MARGIN  fail if any listed contract has fewer bytes of RUNTIME margin than this   (default: 0)
 #          MIN_INIT_MARGIN  the same for the INITCODE margin                                 (default: 0)
 #          LABEL       name of the output file                                           (default: sizes)
-#          OUT_DIR     where it goes                                                     (default: <project>/.gauntlet/reports)
+#          OUT_DIR     where it goes                                                     (default: <project>/.gauntlet/reports;
+#                      a relative one is under <project>). Inside a project with no .gauntlet/ (someone else's tree,
+#                      doctrine/RETROFIT.md) it refuses before writing anything, exit 2 - unless it is a bench or the kit's
+#                      own (scripts/lib/owner-tree.sh)
 #          FORGE_FLAGS extra flags for forge (a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
 # Output:  lines of "name runtime_bytes runtime_margin initcode_bytes initcode_margin", also saved to $OUT_DIR/$LABEL.txt
 #          (usable as a BASELINE; a baseline of the older three-column form is read too)
 # Exit:    0 ok, 1 a margin is below MIN_MARGIN or MIN_INIT_MARGIN, 2 no sizes could be read (a table without BOTH size
-#          columns measures nothing), or a line break in FORGE_FLAGS
+#          columns measures nothing), or a line break in FORGE_FLAGS, or OUT_DIR refused (above)
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -28,6 +32,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/parse.sh" || { echo "size: $HERE/lib/parse.sh is missing"; exit 2; }
 # shellcheck source=lib/forge-env.sh
 . "$HERE/lib/forge-env.sh" || { echo "size: $HERE/lib/forge-env.sh is missing"; exit 2; }
+# shellcheck source=lib/owner-tree.sh
+. "$HERE/lib/owner-tree.sh" || { echo "size: $HERE/lib/owner-tree.sh is missing"; exit 2; }
 
 PROJECT="${1:-.}"
 [ "$#" -gt 0 ] && shift
@@ -42,6 +48,8 @@ forge_flags_one_line size || exit 2
 BASELINE="${BASELINE:-}"
 LIMIT=24576
 INIT_LIMIT=49152
+# never into a tree without the kit's convention (V26b: `size.sh <proj> <Name>` made <proj>/.gauntlet/reports in one)
+report_dir_allowed size "$(pwd -P)" "$OUT_DIR" || { echo "size: nothing measured."; exit 2; }
 mkdir -p "$OUT_DIR"
 RAW="$OUT_DIR/$LABEL.raw.txt"
 OUT="$OUT_DIR/$LABEL.txt"
@@ -71,8 +79,11 @@ fi
 
 if [ "$#" -gt 0 ]; then
   : > "$OUT"
+  # a name also takes that contract's other builds, `<name>.<profile>`: a hook compiled next to the PoolManager's IR
+  # restriction (QUICKSTART 7b) has `<Hook>.manager`, the build the tests deploy and the one the kit says to cite - it
+  # used to be left out of sizes.txt whenever the hook was named
   for want in "$@"; do
-    if ! awk -v w="$want" '$1 == w { print; found = 1 } END { exit found ? 0 : 1 }' "$OUT.all" >> "$OUT"; then
+    if ! awk -v w="$want" '$1 == w || index($1, w ".") == 1 { print; found = 1 } END { exit found ? 0 : 1 }' "$OUT.all" >> "$OUT"; then
       echo "size: contract $want is not in forge's output. NOTHING MEASURED for it."; rm -f "$OUT.all"; exit 2
     fi
   done

@@ -52,7 +52,7 @@ Battery: 88 passing (84 unit + 2 fork + 2 invariant). Hook runtime 21 104 bytes,
 The black-box round (row 12). After it, round 6 - a regression round aimed at: the r05 cause-level fix to the budget accounting (a new guard on the hot path), and the
 Sybil-split trade-off, which round 3 measured and nobody has re-measured since.
 
-## Not verified
+## Not checked yet
 
 The fork test runs against a single pinned block. Nobody has checked behaviour across a block where the base fee
 moves sharply. Noted since round 2.

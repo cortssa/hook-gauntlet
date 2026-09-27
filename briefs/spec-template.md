@@ -23,7 +23,7 @@ block and charges a surcharge above a threshold. Replace all of it.
 # SPEC - {{PROJECT}} {{REVISION}}
 
 Battery: {{TESTS}} passing · size {{SIZE}} (margin {{MARGIN}}) · long fuzz {{FUZZ}} · {{N}} adversarial rounds,
-{{M}} black-box rounds. **Not deployed. Not audited by humans.**
+{{M}} black-box rounds. **Not deployed. No human security review yet.**
 
 ## 1. What this is, in one paragraph
 

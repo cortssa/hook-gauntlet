@@ -1,4 +1,4 @@
-<!-- selftest: judge=3=false,5=false,11b=false rows=11 rc=0 -->
+<!-- selftest: judge=5=false,11b=false rows=11 rc=0 -->
 # STATE - next.sh fixture: before round 1, the chain known, the real manager never run, the owner asked for RPC_URL: row 7b waits on the owner, so row 3 skips it and round 1 goes on (row 11)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*

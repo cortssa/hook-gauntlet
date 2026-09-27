@@ -14,7 +14,7 @@ the reading.
 | what | where | when in the route |
 |---|---|---|
 | Uniswap v4 developer documentation - overview, *Concepts: Hooks*, *Guides: Build Your First Hook* | <https://developers.uniswap.org/docs/protocols/v4/overview> | before phase 0: you cannot interview an owner about a hook if you do not know what a hook can and cannot do |
-| **`v4-template`** (Uniswap Foundation, MIT) - the project layout, the test utilities, the deployment scripts, and its own notes on why a hook deployment fails (wrong flags, wrong deployer in `HookMiner.find`) | <https://github.com/uniswapfoundation/v4-template> | phase 2 starts FROM it. If the template's layout and this kit's examples differ, follow the template |
+| **`v4-template`** (Uniswap Foundation, MIT) - the project layout, the test utilities, the deployment scripts, and its own notes on why a hook deployment fails (wrong flags, wrong deployer in `HookMiner.find`) | <https://github.com/uniswapfoundation/v4-template> | phase 2 starts FROM it. If the template's layout and this kit's examples differ, follow the template. Offline, with no way to fetch it: the kit's own v4 recipe (`QUICKSTART.md` step 7b) is the substitute - a divergence, written in dossier section 8 (the question it answers, the recipe that answered it, why the template was not fetched; `AGENTS.md` section 3, phase 2) |
 | `v4-core` and `v4-periphery`, at the commits `scripts/install-v4.sh` pins | fetched by the script, never vendored here (`PoolManager` is BUSL-1.1) | the final authority on behaviour. `doctrine/V4-ACCOUNTING.md` was checked against the pinned `v4-core`; when the pin moves, that file is stale until somebody re-checks it |
 
 ## 1b. By topic: where the fact lives

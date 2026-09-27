@@ -1,5 +1,5 @@
-<!-- selftest: judge=3=false,5=false,8=false,10=false,11b=false,16=true,18b=false rows=14,3 rc=0 -->
-# STATE - next.sh fixture: the loop is over, the owner wants to freeze, but the real manager never ran and 7b waits on RPC_URL: row 16 is off until 7b has run, nothing else stands - row 3 stops and says what is waiting
+<!-- selftest: judge=5=false,8=false,10=false,11b=false,16=true,18b=false rows=14,STOP rc=0 -->
+# STATE - next.sh fixture: the loop is over, the owner wants to freeze, but the real manager never ran and 7b waits on RPC_URL: row 16 is off until 7b has run, nothing else stands - row 3 pauses the route (STOP) and says what is waiting
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*
 

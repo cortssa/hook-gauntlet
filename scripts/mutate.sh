@@ -28,14 +28,22 @@
 #          (not the environment: the keys ~/.foundry/foundry.toml, the machine's forge configuration, changes in the run
 #          are named in a line and in the log's header, scripts/lib/forge-env.sh)
 #          LABEL       a name for the log                    (default: mutant)
-#          OUT_DIR     where the log goes                    (default: <project>/.gauntlet/reports/mutants)
+#          OUT_DIR     where the log goes                    (default: <project>/.gauntlet/reports/mutants; a relative
+#                      one is from the directory you run this from). Inside a project with no .gauntlet/ (someone else's
+#                      tree) it is refused before anything is written (rc=2), BENCH_ROOT given or not - unless the
+#                      project is a bench or the kit's own (scripts/lib/owner-tree.sh)
 #          KEEP=1      keep the copy and print its path
 #          BASELINE_MAY_BE_RED=1  only with EXPECT=green: accept a baseline with failing tests, for the flow "write the
 #                      regression test first, see it red, then compare candidate fixes". The variant must still be all green.
 #          COPY_ROOT   a parent directory to copy instead of the project alone, for a project that imports from
 #                      outside itself (a remapping like ../src/). The project must be inside it.
-#          BENCH_ROOT  where the throwaway copy is made (created if it does not exist); without it TMPDIR, then /tmp.
-#                      A place the copy cannot be made is refused in one line naming the variable and the path (rc=2).
+#          BENCH_ROOT  where the throwaway copy is made (created if it does not exist); without it <project>/.gauntlet/bench -
+#                      only where the kit's convention is installed (<project>/.gauntlet/ exists): in a tree without it
+#                      (someone else's hook, doctrine/RETROFIT.md) the run is refused before anything is written (rc=2) and
+#                      asks for a BENCH_ROOT outside the project. A place the copy cannot be made is refused in one line
+#                      naming the variable and the path (rc=2), and so is one inside the directory copied, except under a
+#                      `.gauntlet/` (the copy leaves those out); a directory this run created for a root it then refused
+#                      is removed again.
 # Exit:    0 the outcome matched EXPECT      (red: the mutant was KILLED;  green: the variant PASSED)
 #          1 the outcome did not match       (red: the mutant SURVIVED;   green: the variant FAILED)
 #          Judged from forge's test COUNTS, not its exit code alone: a failed test is a failed test when forge exits 0
@@ -58,11 +66,14 @@ TEST_FLAGS="${TEST_FLAGS:-}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 LABEL="${LABEL:-mutant}"
 OUT_DIR="${OUT_DIR:-$PROJECT/.gauntlet/reports/mutants}"
+case "$OUT_DIR" in /*) ;; *) OUT_DIR="$PWD/$OUT_DIR" ;; esac   # the logs are written after a cd into the copy
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
 . "$HERE/lib/parse.sh" || { echo "mutate: $HERE/lib/parse.sh is missing"; exit 2; }
 # shellcheck source=lib/forge-env.sh
 . "$HERE/lib/forge-env.sh" || { echo "mutate: $HERE/lib/forge-env.sh is missing"; exit 2; }
+# shellcheck source=lib/owner-tree.sh
+. "$HERE/lib/owner-tree.sh" || { echo "mutate: $HERE/lib/owner-tree.sh is missing"; exit 2; }
 # forge reads a test filter and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, foundry_match_contract,
 # FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only FOUNDRY_MATCH_CONTRACT): one exported
 # for another command would decide the verdict in silence (measured, 2026-09-27: FORGE_ALLOW_FAILURE made a broken variant
@@ -75,32 +86,20 @@ case "$EXPECT" in red | green) ;; *) echo "mutate: EXPECT must be red or green";
 [ -n "$MUT_OLD" ] || { echo "mutate: the old string is empty"; exit 2; }
 [ "$MUT_OLD" != "$MUT_NEW" ] || { echo "mutate: old and new are the same string"; exit 2; }
 
+# the default copy root is inside the project: only where the kit's convention is installed. Checked before anything is
+# written - the log's own default directory is under <project>/.gauntlet/ too, and creating it would satisfy this check.
+if [ -z "${BENCH_ROOT:-}" ] && [ ! -d "$PROJECT/.gauntlet" ]; then
+  echo "mutate: BENCH_ROOT is not set, and $PROJECT has no .gauntlet/ (the kit's convention is not installed there): the"
+  echo "        throwaway copy would be made inside that tree - doctrine/RETROFIT.md: a bench of your own, never their working"
+  echo "        tree. NOTHING PROVEN, nothing written: set BENCH_ROOT=<a directory outside the project> (and OUT_DIR, whose"
+  echo "        default is <project>/.gauntlet/reports/mutants)."
+  exit 2
+fi
+# ... and the log's directory likewise, BENCH_ROOT given or not (V26b: BENCH_ROOT outside and OUT_DIR unset made
+# <project>/.gauntlet/reports/mutants in a tree without the convention) - scripts/lib/owner-tree.sh
+report_dir_allowed mutate "$PROJECT" "$OUT_DIR" || { echo "mutate: NOTHING PROVEN."; exit 2; }
 mkdir -p "$OUT_DIR"
 LOG="$OUT_DIR/$LABEL.txt"
-# The throwaway copy goes under BENCH_ROOT when there is one (so every write stays where the brief says), else TMPDIR, else
-# /tmp. A BENCH_ROOT that does not exist yet is created. The copy's path is checked before anything is written into it:
-# with a root that did not exist, `mktemp` failed, the path came back EMPTY, and this script ran `cp -a <project>/. /` - a
-# fresh reader saw "cannot create directory '/./src': Permission denied", and as root it would have copied the project
-# into the file system's root (FR8, 2026-09-24).
-if [ -n "${BENCH_ROOT:-}" ]; then COPY_VAR="BENCH_ROOT"; COPY_PARENT="$BENCH_ROOT"
-elif [ -n "${TMPDIR:-}" ]; then COPY_VAR="TMPDIR"; COPY_PARENT="$TMPDIR"
-else COPY_VAR=""; COPY_PARENT="/tmp"; fi
-case "$COPY_PARENT" in /*) ;; *) COPY_PARENT="$PWD/$COPY_PARENT" ;; esac   # absolute: the script cd's into the copy later
-copy_refused() { # copy_refused <why>: one line, naming the variable that chose the place and the place itself
-  if [ -n "$COPY_VAR" ]; then where="$COPY_VAR=$COPY_PARENT"; else where="$COPY_PARENT (neither BENCH_ROOT nor TMPDIR is set)"; fi
-  echo "mutate: cannot make the throwaway copy under $where: $1. NOTHING PROVEN - set BENCH_ROOT to a directory you can write to."
-  exit 2
-}
-if [ "$COPY_VAR" = "BENCH_ROOT" ] && [ ! -d "$COPY_PARENT" ]; then
-  mkdir -p "$COPY_PARENT" 2> /dev/null || copy_refused "it does not exist and cannot be created"
-fi
-[ -d "$COPY_PARENT" ] || copy_refused "it is not a directory (it does not exist?)"
-COPY="$(mktemp -d -p "$COPY_PARENT" mutate.XXXXXX 2> /dev/null)" || COPY=""
-if [ -z "$COPY" ] || [ ! -d "$COPY" ]; then COPY=""; copy_refused "mktemp could not create a directory in it"; fi
-cleanup() { if [ "${KEEP:-0}" = "1" ]; then echo "copy kept at $COPY"; else rm -rf "${COPY:?}"; fi; }
-trap cleanup EXIT
-
-# -a keeps symlinks as symlinks, so a lib/ that points at a shared directory is not duplicated
 REL="."
 if [ -n "${COPY_ROOT:-}" ]; then
   ROOT="$(cd "$COPY_ROOT" 2> /dev/null && pwd)" || { echo "mutate: cannot enter COPY_ROOT $COPY_ROOT"; exit 2; }
@@ -112,9 +111,56 @@ if [ -n "${COPY_ROOT:-}" ]; then
 else
   COPY_SRC="$PROJECT"
 fi
-# a copy that failed half-way (an unreadable file, a full disk) is not the project: building it proves nothing about it
-if ! cp -a "$COPY_SRC/." "$COPY/"; then
-  echo "mutate: the copy of $COPY_SRC into $COPY failed (the cp errors are above). NOTHING PROVEN."; exit 2
+# The throwaway copy goes under BENCH_ROOT when there is one, else under <project>/.gauntlet/bench (created) - inside the
+# project, never $HOME or a shared /tmp (scripts/bench.sh says why). A BENCH_ROOT that does not exist yet is created. The
+# copy's path is checked before anything is written into it: with a root that did not exist, `mktemp` failed, the path
+# came back EMPTY, and this script ran `cp -a <project>/. /` - a fresh reader saw "cannot create directory '/./src':
+# Permission denied", and as root it would have copied the project into the file system's root (FR8, 2026-09-24).
+if [ -n "${BENCH_ROOT:-}" ]; then COPY_VAR="BENCH_ROOT"; COPY_PARENT="$BENCH_ROOT"
+else COPY_VAR=""; COPY_PARENT="$PROJECT/.gauntlet/bench"; fi
+case "$COPY_PARENT" in /*) ;; *) COPY_PARENT="$PWD/$COPY_PARENT" ;; esac   # absolute: the script cd's into the copy later
+# the directories `mkdir -p` below creates for the root: MADE_TOP is the highest of them (empty: the root existed). A root
+# refused after it was made is removed again, down to what existed before (V26: a refused BENCH_ROOT inside the project
+# left its new folder there).
+MADE_TOP=""; p="$COPY_PARENT"
+while [ ! -e "$p" ] && [ ! -L "$p" ] && [ "$p" != "/" ]; do MADE_TOP="$p"; p="$(dirname "$p")"; done
+copy_refused() { # copy_refused <why>: one line, naming the variable that chose the place and the place itself
+  if [ -n "$COPY_VAR" ]; then where="$COPY_VAR=$COPY_PARENT"; else where="$COPY_PARENT (the default: BENCH_ROOT is not set)"; fi
+  echo "mutate: cannot make the throwaway copy under $where: $1. NOTHING PROVEN - set BENCH_ROOT to a directory you can write to."
+  # nothing was copied yet: the empty copy directory goes, and every directory this run created for the root with it
+  if [ -n "${COPY:-}" ]; then rm -rf "${COPY:?}"; COPY=""; fi
+  if [ -n "$MADE_TOP" ]; then
+    d="$COPY_PARENT"
+    while rmdir "$d" 2> /dev/null && [ "$d" != "$MADE_TOP" ]; do d="$(dirname "$d")"; done
+  fi
+  exit 2
+}
+if [ ! -d "$COPY_PARENT" ]; then
+  mkdir -p "$COPY_PARENT" 2> /dev/null || copy_refused "it does not exist and cannot be created"
+fi
+[ -d "$COPY_PARENT" ] || copy_refused "it is not a directory (it does not exist?)"
+COPY="$(mktemp -d -p "$COPY_PARENT" mutate.XXXXXX 2> /dev/null)" || COPY=""
+if [ -z "$COPY" ] || [ ! -d "$COPY" ]; then COPY=""; copy_refused "mktemp could not create a directory in it"; fi
+cleanup() {
+  [ -n "${COPY:-}" ] || return 0
+  if [ "${KEEP:-0}" = "1" ]; then echo "copy kept at $COPY"; else rm -rf "${COPY:?}"; fi
+}
+trap cleanup EXIT
+# ... and never inside what it copies, except strictly under a `.gauntlet` directory, which the copy leaves out: a copy
+# of the project into a directory of the project copies the copy into itself. Checked on the path the file system
+# resolves, the directory that is about to be written into (removed on the way out).
+copy_real="$(cd "$COPY" && pwd -P)"; src_real="$(cd "$COPY_SRC" && pwd -P)"
+case "$copy_real/" in "$src_real"/*)
+  case "/${copy_real#"$src_real"/}/" in */.gauntlet/?*/*) ;;
+    *) copy_refused "the copy ($copy_real) would be inside $src_real, the directory it copies - leave BENCH_ROOT unset (<project>/.gauntlet/bench) or pick one outside" ;;
+  esac ;;
+esac
+
+# a copy that failed half-way (an unreadable file, a full disk) is not the project: building it proves nothing about it.
+# tar keeps symlinks as symlinks (a lib/ that points at a shared directory is not duplicated), and leaves out `.gauntlet/`
+# at any depth: the state files, the reports and the benches - this copy's own parent, by default - are not the code.
+if ! (cd "$COPY_SRC" && tar --exclude=.gauntlet -cf - .) | (cd "$COPY" && tar -xf -); then
+  echo "mutate: the copy of $COPY_SRC into $COPY failed (the tar errors are above). NOTHING PROVEN."; exit 2
 fi
 WORK="$COPY/$REL"
 forge_dotenv_check mutate "$WORK" || { echo "mutate: NOTHING PROVEN."; exit 2; }
@@ -122,7 +168,7 @@ forge_dotenv_check mutate "$WORK" || { echo "mutate: NOTHING PROVEN."; exit 2; }
 # 8 tests "VARIANT PASSED 1 test(s)", measured)
 forge_global_config mutate "$WORK"
 
-# The file must be a file OF THE COPY. `cp -a` keeps a symlink as a symlink, so `lib/X.sol` in the copy can be the
+# The file must be a file OF THE COPY. The copy keeps a symlink as a symlink, so `lib/X.sol` in the copy can be the
 # ORIGINAL `lib/X.sol` of whatever the link points at (a shared lib/, a monorepo's package): the mutation below would be
 # written through the link into the original, and "the original is never touched" would be false. Found by an outside
 # static review (2026-09-23): `mv` replaced the original through a symlinked lib/. Checked before anything is built.

@@ -62,11 +62,14 @@ mutation, measured".
 ### Running it on a bench
 
 ```sh
-BENCH_ROOT=$HOME scripts/bench.sh mybench foundry-kit      # links foundry-kit/lib AND foundry-kit/v4/lib
-SRC_DIRS="src test ../src" scripts/battery.sh ~/mybench/v4
+BENCH_ROOT=foundry-kit/.gauntlet/bench scripts/bench.sh mybench foundry-kit      # links foundry-kit/lib AND foundry-kit/v4/lib
+SRC_DIRS="src test ../src" scripts/battery.sh foundry-kit/.gauntlet/bench/mybench/v4
 ```
 
-Three details that are not obvious. The bench copies **`foundry-kit`**, not `foundry-kit/v4`, because the v4
+The root is named here because the scripts' own default, `<project>/.gauntlet/bench`, applies only once the project has
+a `.gauntlet/` (the kit's convention installed - a battery run makes one; in a tree without it the scripts refuse and
+ask for `BENCH_ROOT`); `.gauntlet/` is left out of every copy, so the bench never holds itself. Never `$HOME`: it is
+shared by every project and every agent on the machine. Three details that are not obvious. The bench copies **`foundry-kit`**, not `foundry-kit/v4`, because the v4
 project remaps `gauntlet-kit/` to `../src` and a bench of the subdirectory alone has no parent to remap to
 (`scripts/fuzz-long.sh foundry-kit/v4` knows this and benches `foundry-kit` by itself). The dependency directories are
 `lib/` at the root and `lib/` beside every nested `foundry.toml`, found and linked one by one - and nothing else called
@@ -90,15 +93,17 @@ every refresh with `BENCH_EXCLUDE` set, and the fixtures this paragraph promised
 ### The long fuzz on the example
 
 ```sh
-BENCH_ROOT=$HOME/mybenches scripts/fuzz-long.sh foundry-kit/v4        # the `long` profile: 1000 runs x 128 depth
+BENCH_ROOT=foundry-kit/v4/.gauntlet/bench scripts/fuzz-long.sh foundry-kit/v4        # the `long` profile: 1000 runs x 128 depth
 CORE="swap swapBurst dustAheadOfVictim" REACH="fee at the cap;victim traded after dust in its block" \
-  scripts/census.sh --aggregate $HOME/mybenches/fuzz-long-v4-*/v4/census/long.tsv foundry-kit/v4   # the gate: record in .gauntlet/reports/06-census-gate.txt, verdict on the last line; fuzz-long only prints the table
+  scripts/census.sh --aggregate foundry-kit/v4/.gauntlet/bench/fuzz-long-v4-*/v4/census/long.tsv foundry-kit/v4   # the gate: record in .gauntlet/reports/06-census-gate.txt, verdict on the last line; fuzz-long only prints the table
 ```
 
 What a stranger hits, measured on 2026-09-23 (forge 1.8.1, `src/examples/SPEC.md` section 7 has the numbers). It
 takes about **two and a half minutes** here (134 s, one worker at about 900 calls a second), not a night. It benches
 `foundry-kit`, not `foundry-kit/v4` (the parent it remaps to), into `$BENCH_ROOT/fuzz-long-v4-<hash>`; `BENCH_ROOT`
-defaults to `~/.gauntlet/bench`, so set it if your benches live elsewhere. The log and the census table land in YOUR
+defaults to `foundry-kit/v4/.gauntlet/bench` - the project's own `.gauntlet/`, which no bench copies - once that
+`.gauntlet/` exists (before it does, the run is refused and asks for `BENCH_ROOT`: the example above names it), so set it
+if your benches live elsewhere (the numbers above were measured with the bench under `~/.gauntlet/bench`, the default then). The log and the census table land in YOUR
 tree, `foundry-kit/v4/.gauntlet/reports/05-fuzz-long.txt` and `06-census-long.txt` (the everyday `census.sh` writes `06-census.txt`, so neither overwrites the other); the census file and the corpus stay in the
 BENCH (`<bench>/v4/census/long.tsv`, `<bench>/v4/corpus/invariant`). **The next run keeps both directories**: the
 bench's refresh never deletes `corpus/` or `census/` (`fuzz-long.sh` passes them to `bench.sh` as `BENCH_KEEP`), and a

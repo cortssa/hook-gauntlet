@@ -1,0 +1,3 @@
+# Copied into <project>/.gauntlet/ with the state files (state/README.md, "Installing"). The benches the kit makes live
+# in <project>/.gauntlet/bench/ (scripts/bench.sh, fuzz-long.sh, mutate.sh): copies of the project, never committed.
+bench/

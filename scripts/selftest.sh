@@ -780,17 +780,80 @@ if grep -Eq '^ToyVault +1672 +22904 +1811 +47341 ' "$TMP/o110"; then echo "  ok 
   echo "  FAIL  size.sh does not report the initcode size and margin: $(grep ToyVault "$TMP/o110")"; fails=$((fails + 1)); fi
 SHIM_SIZES="$FIX/sizes-real.txt" MIN_INIT_MARGIN=48000 PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o111" 2>&1
 check "size.sh: an initcode margin below MIN_INIT_MARGIN fails" 1 $? "$TMP/o111"
+# a hook compiled next to the PoolManager's IR restriction has two builds, `<Hook>` and `<Hook>.manager` - the one the
+# tests deploy, the one to cite (QUICKSTART 7b). Named on the command line, the hook's .manager row is in sizes.txt too
+# (it was left out: `$1 == name` only). The fixture is cut from the v4 battery's own --sizes table (forge 1.8.1).
+SHIM_SIZES="$FIX/sizes-real-v4-manager.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fsm" "$HERE/size.sh" "$FP" DeltaFeeHook > "$TMP/o666" 2>&1
+check "size.sh DeltaFeeHook on the v4 module's table" 0 $? "$TMP/o666"
+if [ "$(cut -d' ' -f1 "$TMP/fsm/sizes.txt" 2> /dev/null | tr '\n' ' ')" = "DeltaFeeHook DeltaFeeHook.manager " ]; then
+  echo "  ok    and sizes.txt holds both builds of the hook - its .manager row included - and nothing else"; else
+  echo "  FAIL  sizes.txt for DeltaFeeHook: $(tr '\n' ';' < "$TMP/fsm/sizes.txt" 2> /dev/null)"; fails=$((fails + 1)); fi
 SHIM_SIZES="$FIX/sizes-nm-no-initcode.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o112" 2>&1
 check "size.sh on a table with no Initcode column measures nothing (the phase-2 gate needs both)" 2 $? "$TMP/o112"
 SHIM_SIZES="$FIX/sizes-nm-renamed-header.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o104" 2>&1
 check "size.sh on a table whose runtime column is not called Runtime Size measures nothing" 2 $? "$TMP/o104"
 SHIM_SIZES="$FIX/sizes-nm-no-header.txt" PATH="$FS:$PATH" OUT_DIR="$TMP/fs" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o105" 2>&1
 check "size.sh on a table with no header measures nothing" 2 $? "$TMP/o105"
+# K26c (V26b): no script writes its reports into a tree where the kit's convention is not installed (no .gauntlet/:
+# someone else's tree, doctrine/RETROFIT.md). battery.sh, size.sh, census.sh (run and --aggregate), fuzz-long.sh
+# (USE_BENCH=0 too) and mutate.sh made <project>/.gauntlet/reports in one; each now refuses before writing anything,
+# unless OUT_DIR is outside the tree, the tree is a bench (bench.sh's .gauntlet-bench marker) or the kit's own
+# foundry-kit/ (scripts/lib/owner-tree.sh). $FP has no .gauntlet/ here; the shim answers any forge call.
+own_clean() { # own_clean <label> <out file> [<path that must not exist>...]: nothing written into $FP
+  local label="$1" out="$2" p left=""; shift 2
+  for p in "$FP/.gauntlet" "$FP/census" "$@"; do [ ! -e "$p" ] || left="$left ${p#"$FP"/}"; done
+  if [ -z "$left" ] && grep -qF 'Refusing, nothing written: set OUT_DIR=<a directory outside the project>' "$out" && grep -q 'RETROFIT' "$out"; then
+    echo "  ok    $label: refused before writing, with the reason and what to set"; else
+    echo "  FAIL  $label: left in the owner's tree:${left:- nothing}"; sed "s/^/        | /" "$out" | head -8; fails=$((fails + 1)); fi
+  rm -rf "$FP/.gauntlet" "$FP/census" "$@"
+}
+PATH="$FS:$PATH" env -u OUT_DIR "$HERE/battery.sh" "$FP" > "$TMP/o813" 2>&1; check "battery.sh in a tree with no .gauntlet/, OUT_DIR unset: refused, nothing run" 2 $? "$TMP/o813"
+own_clean "battery.sh" "$TMP/o813"
+PATH="$FS:$PATH" env -u OUT_DIR "$HERE/size.sh" "$FP" ToyVault > "$TMP/o814" 2>&1; check "size.sh in a tree with no .gauntlet/, OUT_DIR unset: refused" 2 $? "$TMP/o814"
+own_clean "size.sh" "$TMP/o814"
+PATH="$FS:$PATH" OUT_DIR="$FP/reports" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o815" 2>&1; check "size.sh with OUT_DIR inside that tree (given, not outside): refused" 2 $? "$TMP/o815"
+own_clean "size.sh, OUT_DIR=<project>/reports" "$TMP/o815" "$FP/reports"
+PATH="$FS:$PATH" OUT_DIR="rel-reports" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o816" 2>&1; check "size.sh with a relative OUT_DIR (under the project): refused" 2 $? "$TMP/o816"
+own_clean "size.sh, OUT_DIR relative" "$TMP/o816" "$FP/rel-reports"
+printf 'run\taction\tcalls\treverts\n1\tinc\t10\t0\n' > "$TMP/own.tsv"
+PATH="$FS:$PATH" env -u OUT_DIR CORE=inc "$HERE/census.sh" --aggregate "$TMP/own.tsv" "$FP" > "$TMP/o817" 2>&1; check "the census gate (QUICKSTART's line) on a tree with no .gauntlet/: refused" 2 $? "$TMP/o817"
+own_clean "census.sh --aggregate <tsv> <project>" "$TMP/o817"
+case "$(tail -1 "$TMP/o817")" in "census gate: FAILED - no record written"*) echo "  ok    and its last line is the gate's verdict: FAILED, no record written" ;;
+  *) echo "  FAIL  the gate's last line: $(tail -1 "$TMP/o817")"; fails=$((fails + 1)) ;; esac
+PATH="$FS:$PATH" env -u OUT_DIR "$HERE/census.sh" "$FP" > "$TMP/o818" 2>&1; check "census.sh (run mode) on a tree with no .gauntlet/: refused" 2 $? "$TMP/o818"
+own_clean "census.sh <project>" "$TMP/o818"
+PATH="$FS:$PATH" env -u OUT_DIR USE_BENCH=0 "$HERE/fuzz-long.sh" "$FP" > "$TMP/o819" 2>&1; check "fuzz-long.sh USE_BENCH=0 on a tree with no .gauntlet/: refused" 2 $? "$TMP/o819"
+own_clean "fuzz-long.sh USE_BENCH=0" "$TMP/o819"
+PATH="$FS:$PATH" env -u OUT_DIR BENCH_ROOT="$TMP/own-benches" "$HERE/fuzz-long.sh" "$FP" > "$TMP/o820" 2>&1; check "fuzz-long.sh with BENCH_ROOT outside and OUT_DIR unset: refused" 2 $? "$TMP/o820"
+[ ! -e "$TMP/own-benches" ] || { echo "  FAIL  and a bench was made under BENCH_ROOT"; fails=$((fails + 1)); }
+own_clean "fuzz-long.sh, BENCH_ROOT outside, OUT_DIR unset" "$TMP/o820"
+PATH="$FS:$PATH" env -u OUT_DIR BENCH_ROOT="$TMP/own-mr" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o821" 2>&1; check "mutate.sh with BENCH_ROOT outside and OUT_DIR unset: refused" 2 $? "$TMP/o821"
+[ ! -e "$TMP/own-mr" ] || { echo "  FAIL  and the copy's root was made"; fails=$((fails + 1)); }
+own_clean "mutate.sh, BENCH_ROOT outside, OUT_DIR unset" "$TMP/o821"
+# ... allowed: a bench (the marker bench.sh writes into every bench), in it or in a folder below it
+BL="$TMP/benchlike"; rm -rf "$BL"; cp -R "$FP" "$BL"; printf 'a bench made by hook-gauntlet scripts/bench.sh\n' > "$BL/.gauntlet-bench"; mkdir -p "$BL/sub"; cp "$FP/foundry.toml" "$BL/sub/"
+PATH="$FS:$PATH" env -u OUT_DIR "$HERE/size.sh" "$BL" ToyVault > "$TMP/o822" 2>&1; check "size.sh in a bench (.gauntlet-bench), OUT_DIR unset: allowed" 0 $? "$TMP/o822"
+PATH="$FS:$PATH" env -u OUT_DIR "$HERE/size.sh" "$BL/sub" ToyVault > "$TMP/o823" 2>&1; check "size.sh in a folder of a bench (the marker above it): allowed" 0 $? "$TMP/o823"
+if [ -f "$BL/.gauntlet/reports/sizes.txt" ] && [ -f "$BL/sub/.gauntlet/reports/sizes.txt" ]; then echo "  ok    and the reports are in the bench"; else
+  echo "  FAIL  the reports in the bench: $(find "$BL" -name sizes.txt | tr '\n' ' ')"; fails=$((fails + 1)); fi
+rm -rf "$BL"
+# ... and the kit's own worked examples (a fresh clone has no foundry-kit/.gauntlet: `scripts/battery.sh foundry-kit`,
+# QUICKSTART and CI) - measured on a copy of the kit, so that this checkout's foundry-kit/ is not written
+FKC="$TMP/kit-copy"; rm -rf "$FKC"; mkdir -p "$FKC/foundry-kit/v4" "$FKC/other"; cp -R "$HERE" "$FKC/scripts"
+for d in foundry-kit foundry-kit/v4 other; do printf '[profile.default]\n' > "$FKC/$d/foundry.toml"; done
+PATH="$FS:$PATH" env -u OUT_DIR "$FKC/scripts/size.sh" "$FKC/foundry-kit" ToyVault > "$TMP/o824" 2>&1; check "size.sh on the kit's own foundry-kit/, no .gauntlet/: allowed" 0 $? "$TMP/o824"
+PATH="$FS:$PATH" env -u OUT_DIR "$FKC/scripts/size.sh" "$FKC/foundry-kit/v4" ToyVault > "$TMP/o825" 2>&1; check "... and on foundry-kit/v4" 0 $? "$TMP/o825"
+PATH="$FS:$PATH" env -u OUT_DIR "$FKC/scripts/size.sh" "$FKC/other" ToyVault > "$TMP/o826" 2>&1; check "... but not on another folder of the kit's checkout" 2 $? "$TMP/o826"
+if [ -f "$FKC/foundry-kit/.gauntlet/reports/sizes.txt" ] && [ -f "$FKC/foundry-kit/v4/.gauntlet/reports/sizes.txt" ] && [ ! -e "$FKC/other/.gauntlet" ]; then
+  echo "  ok    and the reports are where the kit's .gitignore keeps them out of git"; else
+  echo "  FAIL  the kit's own reports: $(cd "$FKC" && find . -path '*/.gauntlet/*' -type f | tr '\n' ' ')"; fails=$((fails + 1)); fi
+rm -rf "$FKC"
 unset SHIM_SIZES SHIM_TEST
 # mutate.sh's baseline build fails; the shim prints a log whose END is warnings. The cause must be on the screen.
 FS2="$TMP/fshim2"; mkdir -p "$FS2"
 printf '#!/usr/bin/env bash\ncase " $* " in\n  *" build "*) cat "%s"; exit 1 ;;\nesac\necho "Compiler run successful!"; exit 0\n' "$FIX/build-nm-error-then-warnings.txt" > "$FS2/forge"; chmod +x "$FS2/forge"
 printf 'contract A { uint256 x; }\n' > "$FP/src/A.sol"
+mkdir -p "$FP/.gauntlet"   # the kit's convention installed: mutate.sh's default copy root is <project>/.gauntlet/bench (K26b)
 PATH="$FS2:$PATH" LABEL=m17 OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o113" 2>&1
 check "mutate.sh on a copy that does not build: nothing proven" 2 $? "$TMP/o113"
 if grep -q 'first error: Error (6275): Source "../src/InvariantBase.sol" not found' "$TMP/o113"; then
@@ -809,11 +872,39 @@ if [ "$under193" -eq 1 ] && [ -f "$kept193/src/A.sol" ] && grep -q "does not com
   echo "  ok    and the copy landed under the created root, not at /"; else
   echo "  FAIL  the copy did not land under the BENCH_ROOT it was given (kept at: ${kept193:-nothing}):"; sed "s/^/        | /" "$TMP/o193" | head -8; fails=$((fails + 1)); fi
 [ -n "$kept193" ] && [ "$under193" -eq 1 ] && rm -rf "$kept193"
-PATH="$FS2:$PATH" TMPDIR="$TMP/no-such-tmp" LABEL=m19 OUT_DIR="$TMP/mut0" env -u BENCH_ROOT "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o194" 2>&1
-check "mutate.sh with no BENCH_ROOT and a TMPDIR that does not exist is refused" 2 $? "$TMP/o194"
-if [ "$(grep -cF "mutate: cannot make the throwaway copy under TMPDIR=$TMP/no-such-tmp" "$TMP/o194")" = "1" ] && ! grep -q "^cp: \|resolves to \|does not compile" "$TMP/o194"; then
-  echo "  ok    and the refusal is one line naming TMPDIR and its path, before anything is copied"; else
-  echo "  FAIL  the refusal for a missing TMPDIR:"; sed "s/^/        | /" "$TMP/o194" | head -8; fails=$((fails + 1)); fi
+# no BENCH_ROOT: the copy goes under <project>/.gauntlet/bench (K26: never $HOME or a shared /tmp; TMPDIR is not read), and
+# it holds no .gauntlet/ - the reports, the state, and the bench it sits in (`cp -a` of the project would copy it into itself)
+mkdir -p "$FP/.gauntlet/reports"; printf 'a report\n' > "$FP/.gauntlet/reports/r.txt"
+PATH="$FS2:$PATH" KEEP=1 TMPDIR="$TMP/no-such-tmp" LABEL=m19 OUT_DIR="$TMP/mut0" env -u BENCH_ROOT "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o194" 2>&1
+check "mutate.sh with no BENCH_ROOT: the copy is made under <project>/.gauntlet/bench" 2 $? "$TMP/o194"
+kept194="$(sed -n 's/^copy kept at //p' "$TMP/o194")"
+case "$kept194" in "$FP/.gauntlet/bench/mutate."*) under194=1 ;; *) under194=0 ;; esac
+if [ "$under194" -eq 1 ] && [ -f "$kept194/src/A.sol" ] && [ ! -e "$kept194/.gauntlet" ] && grep -q "does not compile BEFORE" "$TMP/o194" && [ ! -e "$TMP/no-such-tmp" ]; then
+  echo "  ok    and it landed there, without the project's .gauntlet/ in it, and TMPDIR was not used"; else
+  echo "  FAIL  the copy with no BENCH_ROOT (kept at: ${kept194:-nothing}; .gauntlet in it: $([ -e "$kept194/.gauntlet" ] && echo YES || echo no)):"; sed "s/^/        | /" "$TMP/o194" | head -8; fails=$((fails + 1)); fi
+[ "$under194" -eq 1 ] && rm -rf "$kept194"
+rm -rf "$FP/.gauntlet"
+# K26b (V26): no BENCH_ROOT, and the project has no .gauntlet/ (the convention not installed: someone else's tree,
+# RETROFIT.md) - refused before anything is written, the log's default directory under .gauntlet/ included
+PATH="$FS2:$PATH" LABEL=m19c env -u BENCH_ROOT -u OUT_DIR "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o692" 2>&1
+check "mutate.sh with no BENCH_ROOT, in a tree with no .gauntlet/, is refused" 2 $? "$TMP/o692"
+if grep -qF 'set BENCH_ROOT=<a directory outside the project>' "$TMP/o692" && ! grep -q "does not compile" "$TMP/o692" && [ ! -e "$FP/.gauntlet" ]; then
+  echo "  ok    before building anything, and nothing was written into the tree"; else
+  echo "  FAIL  mutate.sh in the owner's tree: .gauntlet $([ -e "$FP/.gauntlet" ] && echo CREATED || echo absent):"; sed "s/^/        | /" "$TMP/o692" | head -8; fails=$((fails + 1)); fi
+rm -rf "$FP/.gauntlet"
+# ... and a BENCH_ROOT inside the project, anywhere but under a .gauntlet/, is refused before anything is copied into it -
+# and the folder the run created for it is removed again (V26: it was left in the project)
+PATH="$FS2:$PATH" BENCH_ROOT="$FP/scratch" LABEL=m19b OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o639" 2>&1
+check "mutate.sh with a BENCH_ROOT inside the project (not under .gauntlet/) is refused" 2 $? "$TMP/o639"
+if grep -qF "would be inside $FP, the directory it copies" "$TMP/o639" && ! grep -q "does not compile" "$TMP/o639" && [ ! -e "$FP/scratch" ]; then
+  echo "  ok    in one line naming why, before building anything, and the folder it made for the root is gone"; else
+  echo "  FAIL  a copy into the project itself was not refused, or its folder was left ($([ -e "$FP/scratch" ] && echo LEFT || echo gone)):"; sed "s/^/        | /" "$TMP/o639" | head -8; fails=$((fails + 1)); fi
+mkdir -p "$FP/keep"; printf 'kept\n' > "$FP/keep/K.txt"
+PATH="$FS2:$PATH" BENCH_ROOT="$FP/keep/a/b" LABEL=m19d OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o693" 2>&1
+check "mutate.sh with a deeper BENCH_ROOT inside the project, under a folder that existed" 2 $? "$TMP/o693"
+if [ ! -e "$FP/keep/a" ] && [ -f "$FP/keep/K.txt" ]; then echo "  ok    and every folder it made is gone, the one that existed is kept"; else
+  echo "  FAIL  after the refusal: keep/a $([ -e "$FP/keep/a" ] && echo LEFT || echo gone), keep/K.txt $([ -f "$FP/keep/K.txt" ] && echo kept || echo GONE)"; fails=$((fails + 1)); fi
+rm -rf "$FP/scratch" "$FP/keep"
 printf 'not a directory\n' > "$TMP/afile"
 PATH="$FS2:$PATH" BENCH_ROOT="$TMP/afile/root" LABEL=m20 OUT_DIR="$TMP/mut0" "$HERE/mutate.sh" "$FP" src/A.sol "uint256 x;" "uint256 y;" > "$TMP/o195" 2>&1
 check "mutate.sh with a BENCH_ROOT that cannot be created is refused" 2 $? "$TMP/o195"
@@ -979,6 +1070,72 @@ if [ "$(wc -l < "$TMP/o168" | tr -d ' ')" = "1" ] && grep -q 'gauntlet-bench' "$
 BENCH_ROOT="$TMP/bb4" "$HERE/bench.sh" fresh "$NL" > "$TMP/o169" 2>&1; check "a bench under a name that did not exist" 0 $? "$TMP/o169"
 if [ -f "$TMP/bb4/fresh/.gauntlet-bench" ] && [ -f "$TMP/bb4/fresh/src/N.sol" ]; then echo "  ok    and it holds the marker"; else
   echo "  FAIL  a new bench has no marker"; fails=$((fails + 1)); fi
+# the default root (K26): <project>/.gauntlet/bench - inside the project, in the one directory no copy enters (`.gauntlet`
+# is left out of every bench), never $HOME. Two benches and a refresh: neither holds the other, nor the project's state
+DP="$TMP/defproj"; mkdir -p "$DP/src" "$DP/v4/src" "$DP/.gauntlet/reports" "$TMP/fakehome"
+printf '[profile.default]\n' > "$DP/foundry.toml"; printf 'contract S {}\n' > "$DP/src/S.sol"; printf 'contract V {}\n' > "$DP/v4/src/V.sol"
+printf '# STATE\n' > "$DP/.gauntlet/STATE.md"; printf 'a report\n' > "$DP/.gauntlet/reports/r.txt"
+DPR="$(cd "$DP" && pwd -P)"
+(cd "$TMP" && env -u BENCH_ROOT HOME="$TMP/fakehome" "$HERE/bench.sh" d1 "$DP") > "$TMP/o660" 2>&1; check "a bench with BENCH_ROOT unset" 0 $? "$TMP/o660"
+(cd "$TMP" && env -u BENCH_ROOT HOME="$TMP/fakehome" "$HERE/bench.sh" d2 "$DP") > "$TMP/o661" 2>&1; check "a second one beside it" 0 $? "$TMP/o661"
+(cd "$TMP" && env -u BENCH_ROOT HOME="$TMP/fakehome" "$HERE/bench.sh" d1 "$DP") > "$TMP/o662" 2>&1; check "the first one, refreshed" 0 $? "$TMP/o662"
+if [ "$(tail -1 "$TMP/o660")" = "$DPR/.gauntlet/bench/d1" ] && [ -f "$DP/.gauntlet/bench/d1/.gauntlet-bench" ] && [ -f "$DP/.gauntlet/bench/d1/src/S.sol" ] \
+  && [ ! -e "$DP/.gauntlet/bench/d1/.gauntlet" ] && [ ! -e "$DP/.gauntlet/bench/d2/.gauntlet" ] && [ ! -e "$TMP/fakehome/.gauntlet" ] \
+  && [ -f "$DP/.gauntlet/STATE.md" ] && [ -f "$DP/.gauntlet/reports/r.txt" ]; then
+  echo "  ok    it is <project>/.gauntlet/bench/<name>, nothing of .gauntlet/ is in either bench, the state is kept, HOME untouched"; else
+  echo "  FAIL  the default bench: path '$(tail -1 "$TMP/o660")', .gauntlet in d1 $([ -e "$DP/.gauntlet/bench/d1/.gauntlet" ] && echo YES || echo no), under HOME $([ -e "$TMP/fakehome/.gauntlet" ] && echo YES || echo no)"; fails=$((fails + 1)); fi
+# a root under a NESTED .gauntlet (fuzz-long benches a module's parent into the module's own .gauntlet/bench) is allowed;
+# the project's .gauntlet ITSELF as a bench, or a root anywhere else inside the project, is not
+BENCH_ROOT="$DP/v4/.gauntlet/bench" "$HERE/bench.sh" n1 "$DP" > "$TMP/o663" 2>&1; check "a bench under the module's own .gauntlet/ (a nested one)" 0 $? "$TMP/o663"
+if [ -f "$DP/v4/.gauntlet/bench/n1/v4/src/V.sol" ] && [ ! -e "$DP/v4/.gauntlet/bench/n1/v4/.gauntlet" ] && [ ! -e "$DP/v4/.gauntlet/bench/n1/.gauntlet" ]; then
+  echo "  ok    and it holds the module, not the .gauntlet it lives in"; else echo "  FAIL  the nested bench holds a .gauntlet, or not the module"; fails=$((fails + 1)); fi
+BENCH_ROOT="$DP" "$HERE/bench.sh" .gauntlet "$DP" > "$TMP/o664" 2>&1; check "the project's .gauntlet/ itself as a bench is refused" 1 $? "$TMP/o664"
+if [ -f "$DP/.gauntlet/STATE.md" ] && [ ! -e "$DP/.gauntlet/.gauntlet-bench" ] && grep -q "overlap" "$TMP/o664"; then
+  echo "  ok    as an overlap, and the state is untouched"; else echo "  FAIL  .gauntlet/ was made a bench, or the refusal is not the overlap:"; sed "s/^/        | /" "$TMP/o664"; fails=$((fails + 1)); fi
+# K26b (V26): the default root only where the kit's convention is installed. A tree with no .gauntlet/ - an existing
+# hook, someone else's working tree (doctrine/RETROFIT.md: a bench of your own, never their working tree) - is refused
+# before anything is written, and asked for a BENCH_ROOT outside it
+OT="$TMP/ownertree"; mkdir -p "$OT/src"; printf '[profile.default]\n' > "$OT/foundry.toml"; printf 'contract O {}\n' > "$OT/src/O.sol"
+(cd "$TMP" && env -u BENCH_ROOT HOME="$TMP/fakehome" "$HERE/bench.sh" r1 "$OT") > "$TMP/o684" 2>&1
+check "a bench with BENCH_ROOT unset, in a tree with no .gauntlet/ (the convention not installed), is refused" 1 $? "$TMP/o684"
+if grep -qF 'set BENCH_ROOT=<a directory outside the project>' "$TMP/o684" && grep -q 'RETROFIT' "$TMP/o684" && [ ! -e "$OT/.gauntlet" ] && [ ! -e "$TMP/fakehome/.gauntlet" ]; then
+  echo "  ok    and it says why (RETROFIT) and what to set, and nothing was written into the tree or HOME"; else
+  echo "  FAIL  the owner's tree: .gauntlet $([ -e "$OT/.gauntlet" ] && echo CREATED || echo absent):"; sed "s/^/        | /" "$TMP/o684"; fails=$((fails + 1)); fi
+BENCH_ROOT="$TMP/otb" "$HERE/bench.sh" r1 "$OT" > "$TMP/o685" 2>&1; check "the same tree with BENCH_ROOT outside it" 0 $? "$TMP/o685"
+if [ -f "$TMP/otb/r1/src/O.sol" ] && [ ! -e "$OT/.gauntlet" ]; then echo "  ok    and the tree is untouched"; else
+  echo "  FAIL  the bench outside the owner's tree: $(tail -1 "$TMP/o685"), .gauntlet in the tree $([ -e "$OT/.gauntlet" ] && echo CREATED || echo absent)"; fails=$((fails + 1)); fi
+# a bench that withholds the SOURCE is refused anywhere inside the project, .gauntlet/ included: from
+# <project>/.gauntlet/bench/<name>, ../../.. is the project (V26: "isolation verified", and ../../../src listed the source)
+(cd "$TMP" && env -u BENCH_ROOT BENCH_EXCLUDE="src script" "$HERE/bench.sh" bb "$DP") > "$TMP/o686" 2>&1
+check "a source-free bench (BENCH_EXCLUDE=\"src script\") with BENCH_ROOT unset is refused" 1 $? "$TMP/o686"
+if grep -q 'withholds the source' "$TMP/o686" && grep -qF 'set BENCH_ROOT=<a directory outside the project>' "$TMP/o686" && ! grep -q 'isolation verified' "$TMP/o686" \
+  && [ ! -e "$DP/.gauntlet/bench/bb" ]; then
+  echo "  ok    with the reason and the fix, and no bench was made"; else
+  echo "  FAIL  the source-free bench inside the project:"; sed "s/^/        | /" "$TMP/o686"; fails=$((fails + 1)); fi
+BENCH_ROOT="$DP/.gauntlet/bench" BENCH_EXCLUDE="v4/src" "$HERE/bench.sh" bb2 "$DP" > "$TMP/o687" 2>&1
+check "a source-free bench (v4/src) with BENCH_ROOT under the project's .gauntlet/ is refused" 1 $? "$TMP/o687"
+[ ! -e "$DP/.gauntlet/bench/bb2" ] || { echo "  FAIL  and a bench was made"; fails=$((fails + 1)); }
+BENCH_ROOT="$DP/.gauntlet/bench" BENCH_EXCLUDE="*.hex" "$HERE/bench.sh" hx "$DP" > "$TMP/o688" 2>&1
+check "a bench that withholds fetched fixtures only (*.hex) may still live under .gauntlet/" 0 $? "$TMP/o688"
+BENCH_ROOT="$TMP/bbout" BENCH_EXCLUDE="src script" "$HERE/bench.sh" bb "$DP" > "$TMP/o689" 2>&1
+check "the source-free bench with BENCH_ROOT outside the project" 0 $? "$TMP/o689"
+if grep -q 'isolation verified' "$TMP/o689" && [ -f "$TMP/bbout/bb/.gauntlet-bench" ] && ! grep -qF "$DPR" "$TMP/bbout/bb/.gauntlet-bench" \
+  && ! grep -qF "$DP" "$TMP/bbout/bb/.gauntlet-bench" && grep -q 'cksum [0-9]' "$TMP/bbout/bb/.gauntlet-bench"; then
+  echo "  ok    and its .gauntlet-bench marker names the project by a hash, not by its path"; else
+  echo "  FAIL  the source-free bench's marker: $(cat "$TMP/bbout/bb/.gauntlet-bench" 2> /dev/null)"; fails=$((fails + 1)); fi
+printf 'a bench made by hook-gauntlet scripts/bench.sh (name bb, from %s). A refresh deletes what the project does not have.\n' "$DPR" > "$TMP/bbout/bb/.gauntlet-bench"
+BENCH_ROOT="$TMP/bbout" BENCH_EXCLUDE="src script" "$HERE/bench.sh" bb "$DP" > "$TMP/o690" 2>&1
+check "the same bench refreshed over a marker an earlier version wrote with the path" 0 $? "$TMP/o690"
+if ! grep -qF "$DPR" "$TMP/bbout/bb/.gauntlet-bench" && grep -q 'cksum [0-9]' "$TMP/bbout/bb/.gauntlet-bench"; then
+  echo "  ok    and the refresh rewrote the marker without the path"; else
+  echo "  FAIL  the old marker with the path survived the refresh: $(cat "$TMP/bbout/bb/.gauntlet-bench")"; fails=$((fails + 1)); fi
+# fuzz-long.sh's default bench likewise (no forge is reached: the refusal comes first)
+(cd "$TMP" && env -u BENCH_ROOT -u OUT_DIR HOME="$TMP/fakehome" "$HERE/fuzz-long.sh" "$OT") > "$TMP/o691" 2>&1
+check "fuzz-long.sh with BENCH_ROOT unset, in a tree with no .gauntlet/, is refused" 2 $? "$TMP/o691"
+if grep -qF 'set BENCH_ROOT=<a directory outside the project>' "$TMP/o691" && grep -q 'NOTHING PROVEN' "$TMP/o691" && [ ! -e "$OT/.gauntlet" ]; then
+  echo "  ok    and nothing was written into the tree (the log's default directory included)"; else
+  echo "  FAIL  fuzz-long.sh in the owner's tree: .gauntlet $([ -e "$OT/.gauntlet" ] && echo CREATED || echo absent):"; sed "s/^/        | /" "$TMP/o691" | head -6; fails=$((fails + 1)); fi
+rm -rf "$DP" "$TMP/fakehome" "$OT" "$TMP/otb" "$TMP/bbout"
 
 # ================================================================= round.sh (the ROUND line, written and read back; no forge needed)
 echo "== round.sh =="
@@ -1077,7 +1234,9 @@ nx_ids() { # nx_ids <NEXT.md>: the id of every row of the table, in order
   LC_ALL=C awk '{ sub(/\r$/, "") } /^## / { t = ($0 ~ /^## The table/); next }
     t && /^\|/ && !/^\|[-:| ]+$/ { split($0, c, /[|]/); id = c[2]; gsub(/^[ \t]+|[ \t]+$/, "", id); if (id != "#") print id }' "$1"
 }
-nx_rows() { sed -nE 's/^(next|passed|in force|needs judgement): row ([0-9]+[A-Za-z]*)( .*)?$/\2/p' "$1" | tr '\n' ',' | sed 's/,$//'; }
+# the rows the output names, in order - and STOP for row 3's pause (`next: STOP - paused, waiting on the owner: ...`), STOP?
+# for the line that says the pause is only CONDITIONAL, rows still to judge (`if every answer is false: STOP - paused, ...`)
+nx_rows() { sed -nE 's/^(next|passed|in force|needs judgement): row ([0-9]+[A-Za-z]*)( .*)?$/\2/p; s/^next: (STOP) - .*/\1/p; s/^if every answer is false: (STOP) - .*/\1?/p' "$1" | tr '\n' ',' | sed 's/,$//'; }
 nx_meta() { sed -nE "1s/.* $2=([^ ]+).*/\\1/p" "$1"; }   # nx_meta <fixture> <judge|rows|rc>
 "$NX" --check-table > "$TMP/o400" 2>&1
 if [ -n "$(nx_ids "$NXT")" ] && grep -qF " rows, $(nx_ids "$NXT" | tr '\n' ' ' | sed 's/ $//')." "$TMP/o400"; then
@@ -1091,7 +1250,8 @@ for id in $(nx_ids "$NXT"); do
   a=(); [ "$j" = "none" ] || a=(--judge "$j")
   "$NX" "$f" "${a[@]}" > "$TMP/o$nn" 2>&1; check "next.sh: the fixture for row $id gives rows $want" "$wrc" $? "$TMP/o$nn"
   got="$(nx_rows "$TMP/o$nn")"
-  case ",$want," in *",$id,"*) ;; *) echo "  FAIL  the fixture for row $id does not name row $id in rows="; fails=$((fails + 1)) ;; esac
+  rid="$id"; [ "$id" != 3 ] || rid=STOP   # row 3's action, when it is given, is the pause
+  case ",$want," in *",$rid,"*) ;; *) echo "  FAIL  the fixture for row $id does not name row $id in rows="; fails=$((fails + 1)) ;; esac
   if [ "$got" != "$want" ]; then echo "  FAIL  and it named rows '$got', not '$want'"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); fi
   if [ "$wrc" = "0" ] && ! grep -q '^because: ' "$TMP/o$nn"; then echo "  FAIL  and it did not say which flags made row $id true"; fails=$((fails + 1)); fi
   case ",$j," in *",$id=true,"*)
@@ -1116,8 +1276,8 @@ nx_variant() { # nx_variant <n> <label> <fixture> <sed script> <judge|-> <rc> <r
 nx_variant 445 "row 13b by its second branch: a clean discovery round, a REASONED medium still open" state-row-13b.md \
   's/^last_audit_round: .*/last_audit_round: r04 discovery 0H 0M 0L/; s/^open_findings: .*/open_findings: high=0 medium=1 low=0 reasoned_high_or_medium=1/' \
   5=false,8=false,9=false,9b=false,10=false,11b=false 0 13b
-nx_variant 446 "row 1 by its second branch: a pending: note (a provisional high?) needs judgement" state-row-5.md \
-  's/^notes: .*/notes: pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
+nx_variant 446 "a pending: note does not make row 1 by itself: a provisional high is counted in open_findings high (row 6b)" state-row-5.md \
+  's/^notes: .*/notes: pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "5,8,10,11b,13b"
 nx_variant 447 "row 7b is quiet when notes: says what replaced the real manager" state-row-7b.md \
   's/^notes: .*/notes: fork: n\/a - its own manager; real manager: the hook runs on its own manager, dossier section 8/' \
   5=false 3 "8,10,11b,13b"
@@ -1139,7 +1299,7 @@ for f in "$FIX"/state-case-*.md "$FIX"/state-hole*.md; do
   if [ "$wrc" = "1" ] && ! grep -qx 'no row is true: the table has a hole or a flag is stale' "$TMP/o$nn"; then
     echo "  FAIL  and not with NEXT.md's STOP line"; fails=$((fails + 1)); fi
 done
-[ "$nn" -ge 527 ] || { echo "  FAIL  fewer case fixtures than written (state-case-*.md, state-hole*.md): $((nn - 500)) of 27"; fails=$((fails + 1)); }
+[ "$nn" -ge 537 ] || { echo "  FAIL  fewer case fixtures than written (state-case-*.md, state-hole*.md): $((nn - 500)) of 37"; fails=$((fails + 1)); }
 nx_variant 449 "full mode at the ceiling, the black-box STALE, the owner wants to freeze: row 16" \
   state-case-ceiling-full-blackbox-never.md 's/^blackbox: .*/blackbox: stale (an event changed since it ran)/' \
   5=false,8=false,10=false,16=true 0 "2,14,16"
@@ -1148,23 +1308,23 @@ nx_variant 488 "promoted, the rehearsal not yet done, at the ceiling: still row 
 # row 7b waits on the owner while waiting_on_owner asks for the endpoint or the chain: an item that contains RPC_URL, or that
 # IS the chain question (`chain`, or starting with `chain`, `target chain`, `which chain`) - not the word inside another question
 nx_variant 601 "waiting_on_owner names chain as its second item: row 7b is off, round 1 goes on" state-case-waiting-rpc-url.md \
-  's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7; chain - which one?/' 3=false,5=false,11b=false 0 11
+  's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7; chain - which one?/' 5=false,11b=false 0 11
 nx_variant 602 "the word chain inside another question (severity of F-7, it depends on the chain) is not the chain question: 7b stands" \
-  state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (it depends on the chain)/' 3=false,5=false 0 7b
+  state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (it depends on the chain)/' 5=false 0 7b
 nx_variant 738 "an item that starts with target chain is the chain question: row 7b is off" state-case-waiting-rpc-url.md \
-  "s/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 $(printf '\302\267') target chain (the owner has not said)/" 3=false,5=false,11b=false 0 11
+  "s/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 $(printf '\302\267') target chain (the owner has not said)/" 5=false,11b=false 0 11
 nx_variant 739 "an item that starts with which chain is the chain question: row 7b is off" state-case-waiting-rpc-url.md \
-  's/^waiting_on_owner: .*/waiting_on_owner: which chain does it deploy on?/' 3=false,5=false,11b=false 0 11
+  's/^waiting_on_owner: .*/waiting_on_owner: which chain does it deploy on?/' 5=false,11b=false 0 11
 nx_variant 740 "an item that is chain alone is the chain question: row 7b is off" state-case-waiting-rpc-url.md \
-  's/^waiting_on_owner: .*/waiting_on_owner: triage of F-2; chain/' 3=false,5=false,11b=false 0 11
-nx_variant 741 "a pending: note written as a Markdown list item (* pending: ...) on an indented line is row 1's" state-row-5.md \
-  's/^notes: .*/notes: fork: n\/a - no chain yet\n  * pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
+  's/^waiting_on_owner: .*/waiting_on_owner: triage of F-2; chain/' 5=false,11b=false 0 11
+nx_variant 741 "a told: note written as a Markdown list item (* told: ...) does not quiet row 1: it is asked (K26b)" state-row-1.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet\n  * told: F-1 (2026-09-27)/' 5=false,8=false,9=true 3 "1,9"
 nx_variant 620 "waiting_on_owner names neither (a blockchain explorer, the RPC endpoint in words): row 7b stands" \
   state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (a blockchain explorer link; the RPC endpoint is set)/' \
-  3=false,5=false,11b=false 0 7b
+  5=false,11b=false 0 7b
 nx_variant 627 "waiting_on_owner names the Chain with a capital, at the start of a sentence: row 7b is off" \
   state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: Chain - which one does the owner deploy on? (asked 2026-09-24)/' \
-  3=false,5=false,11b=false 0 11
+  5=false,11b=false 0 11
 # row 2 keeps 11b off (a retry is a model round), whatever the answer
 nx_variant 603 "at the ceiling a stopped round is not retried: 11b answered true is still off" state-row-2.md '' \
   5=false,8=false,10=false,11b=true,16=true 0 "2,14,16"
@@ -1173,11 +1333,42 @@ nx_variant 604 "a STATE.md with CRLF line endings gives the same rows as with LF
   5=false,8=false,10=false,11b=false 0 "14,17"
 nx_variant 605 "rehearsal: done on a leap day (2024-02-29) is a date" state-row-18.md 's/^rehearsal: .*/rehearsal: done (2024-02-29)/' \
   5=false,8=false,10=false,11b=false 0 "14,18"
-# row 1's pending: is a note LINE that starts with it, not the word anywhere
-nx_variant 606 "a note that only mentions pending: (Slither pending: owner asked) is not row 1's" state-new-project.md \
-  's/^notes:.*/notes: static triage: forge lint only (Slither pending: owner asked)/' - 0 4
-nx_variant 607 "a pending: note on an indented line under notes: is row 1's" state-row-5.md \
-  's/^notes: .*/notes: fork: n\/a - no chain yet\n  pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
+# row 1 (K26b): ONLY items `high <id>[, <id>...] - to tell` of waiting_on_owner quiet it, and only when their ids are exactly
+# as many as the highs open; a told: note is not read (the owner present: the question is asked, and answered 1=false) -
+# V26's T3, T5-T7, T9-T11, T13: `told: F-1` of a closed high, `told: none`, `told: TBD`, `Told: F-1`, `told: nobody` ...
+nx_variant 606 "a told: note (told: none) does not quiet row 1: it is asked" state-row-1.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet; told: none/' 5=false,8=false,9=true 3 "1,9"
+nx_variant 607 "a told: note on an indented line under notes: does not quiet row 1: it is asked" state-row-1.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet\n  told: F-1/' 5=false,8=false,9=true 3 "1,9"
+nx_variant 671 "the same, answered 1=false (the owner told, present): row 9" state-row-1.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet\n  told: F-1/' 1=false,5=false,8=false,9=true 0 9
+nx_variant 672 "an item that says the high was told (high F-1 - told) is not a high to tell: row 1 is asked" state-row-1.md \
+  's/^waiting_on_owner: .*/waiting_on_owner: high F-1 - told/' 5=false,8=false,9=true 3 "1,9"
+nx_variant 630 "two highs open, one item naming both between commas: row 1 is quiet" state-row-1.md \
+  's/^open_findings: .*/open_findings: high=2 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, F-2 - to tell (with their tests)/' \
+  5=false,8=false,9=true 0 9
+nx_variant 673 "two highs open, one item naming both between spaces: row 1 is quiet" state-row-1.md \
+  's/^open_findings: .*/open_findings: high=2 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 F-2 - to tell/' \
+  5=false,8=false,9=true 0 9
+nx_variant 631 "two highs open, the same id recorded twice (F-1 and f-1: one id, case aside): row 1 is asked" state-row-1.md \
+  's/^open_findings: .*/open_findings: high=2 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell; high f-1 - to tell/' \
+  5=false,8=false,9=true 3 "1,9"
+nx_variant 674 "one high open, the same id in two items (F-1, f-1): counted once, row 1 is quiet" state-row-1.md \
+  's/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell; high f-1 - to tell/' 5=false,8=false,9=true 0 9
+"$NX" "$FIX/state-case-high-not-all-told.md" > "$TMP/o632" 2>&1
+if [ "$(sed -n 1p "$TMP/o632" | cut -c1-24)" = "needs judgement: row 1 -" ] && grep -q '^needs judgement: row 1 - .*high <id>' "$TMP/o632" \
+  && [ "$(tail -1 "$TMP/o632")" = "if every answer is false: STOP - paused, waiting on the owner: high F-1 - to tell" ]; then
+  echo "  ok    one high of two recorded to tell: row 1 is ASKED (the flags quiet it only when every open high is recorded)"; else
+  echo "  FAIL  one high of two recorded: row 1 is not asked:"; sed "s/^/        | /" "$TMP/o632"; fails=$((fails + 1)); fi
+# ... and when the flags quiet it, the because: line names the ids that did (V26: a stale entry quieted it without a trace)
+"$NX" "$FIX/state-case-high-recorded-to-tell.md" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o675" 2>&1
+if grep -q '^because: .*row 1 is quiet: the 1 high open is recorded to tell in waiting_on_owner (F-1)' "$TMP/o675"; then
+  echo "  ok    row 1 quiet by the flags: the because: line names the id that quieted it"; else
+  echo "  FAIL  row 1 quiet, and the because: line does not name the id:"; sed "s/^/        | /" "$TMP/o675"; fails=$((fails + 1)); fi
+"$NX" "$FIX/state-case-walk-ids-space.md" --judge 5=false,8=false,9=false,9b=true,10=false > "$TMP/o676" 2>&1
+if grep -q '^because: .*row 1 is quiet: the 6 highs open are recorded to tell in waiting_on_owner (F1, F3, F4, R01-1, R01-2, R01-5)' "$TMP/o676"; then
+  echo "  ok    and on a row given below it too (the real walk's six ids, in the order written)"; else
+  echo "  FAIL  the row given does not say which ids quieted row 1:"; sed "s/^/        | /" "$TMP/o676"; fails=$((fails + 1)); fi
 # row 9 (NEXT.md): a finding triaged "fix at the cause" whose fix is not written is still open - its question says so,
 # and its action is to write the fix
 "$NX" "$FIX/state-case-fix-not-written.md" --judge 5=false,8=false > "$TMP/o608" 2>&1
@@ -1193,41 +1384,103 @@ grep -q '^next: row 9 - .*write the fix' "$TMP/o609" \
 nx_variant 610 "a real manager: note after the middle dot quiets row 7b: 14, 16" state-case-real-manager-note-not-at-start.md \
   "s/^notes: .*/notes: fork: ran on a fork $(printf '\302\267') real manager: the hook runs on its own vault, dossier section 8/" \
   5=false,8=false,10=false,11b=false,16=true 0 "14,16"
-nx_variant 611 "a pending: note after a ';' on the notes: line is row 1's" state-row-5.md \
-  's/^notes: .*/notes: fork: n\/a - no chain yet; pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
+nx_variant 611 "a told: note after a ';' on the notes: line does not quiet row 1: it is asked (K26b)" state-row-1.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet; told: F-1/' 5=false,8=false,9=true 3 "1,9"
 # rows 12 and 16 wait on 7b while the chain is known and the real manager never ran (or is stale), unless a real manager:
-# note answers it; with 7b silenced by a wait and nothing else standing, row 3 stops and says what is waiting
+# note answers it; with 7b silenced by a wait and nothing else standing, row 3 pauses the route (STOP) and says what is waiting
 nx_variant 612 "the loop over, 16 off until 7b has run - the owner declined promotion in writing: 18b stands" \
-  state-case-real-manager-owed-before-16.md '' 3=false,5=false,8=false,10=false,11b=false,16=true,18b=true 0 "14,18b"
+  state-case-real-manager-owed-before-16.md '' 5=false,8=false,10=false,11b=false,16=true,18b=true 0 "14,18b"
 nx_variant 613 "the same wait, a real manager: note answers 7b another way: row 12 stands" state-case-real-manager-owed-before-12.md \
   's/^notes: .*/notes: fork: ran on a fork; real manager: the hook runs on its own vault, dossier section 8/' \
-  3=false,5=false,8=false,10=false,11b=false,12=true 0 12
+  5=false,8=false,10=false,11b=false,12=true 0 12
 nx_variant 614 "the real manager never run and nothing waiting: row 7b, before the black-box" state-case-real-manager-owed-before-12.md \
   's/^waiting_on_owner: .*/waiting_on_owner: none/' 5=false,8=false,10=false,11b=false,12=true 0 7b
-nx_variant 621 "the real-manager battery STALE, the chain known, 7b waiting: row 16 is off too, row 3 stops" \
+nx_variant 621 "the real-manager battery STALE, the chain known, 7b waiting: row 16 is off too, row 3 pauses (STOP)" \
   state-case-real-manager-owed-before-16.md 's/^real_manager_battery: .*/real_manager_battery: stale (bytecode changed since)/' \
-  3=false,5=false,8=false,10=false,11b=false,16=true,18b=false 0 "14,3"
-nx_variant 628 "the same wait, the real manager CURRENT (7b not owed), the owner neither freezes nor declines: no row, not row 3" \
+  5=false,8=false,10=false,11b=false,16=true,18b=false 0 "14,STOP"
+# a wait that explains nothing below (the real manager is current) is still a wait: with waiting_on_owner not none and no
+# row standing, the flags say PAUSED (NEXT.md row 3, K26) - the STOP line names the item, so a stale one is read there
+nx_variant 628 "the same wait, the real manager CURRENT (7b not owed), the owner neither freezes nor declines: paused (STOP), not a hole" \
   state-case-real-manager-owed-before-16.md 's/^real_manager_battery: .*/real_manager_battery: current/' \
-  3=false,5=false,8=false,10=false,11b=false,16=false,18b=false 1 "14"
-nx_variant 624 "at the ceiling too: the black-box not run, 16 off while 7b waits on RPC_URL - row 3 stops" \
+  5=false,8=false,10=false,11b=false,16=false,18b=false 0 "14,STOP"
+nx_variant 624 "at the ceiling too: the black-box not run, 16 off while 7b waits on RPC_URL - row 3 pauses (STOP)" \
   state-case-ceiling-full-blackbox-never.md \
   's/^real_manager_battery: .*/real_manager_battery: never/; s/^waiting_on_owner: .*/waiting_on_owner: RPC_URL for the real-manager battery/' \
-  3=false,5=false,8=false,10=false,16=true,18b=false 0 "2,14,3"
-"$NX" "$FIX/state-case-real-manager-owed-before-16.md" --judge 3=false,5=false,8=false,10=false,11b=false,16=true,18b=false > "$TMP/o615" 2>&1
-if grep -q '^next: row 3 - ' "$TMP/o615" && grep -q '^because: .*RPC_URL.*7b' "$TMP/o615"; then
-  echo "  ok    and row 3 is given saying what is waiting, and that row 7b waits on it"; else
-  echo "  FAIL  row 3 was not given with its reason (7b waits on the answer; 12 and 16 wait on 7b):"; sed "s/^/        | /" "$TMP/o615"; fails=$((fails + 1)); fi
+  5=false,8=false,10=false,16=true,18b=false 0 "2,14,STOP"
+"$NX" "$FIX/state-case-real-manager-owed-before-16.md" --judge 5=false,8=false,10=false,11b=false,16=true,18b=false > "$TMP/o615" 2>&1
+if grep -qx 'next: STOP - paused, waiting on the owner: RPC_URL for the real-manager battery' "$TMP/o615" && grep -q '^because: .*RPC_URL.*7b' "$TMP/o615"; then
+  echo "  ok    and the pause says what is waiting, and that row 7b waits on it"; else
+  echo "  FAIL  the pause was not given with its reason (7b waits on the answer; 12 and 16 wait on 7b):"; sed "s/^/        | /" "$TMP/o615"; fails=$((fails + 1)); fi
+# the end of the route with the owner absent (NEXT.md row 3, K26): the skeleton names the open findings, the triage is
+# asked, nothing below stands - `next: STOP - paused, ...`, exit 0, decided by the flags: row 3's question is not asked
+F9S="$FIX/state-case-skeleton-written-owner-away.md"
+"$NX" "$F9S" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o633" 2>&1; check "next.sh: the skeleton written, the owner away: the pause" 0 $? "$TMP/o633"
+if [ "$(head -1 "$TMP/o633")" = "next: STOP - paused, waiting on the owner: triage of F-1, F-2" ] && ! grep -q '^needs judgement' "$TMP/o633" \
+  && grep -q '^because: .*dossier names the 2 open finding' "$TMP/o633"; then
+  echo "  ok    its first word is STOP, it names the items waiting and the skeleton, and it asks nothing about row 3"; else
+  echo "  FAIL  the pause is not 'next: STOP - paused, waiting on the owner: <items>' alone:"; sed "s/^/        | /" "$TMP/o633"; fails=$((fails + 1)); fi
+"$NX" "$F9S" > "$TMP/o634" 2>&1; check "next.sh: the same, no answers: the questions, and the pause only as a condition" 3 $? "$TMP/o634"
+# K26b: while a row below row 3 still awaits judgement the pause is not given (V26: "next: STOP" and "no row below row 3
+# stands" said more than was true) - the questions, then ONE line saying what an all-false answer gives
+if [ "$(nx_rows "$TMP/o634")" = "5,8,9,10,11b,STOP?" ] && [ "$(tail -1 "$TMP/o634")" = 'if every answer is false: STOP - paused, waiting on the owner: triage of F-1, F-2' ] \
+  && ! grep -q '^next: \|^because: \|no row below row 3' "$TMP/o634"; then
+  echo "  ok    and row 3 is not among them, no next: or because: line - the last line says what an all-false answer gives"; else
+  echo "  FAIL  the rows needing judgement before the pause:"; sed "s/^/        | /" "$TMP/o634"; fails=$((fails + 1)); fi
+# ... the answers a walker gave in the A/B (VAB2): 9b=true (row 3 is no longer answered, K26c) - the pause, not row 9b again
+nx_variant 635 "the skeleton written, 9b=true answered: still the pause, not row 9b again" state-case-skeleton-written-owner-away.md '' \
+  5=false,8=false,9=false,9b=true,10=false,11b=false 0 STOP
+# ... the skeleton stale (a finding opened since): 9b again - and with K written in words, or no K, refused (row 9b reads it)
+nx_variant 636 "a complete dossier with the open findings in it: row 9b is quiet, the pause" state-case-skeleton-written-owner-away.md \
+  's/^dossier: .*/dossier: complete (1 judge not done)/' 5=false,8=false,9=false,10=false,11b=false 0 STOP
+nx_variant 637 "the skeleton names 2, open_findings has 1 (one fixed since): stale, row 9b" state-case-skeleton-written-owner-away.md \
+  's/^open_findings: .*/open_findings: high=0 medium=1 low=0 reasoned_high_or_medium=0/' 5=false,8=false,9=false,9b=true 0 9b
+nx_variant 638 "waiting_on_owner none, the skeleton written, nothing stands: a hole, not a pause" state-case-skeleton-written-owner-away.md \
+  's/^waiting_on_owner: .*/waiting_on_owner: none/' 5=false,8=false,9=false,10=false,11b=false 1 ""
+# ... below the ceiling the black-box (12) and a retry (11b) are still to judge (V26 S8): an answer true gives that row
+# (row 3 asks nothing: K26c); the pause only once they are false too
+nx_variant 678 "below the ceiling, the black-box judged to stand (12=true): row 12, and no question about row 3 (V26 S8, K26c)" \
+  state-case-pause-below-ceiling.md '' 5=false,8=false,9=false,10=false,11b=false,12=true 0 12
+nx_variant 680 "the same, every one false: the pause" state-case-pause-below-ceiling.md '' 5=false,8=false,9=false,10=false,11b=false,12=false 0 STOP
+# ... and row 1 still to judge (a high not recorded to tell) is a row to judge like the others: the pause is conditional
+nx_variant 681 "the high not recorded to tell, the rest answered false: row 1 asked, the pause only as a condition" \
+  state-case-pause-rows-to-judge.md 's/^waiting_on_owner: .*/waiting_on_owner: triage of F-1 F-2/' 5=false,8=false,9=false,10=false 3 "1,2,STOP?"
+nx_variant 682 "the same, 1=false: the pause" \
+  state-case-pause-rows-to-judge.md 's/^waiting_on_owner: .*/waiting_on_owner: triage of F-1 F-2/' 1=false,5=false,8=false,9=false,10=false 0 "2,STOP"
+nx_variant 683 "the same, 1=true: row 1 - tell them (record it to tell)" \
+  state-case-pause-rows-to-judge.md 's/^waiting_on_owner: .*/waiting_on_owner: triage of F-1 F-2/' 1=true,5=false,8=false,9=false,10=false 0 1
+# K26c (V26b): row 3 is decided by the flags and never answered. `--judge 3=true` was read, and gave `next: STOP -
+# paused` over the rows the flags made true below it - the answer to row 3 hid them: with `dossier: none` and findings
+# open (row 9b), with `battery: never` (row 6), on the real walk before 9b was answered. Now an answer to row 3 is
+# REFUSED (exit 2, no next: line at all - a refusal can hide no row; an answer ignored would still read as judged), and
+# each case gives its row. The old question ("3=false when the row given does not depend on it") is no longer asked: a
+# row below that waits on the owner's answer is answered false itself, or is off by its flags (7b).
+F3N="$FIX/state-case-row3-dossier-none.md"
+sed 's/^battery: .*/battery:                   never/' "$F3N" > "$TMP/state-808.md"
+for c in "805|$F3N|3=true|dossier none, findings open (row 9b stands)" "806|$F3N|3=false|the same, 3=false" \
+  "807|$FIX/state-case-walk-ids-comma.md|5=false,3=true|the real walk, 9b not answered yet" "808|$TMP/state-808.md|3=true|battery: never (row 6 stands on the flags)"; do
+  IFS='|' read -r n f j label <<< "$c"
+  "$NX" "$f" --judge "$j" > "$TMP/o$n" 2>&1; check "next.sh: --judge $j is refused: $label (V26b)" 2 $? "$TMP/o$n"
+  if grep -qF "row 3 is decided by the flags: waiting_on_owner and the rows below" "$TMP/o$n" && ! grep -qE '^next: (STOP|row) ' "$TMP/o$n"; then
+    echo "  ok    and it says row 3 is the flags', and gives no next: line - neither STOP nor a row"; else
+    echo "  FAIL  the answer to row 3 was not refused as the flags':"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); fi
+done
+nx_variant 809 "dossier none, findings open, row 3 not answered: row 9b is given (the rows below are read on)" state-case-row3-dossier-none.md '' \
+  5=false,8=false,9=false,9b=true 0 "2,9b"
+nx_variant 810 "battery: never, the owner away, row 3 not answered: row 6, and no question about row 3" state-case-row3-dossier-none.md \
+  's/^battery: .*/battery:                   never/' 5=false 0 "2,6"
+nx_variant 811 "the real walk, 9b answered true, row 3 not answered: row 9b" state-case-walk-ids-comma.md '' 5=false,8=false,9=false,9b=true 0 "2,9b"
+nx_variant 812 "the real walk, nothing answered: the questions and the pause as a condition, never a question about row 3" \
+  state-case-walk-ids-comma.md '' - 3 "2,5,8,9,9b,10,STOP?"
 # rows 9 and 9b count EVERY open finding, from any round - a phase-3 pending: finding too, once round 1 has run
-"$NX" "$FIX/state-case-pending-after-round1.md" --judge 1=false,5=false,8=false > "$TMP/o616" 2>&1
+"$NX" "$FIX/state-case-pending-after-round1.md" --judge 5=false,8=false > "$TMP/o616" 2>&1
 check "next.sh: a phase-3 pending medium after round 1, not answered: rows 9 and 9b need judgement" 3 $? "$TMP/o616"
 grep -q '^needs judgement: row 9 - .*from any round' "$TMP/o616" && grep -q '^needs judgement: row 9b - .*from any round' "$TMP/o616" \
   || { echo "  FAIL  and rows 9 and 9b do not ask about a finding from any round:"; sed "s/^/        | /" "$TMP/o616"; fails=$((fails + 1)); }
 # ... unless the ceiling is reached before round 1 delivered: round 1 will not run, and row 2 sends every open finding to 9/9b
 nx_variant 622 "a phase-3 pending medium, the ceiling reached before round 1 delivered: row 9 (the owner there)" \
-  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 1=false,5=false,9=true 0 "2,9"
+  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 5=false,9=true 0 "2,9"
 nx_variant 623 "the same, the owner away: row 9b writes the skeleton with it" \
-  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 1=false,5=false,9=false,9b=true 0 "2,9b"
+  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 5=false,9=false,9b=true 0 "2,9b"
 # blackbox: stopped (<round id>) - a black-box round stopped twice by the environment: rows 12 and 15 do not fire again
 nx_variant 618 "a black-box stopped twice before the loop is over: row 12 does not fire again, 13b does" \
   state-case-closing-blackbox-stopped-twice.md 's/^last_audit_round: .*/last_audit_round: r02 regression 0H 0M 0L/' \
@@ -1241,8 +1494,8 @@ if grep -q '^next: row 11b - .*blackbox: stopped (<round id>).*black-box: stoppe
   echo "  FAIL  row 11b's action does not name blackbox: stopped (<round id>) and black-box: stopped at <step>:"; sed "s/^/        | /" "$TMP/o626"; fails=$((fails + 1)); fi
 # the kit's example STATE.md: its own prose says row 3 is true but blocks nothing, and the black-box (row 12) is next
 "$NX" "$HERE/../state/STATE.md" > "$TMP/o443" 2>&1; check "next.sh: the example state/STATE.md, no answers: rows needing judgement first" 3 $? "$TMP/o443"
-[ "$(nx_rows "$TMP/o443")" = "3,5,8,9,9b,11b,12,13" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o443")', not 3,5,8,9,9b,11b,12,13"; fails=$((fails + 1)); }
-"$NX" "$HERE/../state/STATE.md" --judge 3=false,5=false,8=false,9=false,9b=false,11b=false,12=true > "$TMP/o444" 2>&1
+[ "$(nx_rows "$TMP/o443")" = "5,8,9,9b,11b,12,13" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o443")', not 5,8,9,9b,11b,12,13"; fails=$((fails + 1)); }
+"$NX" "$HERE/../state/STATE.md" --judge 5=false,8=false,9=false,9b=false,11b=false,12=true > "$TMP/o444" 2>&1
 check "next.sh: the example state/STATE.md with its prose's answers gives row 12, the black-box" 0 $? "$TMP/o444"
 [ "$(nx_rows "$TMP/o444")" = "12" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o444")', not 12"; fails=$((fails + 1)); }
 # refusals: rc 2, one line, naming the flag
@@ -1301,6 +1554,26 @@ if grep -qx '  because: ceiling=reached (6 of 6 used, set by the operator (owner
 nn=755
 nx_refused "an operator's ceiling with 'Operator' capitalised (never read as the owner's)" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the Operator (owner absent); 6 used/'
 nx_refused "an operator's ceiling with 'OPERATOR' (never read as the owner's)" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the OPERATOR (owner absent); 6 used/'
+# row 1 and row 9b read the flags in one form each (K26, K26b): a high to tell is an item `high <id>[, <id>...] - to tell`,
+# ids between commas or spaces, no placeholder, never more ids than highs open; a skeleton says how many open findings it
+# names - anything else is refused, never counted and never ignored
+nn=650
+nx_refused "a high to tell naming a placeholder (high none - to tell, V26 T14)" "'none' is a placeholder, not a finding id" 's/^waiting_on_owner: .*/waiting_on_owner: high none - to tell/'
+nx_refused "a high to tell naming a placeholder (TBD)" "'TBD' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high TBD - to tell/'
+nx_refused "a high to tell naming a placeholder (nobody)" "'nobody' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high nobody - to tell/'
+nx_refused "a high to tell naming a placeholder (n/a)" "'n/a' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high n\/a - to tell/'
+nx_refused "a high to tell naming a placeholder (?)" "'?' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high ? - to tell/'
+nx_refused "a high to tell with no id (high - to tell)" "names no finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high - to tell/'
+nx_refused "a high to tell with a word between the ids (high F-1 and F-2 - to tell, 3 highs open)" "'and' is a word, not a finding id" 's/^open_findings: .*/open_findings: high=3 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 and F-2 - to tell/'
+nx_refused "more highs recorded to tell than are open (a stale entry)" "a recorded high is no longer open: remove it" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, F-2 - to tell/'
+nx_refused "a high to tell recorded when no high is open" "a recorded high is no longer open: remove it" 's/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell/'
+nx_refused "a high to tell in another shape (F-1 high - to tell)" "is not 'high <id>[, <id>...] - to tell'" 's/^waiting_on_owner: .*/waiting_on_owner: F-1 high - to tell/'
+nx_refused "a dossier skeleton that does not say how many open findings it names" "is not skeleton (<K> open" 's/^dossier: .*/dossier: skeleton/'
+nx_refused "a dossier skeleton with K in words" "is not skeleton (<K> open" 's/^dossier: .*/dossier: skeleton (two open, 1 judge not done)/'
+# ... and a told: note is a note like any other: not read, not refused (row 1 is asked while a high is open, owner present)
+sed 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^notes:.*/notes: told: F-1 and F-2 (by mail)/' "$NP" > "$TMP/state-677.md"
+"$NX" "$TMP/state-677.md" > "$TMP/o677" 2>&1; check "next.sh: a told: note in any shape is not refused (it is not read)" 3 $? "$TMP/o677"
+[ "$(sed -n 1p "$TMP/o677" | cut -c1-26)" = "needs judgement: row 1 - d" ] || { echo "  FAIL  and row 1 is not the first question:"; sed "s/^/        | /" "$TMP/o677"; fails=$((fails + 1)); }
 # drift guard: next.sh's rows and NEXT.md's table must name the same rows, in the same order, and each row's condition
 # must be the text next.sh's entry was written from (a hash of the cell, whitespace normalised)
 "$NX" --check-table > "$TMP/o470" 2>&1; check "next.sh --check-table: its rows and doctrine/NEXT.md's table agree" 0 $? "$TMP/o470"
@@ -1446,6 +1719,9 @@ echo "== mutate.sh / size.sh =="
 KIT="$HERE/../foundry-kit"   # always the kit's own: KIT_PROJECT is removed at the start (see there)
 if command -v forge > /dev/null 2>&1 && [ -e "$KIT/lib" ]; then
   export OUT_DIR="$TMP/mut"
+  # the kit's own tree, with the convention: mutate.sh's default copy root is <project>/.gauntlet/bench, and only where
+  # <project>/.gauntlet/ exists (K26b; `.gauntlet/` is git-ignored in the kit, and its battery makes one anyway)
+  mkdir -p "$KIT/.gauntlet"
   V="src/examples/ToyVault.sol"
 
   LABEL=m1 "$HERE/mutate.sh" "$KIT" "$V" "credited = post - pre;" "credited = amount;" > "$TMP/o12" 2>&1
@@ -1485,7 +1761,7 @@ if command -v forge > /dev/null 2>&1 && [ -e "$KIT/lib" ]; then
 
   # ================================================================= battery.sh, fuzz-long.sh, bench.sh
   echo "== battery.sh / fuzz-long.sh / bench.sh =="
-  M="$TMP/mini"; mkdir -p "$M/src" "$M/test"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$M/lib"
+  M="$TMP/mini"; mkdir -p "$M/src" "$M/test" "$M/.gauntlet"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$M/lib"   # .gauntlet/: the convention installed
   printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[invariant]\nruns = 4\ndepth = 4\nfail_on_revert = true\n[profile.long.invariant]\nruns = 8\ndepth = 8\nfail_on_revert = true\n' > "$M/foundry.toml"
   printf 'pragma solidity ^0.8.26;\ncontract A { uint256 public x; function inc() external { x++; } }\n' > "$M/src/A.sol"
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/A.sol";\ncontract AUnit is Test { function test_inc() public { A a = new A(); a.inc(); assertEq(a.x(), 1); } }\ncontract AInvariant is Test { A a; function setUp() public { a = new A(); targetContract(address(a)); } function invariant_never_decreases() public view { assertGe(a.x(), 0); } }\n' > "$M/test/A.t.sol"
@@ -1527,7 +1803,7 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
 
   # ---- a FILE reached through a symlinked lib/ is the ORIGINAL, not the copy's: mutate.sh must refuse it, and the
   # original must be byte-for-byte what it was. (`cp -a` keeps the link; the mutation used to be written through it.)
-  SH="$TMP/shared"; SL="$TMP/symlib"; mkdir -p "$SH" "$SL/src" "$SL/test"
+  SH="$TMP/shared"; SL="$TMP/symlib"; mkdir -p "$SH" "$SL/src" "$SL/test" "$SL/.gauntlet"
   ln -s "$(cd "$KIT/lib/forge-std" && pwd -P)" "$SH/forge-std"
   printf 'pragma solidity ^0.8.26;\ncontract X { uint256 public x; function inc() external { x++; } }\n' > "$SH/X.sol"
   ln -s "$SH" "$SL/lib"
@@ -1682,7 +1958,8 @@ EOF
   # there recompiled the changed source without the test file that derives from it (recorded by absolute path) and the
   # tests ran the OLD code - a unit test and an invariant green over a broken B, and the freshness check rc 0. Here only
   # the derived contract (BMock) sees B, so nothing else can catch it
-  MK="$TMP/mockp"; mkdir -p "$MK/src" "$MK/test"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$MK/lib"
+  MK="$TMP/mockp"; mkdir -p "$MK/src" "$MK/test" "$MK/.gauntlet";   # .gauntlet/: the convention installed (K26c)
+  ln -s "$(cd "$KIT/lib" && pwd -P)" "$MK/lib"
   printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[invariant]\nruns = 4\ndepth = 4\nfail_on_revert = true\n[profile.long.invariant]\nruns = 8\ndepth = 8\nfail_on_revert = true\n' > "$MK/foundry.toml"
   printf 'pragma solidity ^0.8.26;\ncontract B { uint256 public x; function add() external { x += 2; } }\n' > "$MK/src/B.sol"
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/B.sol";\ncontract BMock is B {}\ncontract BUnit is Test { function test_add() public { B b = new BMock(); b.add(); assertEq(b.x(), 2); } }\ncontract BInvariant is Test { B b; function setUp() public { b = new BMock(); targetContract(address(b)); } function invariant_even() public view { assertEq(b.x() %% 2, 0); } }\n' > "$MK/test/B.t.sol"
@@ -1707,7 +1984,7 @@ EOF
   # ... copied one level UP (built in nest/inner, `cp -a inner/. nest/`): the path forge recorded, nest/inner/test/B.t.sol,
   # is UNDER the project, and "outside it?" said no (V25: BATTERY PASSED, freshness rc 0, over a broken B). The question is
   # "exactly <project>/<that file's key in the cache>?"
-  NST="$TMP/nest"; mkdir -p "$NST"; cp -a "$MK" "$NST/inner"; rm -rf "$NST/inner/cache" "$NST/inner/out"
+  NST="$TMP/nest"; mkdir -p "$NST/.gauntlet"; cp -a "$MK" "$NST/inner"; rm -rf "$NST/inner/cache" "$NST/inner/out"
   (cd "$NST/inner" && forge build > "$TMP/o793.build" 2>&1)
   cp -a "$NST/inner/." "$NST/"; sed -i 's/x += 2;/x += 3;/' "$NST/src/B.sol"
   "$HERE/battery.sh" "$NST" > "$TMP/o793" 2>&1; check "battery on a project built one directory down and copied up into it, then broken: BATTERY FAILED" 1 $? "$TMP/o793"
@@ -1722,7 +1999,7 @@ EOF
   rm -f "$TMP/mockp-link"
   # a project with its own cache_path: the freshness check read cache/ always and said NO CACHE, and the battery failed
   # on every run (V25)
-  FCP="$TMP/fcache-p"; mkdir -p "$FCP/src" "$FCP/test"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$FCP/lib"
+  FCP="$TMP/fcache-p"; mkdir -p "$FCP/src" "$FCP/test" "$FCP/.gauntlet"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$FCP/lib"
   printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\ncache_path = "fcache"\n' > "$FCP/foundry.toml"
   printf 'pragma solidity ^0.8.26;\ncontract C { function f() external pure returns (uint256) { return 1; } }\n' > "$FCP/src/C.sol"
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/C.sol";\ncontract CUnit is Test { function test_f() public { assertEq(new C().f(), 1); } }\n' > "$FCP/test/C.t.sol"
@@ -1803,7 +2080,7 @@ EOF
     echo "  FAIL  fuzz-long.sh reported a build failure as something else:"; grep -E "fuzz-long|LONG FUZZ|first error" "$TMP/o135" | head -4 | sed "s/^/        | /"; fails=$((fails + 1)); fi
   rm -f "$M/test/Broken.t.sol"
   # USE_BENCH=1 on a project that imports from its PARENT (the v4 module's shape): the bench must hold the parent
-  TL="$TMP/twolevel"; mkdir -p "$TL/src" "$TL/child/src" "$TL/child/test"
+  TL="$TMP/twolevel"; mkdir -p "$TL/src" "$TL/child/src" "$TL/child/test" "$TL/child/.gauntlet"   # the convention installed in the child (K26c: the log goes there)
   ln -s "$(cd "$KIT/lib" && pwd -P)" "$TL/lib"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$TL/child/lib"
   printf '[profile.default]\n' > "$TL/foundry.toml"
   printf 'pragma solidity ^0.8.26;\ncontract Base { uint256 public x; function inc() external { x++; } }\n' > "$TL/src/Base.sol"
@@ -1818,6 +2095,10 @@ EOF
   check "USE_BENCH=1 on a project that reaches three levels up is refused, in one line" 2 $? "$TMP/o137"
   if [ "$(grep -c "refused" "$TMP/o137")" = "1" ] && [ -z "$(find "$TMP/fzb" -maxdepth 1 -name 'fuzz-long-c-*' -print -quit 2> /dev/null)" ]; then
     echo "  ok    and no bench was made for it"; else echo "  FAIL  the deep project was benched, or refused unclearly"; fails=$((fails + 1)); fi
+  # K26c (V26b): the refusal used to say "Run with USE_BENCH=0" - in someone else's tree, the campaign in their tree
+  if ! grep -q 'Run with USE_BENCH=0' "$TMP/o137" && grep -qF 'Bench the directory it reaches yourself' "$TMP/o137" && [ ! -e "$TMP/deep/a/b/c/.gauntlet" ]; then
+    echo "  ok    and it does not send you to USE_BENCH=0 in that tree: bench it yourself, then USE_BENCH=0 in the bench"; else
+    echo "  FAIL  the deep refusal still points at USE_BENCH=0 as the way out, or wrote into the tree:"; sed "s/^/        | /" "$TMP/o137"; fails=$((fails + 1)); fi
   # the long fuzz's corpus and census live in the BENCH: the next run's refresh must keep them (they used to be deleted by
   # `rsync --delete`, so every long run with a bench started cold), and a corpus the project has of its own is merged in
   FZ="$(find "$TMP/fzb" -maxdepth 1 -name 'fuzz-long-child-*' -print -quit 2> /dev/null)"
@@ -1834,6 +2115,17 @@ EOF
   else
     echo "  FAIL  the bench of the two-level project is not where the case above left it ($TMP/fzb/fuzz-long-child-*)"; fails=$((fails + 1))
   fi
+  # BENCH_ROOT unset (K26): the bench is under the PROJECT's own .gauntlet/bench - also when what is benched is its parent
+  # (the parent's copy then holds child/ without child/.gauntlet) - and nothing is written under $HOME
+  mkdir -p "$TL/child/.gauntlet"   # the convention installed (made with the child above): the default applies
+  env -u BENCH_ROOT "$HERE/fuzz-long.sh" "$TL/child" > "$TMP/o665" 2>&1
+  check "a long fuzz with BENCH_ROOT unset" 0 $? "$TMP/o665"
+  FZD="$(find "$TL/child/.gauntlet/bench" -maxdepth 1 -name 'fuzz-long-child-*' -print -quit 2> /dev/null)"
+  if [ -n "$FZD" ] && [ -f "$FZD/src/Base.sol" ] && [ -f "$FZD/child/test/C.t.sol" ] && [ ! -e "$FZD/child/.gauntlet" ] \
+    && [ ! -e "$HOME/.gauntlet/bench/$(basename "$FZD")" ] && grep -q "in $FZD/child" "$TMP/o665"; then
+    echo "  ok    it ran in <project>/.gauntlet/bench/$(basename "$FZD")/child, which holds no .gauntlet, and nothing went under HOME"; else
+    echo "  FAIL  the default bench of the long fuzz: '${FZD:-none}' under $TL/child/.gauntlet/bench"; grep -a 'in /' "$TMP/o665" | head -2 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$TL/child/.gauntlet/bench"
 
   BENCH_ROOT="$TMP/benches" "$HERE/bench.sh" bb "$M" > "$TMP/o33" 2>&1; check "an ordinary bench" 0 $? "$TMP/o33"
   BENCH_ROOT="$TMP/benches" BENCH_EXCLUDE="src" "$HERE/bench.sh" bb "$M" > "$TMP/o34" 2>&1
@@ -2124,7 +2416,8 @@ EOF
   # where the record goes, resolved as run mode resolves it: OUT_DIR (relative to the project), else <project>/.gauntlet/
   # reports - and with no project given the project is the directory it ran from, which is NOT the bench the tsv is in,
   # so the gate says where it wrote
-  mkdir -p "$TMP/gbench/census" "$TMP/gcwd" "$TMP/gproj"; cp "$C3" "$TMP/gbench/census/long.tsv"
+  mkdir -p "$TMP/gbench/census" "$TMP/gcwd/.gauntlet" "$TMP/gproj/.gauntlet";   # the convention installed in both (K26c)
+  cp "$C3" "$TMP/gbench/census/long.tsv"
   (cd "$TMP/gcwd" && env -u OUT_DIR CORE="deposit" "$HERE/census.sh" --aggregate "$TMP/gbench/census/long.tsv") > "$TMP/o188" 2>&1
   check "the gate with no project and no OUT_DIR, the tsv in another directory" 0 $? "$TMP/o188"
   g188="$(cd "$TMP/gcwd" && pwd -P)/.gauntlet/reports/06-census-gate.txt"
@@ -2140,7 +2433,7 @@ EOF
   gate_ok "a relative OUT_DIR is under the project, as in run mode" "$TMP/o190" "$TMP/gproj/rel-reports/06-census-gate.txt"
   "$HERE/census.sh" "$M" > "$TMP/o61" 2>&1; check "a suite that never calls writeCensus measured nothing" 2 $? "$TMP/o61"
 
-  K="$TMP/kitcopy"; mkdir -p "$K"; cp -R "$KIT/src" "$KIT/test" "$KIT/foundry.toml" "$K/"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$K/lib"
+  K="$TMP/kitcopy"; mkdir -p "$K/.gauntlet"; cp -R "$KIT/src" "$KIT/test" "$KIT/foundry.toml" "$K/"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$K/lib"
   # a census file left over from an EARLIER campaign, with a surprise in it: the script has to start from an empty file
   mkdir -p "$K/census"; printf 'ToyVault\tU=5\tA:deposit=1/1\n' > "$K/census/runs.tsv"; cp "$K/census/runs.tsv" "$K/census/long.tsv"
   # This case proves the PLUMBING, not the vault, so a fuzz draw must not be able to fail it: the seed is pinned, and the

@@ -16,7 +16,12 @@ removes any stale copy of one from the bench (a bench of the same name made earl
 dependency directories instead of linking them (a link into the project leads straight back to its source), and
 refuses to hand over a bench in which an excluded path of the project or any symlink remains. A matching path that only
 the BENCH has (a fixture fetched into it) is its own and is kept, and the script says so. Still list the bench yourself
-before launching.
+before launching. Where it lives matters too: the default root, `<project>/.gauntlet/bench`, is INSIDE the project, and
+the source is three directories up from a bench there - so `scripts/bench.sh` REFUSES a bench that withholds `src`
+(a `BENCH_EXCLUDE` pattern naming `src`, `v4/src`, ...) anywhere inside the project, `.gauntlet/` included, with the
+reason and the fix: `BENCH_ROOT=<a directory outside the project>` (not the shared `$HOME`: a directory of this round's
+own). Start the attacker there. The bench's `.gauntlet-bench` marker names the project by a hash of its path, not by the
+path.
 
 Run it **earlier than feels natural** - as soon as the spec is stable and the battery is green, not as a final
 ceremony. Its findings are about the spec, and the spec aims every later round.

@@ -281,7 +281,9 @@ from all of these:
   phase 0 and the dossier reports against it. [`doctrine/UPSTREAM.md`](doctrine/UPSTREAM.md) lists what to read before
   believing anything here, and says that where upstream and this kit disagree, upstream wins.
 - **The official [`v4-template`](https://github.com/uniswapfoundation/v4-template)** - phase 2 starts from it, not
-  from a layout of ours. If the template changes, follow the template.
+  from a layout of ours. If the template changes, follow the template. Offline, with no way to fetch it, the kit's own
+  v4 recipe (`QUICKSTART.md` step 7b) stands in for it - a divergence the dossier writes in section 8, never a silent
+  swap (`AGENTS.md` section 3, phase 2).
 - **Foundry's invariant testing and `forge fuzz`** - the judge in this kit is Foundry. The doctrine is mostly a set
   of rules about how to read its output honestly.
 - The published audit-report conventions of the human audit firms, for the shape of a finding: severity, who

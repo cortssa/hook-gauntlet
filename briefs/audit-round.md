@@ -53,8 +53,12 @@ list you will pay for rediscoveries.*
   symlink.
 - Read-only on the bench (the copy of the project you were given) except your own scratch directory `{{SCRATCH}}` and your report `{{REPORT}}`. `{{SCRATCH}}` is `test/audit/<round>/` INSIDE the bench: forge compiles `test/`, so your tests run with plain `forge test --match-path 'test/audit/<round>/*'`; nothing under `.gauntlet/` is in the bench, and the project's own `test/` is not yours to change.
 - No mainnet writes, no keys, no broadcast, no installs, no browser.
-- **Reproduce the baseline before attacking anything**: `{{BASELINE_TESTS}}` tests pass, `{{BASELINE_SIZES}}`,
-  `{{BASELINE_GAS}}` (from the fork when the project has one; otherwise the gas of the hook's hot path in the battery's own tests, labelled `local`). If you cannot reproduce it, your bench is wrong and your findings are worthless - stop and
+- **Reproduce the baseline before attacking anything**: run the battery in your bench (`{{KIT}}/scripts/battery.sh .`)
+  and compare it with what the orchestrator's battery wrote for this revision - the files themselves, not numbers retyped
+  into this brief: `{{BATTERY_REPORTS}}/02-test.txt` (the tests that pass, and each test's gas), `{{BATTERY_REPORTS}}/03-sizes.txt`
+  (the sizes), and the gas of the hook's hot path from the fork run's report when the project has one (`{{FORK_REPORT}}`;
+  otherwise from `02-test.txt`, labelled `local`). Those files and nothing else in that directory: it also holds the
+  earlier rounds' reports. If you cannot reproduce it, your bench is wrong and your findings are worthless - stop and
   report that.
 - **Every claim is a Foundry test that PASSES.** No red tests in the report. A test that proves a bug asserts the
   wrong behaviour and is named so that this is obvious.
@@ -116,4 +120,6 @@ Three fixed subsections, in this order, every line carrying the evidence label i
 Goes red at the executor's gate (`briefs/executor-with-gates.md`) exactly like a red test: a report missing one of
 the three, or carrying a line with no evidence label, does not pass. The report's last line is `END OF REPORT {{ROUND}}`,
 written once, when it is complete: never as a placeholder. `scripts/size.sh` writes under `.gauntlet/reports/` of the
-directory it runs in: in the bench that directory is yours to delete, or point `OUT_DIR` at `{{SCRATCH}}`.
+directory it runs in: in the bench that directory is yours to delete, or point `OUT_DIR` at `{{SCRATCH}}`. (In a bench
+`scripts/bench.sh` made - it holds a `.gauntlet-bench` marker; in a copy made any other way, with no `.gauntlet/`, the
+kit's scripts refuse to write their reports into it: point `OUT_DIR` at `{{SCRATCH}}`.)

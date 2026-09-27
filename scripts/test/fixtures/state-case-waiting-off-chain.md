@@ -1,4 +1,4 @@
-<!-- selftest: judge=3=false,5=false rows=7b rc=0 -->
+<!-- selftest: judge=5=false rows=7b rc=0 -->
 # STATE - next.sh fixture: before round 1, the chain known, the real manager never run; the owner is asked for an off-chain keeper address - not the chain, not RPC_URL: row 7b does not wait on that answer, it stands (a verifier's G03)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*

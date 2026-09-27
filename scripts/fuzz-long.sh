@@ -24,7 +24,10 @@
 #          SEED       replay a specific seed
 #          USE_BENCH  1 to run in a bench copy (default: 1). A project whose foundry.toml or remappings.txt reach
 #                     outside it (`../src`, as the v4 module does) is benched from the parent they reach - one or two
-#                     levels up - and run at its own place inside that bench; deeper than two levels is refused.
+#                     levels up - and run at its own place inside that bench; deeper than two levels is refused (bench
+#                     the directory it reaches yourself, scripts/bench.sh, and run this there with USE_BENCH=0).
+#                     USE_BENCH=0 runs the campaign in the project itself: forge's out/ and cache/, the corpus and the
+#                     census land there - for a tree of your own (or a bench), never someone else's.
 #                     The bench keeps the campaign's corpus/ and census/ from one run to the next (bench.sh BENCH_KEEP):
 #                     a refresh never deletes them, and a corpus/ the project has is merged in. census/long.tsv is THIS run's
 #                     census and starts empty; another run's census under another name (GAUNTLET_CENSUS) stays.
@@ -32,7 +35,15 @@
 #                     `census: <path>`: the file the gate reads (scripts/census.sh --aggregate <path>). A FAILED campaign has
 #                     no census (forge writes a line per shrink replay): the file is renamed <name>.FAILED.tsv, named, and
 #                     the gate refuses it.
-#          OUT_DIR    where to write the log (default: <project>/.gauntlet/reports)
+#          BENCH_ROOT where that bench lives (default: <project>/.gauntlet/bench - the project given here, also when the
+#                     bench is of its parent; scripts/bench.sh says why inside the project, and never $HOME). The default
+#                     applies only where the kit's convention is installed (<project>/.gauntlet/ exists); in a tree without
+#                     it (someone else's hook, doctrine/RETROFIT.md) a run with USE_BENCH=1 is refused before anything is
+#                     written, and asks for a BENCH_ROOT outside the project (NOTHING PROVEN)
+#          OUT_DIR    where to write the log (default: <project>/.gauntlet/reports; a relative one is from the directory
+#                     you run this from). Inside a project with no .gauntlet/ (someone else's tree), whatever USE_BENCH says,
+#                     it refuses before writing anything (NOTHING PROVEN) - unless it is a bench or the kit's own
+#                     (scripts/lib/owner-tree.sh)
 #          FORGE_FLAGS  extra flags for forge test (e.g. --offline); named in the verdict line when set (an endpoint or
 #                     a key as <set>, by its shape; a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
 #          Not the environment, and named too (scripts/lib/forge-env.sh): the keys ~/.foundry/foundry.toml, the machine's
@@ -51,6 +62,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/parse.sh" || { echo "fuzz-long: $HERE/lib/parse.sh is missing"; exit 2; }
 # shellcheck source=lib/forge-env.sh
 . "$HERE/lib/forge-env.sh" || { echo "fuzz-long: $HERE/lib/forge-env.sh is missing"; exit 2; }
+# shellcheck source=lib/owner-tree.sh
+. "$HERE/lib/owner-tree.sh" || { echo "fuzz-long: $HERE/lib/owner-tree.sh is missing"; exit 2; }
 # forge reads a test filter, a budget and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, FOUNDRY_TEST,
 # FOUNDRY_INVARIANT_RUNS, FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only
 # FOUNDRY_MATCH_CONTRACT): one exported for another command would narrow or weaken this run in silence (measured,
@@ -64,21 +77,38 @@ USE_BENCH="${USE_BENCH:-1}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 
 SRC="$(cd "$PROJECT" && pwd)" || { echo "fuzz-long: cannot enter $PROJECT"; exit 1; }
+# the default bench root is inside the project: only where the kit's convention is installed. Checked before anything is
+# written - the log's default directory is under <project>/.gauntlet/ too, and creating it would satisfy this check.
+if [ "$USE_BENCH" = "1" ] && [ -z "${BENCH_ROOT:-}" ] && [ ! -d "$SRC/.gauntlet" ]; then
+  echo "fuzz-long: BENCH_ROOT is not set, and $SRC has no .gauntlet/ (the kit's convention is not installed there): the bench"
+  echo "           would be made inside that tree - doctrine/RETROFIT.md: a bench of your own, never their working tree."
+  echo "           NOTHING PROVEN, nothing written: set BENCH_ROOT=<a directory outside the project> (and OUT_DIR, whose default"
+  echo "           is <project>/.gauntlet/reports)."
+  exit 2
+fi
+# A project that imports from outside itself (`gauntlet-kit/=../src/`, `allow_paths = ["../src"]`) cannot compile in a
+# bench of itself alone: the bench has no parent to resolve `..` against. So the bench is made of the ancestor its
+# configuration reaches, and the campaign runs at the project's own place inside it. Found by a fresh reader: on the
+# v4 module this used to fail to compile, and the compile error was then reported as a counterexample. Read, and a deep
+# one refused, before anything is written.
+if [ "$USE_BENCH" = "1" ]; then
+  ups="$(cat "$SRC/foundry.toml" "$SRC/remappings.txt" 2> /dev/null | grep -v '^[[:space:]]*#' | grep -oE '(\.\./)+|\.\.["/]?$' \
+    | awk '{ n = gsub(/\.\./, ""); if (n > m) m = n } END { print m + 0 }')"
+  if [ "$ups" -gt 2 ]; then
+    # not "run with USE_BENCH=0" (V26b): in someone else's tree that runs the campaign in their working tree
+    echo "fuzz-long: $SRC reaches $ups directories up (../ in foundry.toml or remappings.txt); a bench that deep is refused. Bench the directory it reaches yourself (scripts/bench.sh, BENCH_ROOT outside it) and run this in that bench, at the project's place, with USE_BENCH=0. NOTHING PROVEN."
+    exit 2
+  fi
+fi
 OUT_DIR="${OUT_DIR:-$SRC/.gauntlet/reports}"
+case "$OUT_DIR" in /*) ;; *) OUT_DIR="$PWD/$OUT_DIR" ;; esac   # the log is written after the cd below
+# never into a tree without the kit's convention - with USE_BENCH=0 too (V26b: it made <proj>/.gauntlet/reports in one) -
+# refused before anything is written (scripts/lib/owner-tree.sh)
+report_dir_allowed fuzz-long "$SRC" "$OUT_DIR" || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
 mkdir -p "$OUT_DIR"
 
 RUN_IN="$SRC"
 if [ "$USE_BENCH" = "1" ]; then
-  # A project that imports from outside itself (`gauntlet-kit/=../src/`, `allow_paths = ["../src"]`) cannot compile in a
-  # bench of itself alone: the bench has no parent to resolve `..` against. So the bench is made of the ancestor its
-  # configuration reaches, and the campaign runs at the project's own place inside it. Found by a fresh reader: on the
-  # v4 module this used to fail to compile, and the compile error was then reported as a counterexample.
-  ups="$(cat "$SRC/foundry.toml" "$SRC/remappings.txt" 2> /dev/null | grep -v '^[[:space:]]*#' | grep -oE '(\.\./)+|\.\.["/]?$' \
-    | awk '{ n = gsub(/\.\./, ""); if (n > m) m = n } END { print m + 0 }')"
-  if [ "$ups" -gt 2 ]; then
-    echo "fuzz-long: $SRC reaches $ups directories up (../ in foundry.toml or remappings.txt); a bench that deep is refused. Run with USE_BENCH=0, or bench it yourself (scripts/bench.sh). NOTHING PROVEN."
-    exit 2
-  fi
   BENCH_FROM="$SRC"; REL_IN=""
   for _ in $(seq 1 "$ups"); do REL_IN="$(basename "$BENCH_FROM")${REL_IN:+/$REL_IN}"; BENCH_FROM="$(dirname "$BENCH_FROM")"; done
   # one bench per PROJECT: two long campaigns sharing a bench delete each other's files
@@ -88,7 +118,10 @@ if [ "$USE_BENCH" = "1" ]; then
   # A corpus the project has of its own is merged in, never replacing the bench's.
   # (a corpus directory from the environment is not taken - forge-env.sh - and the one this script sets is under corpus/)
   keep="${REL_IN:+$REL_IN/}corpus ${REL_IN:+$REL_IN/}census"
-  bench_out="$(BENCH_KEEP="${BENCH_KEEP:+$BENCH_KEEP }$keep" "$HERE/bench.sh" "$bench_name" "$BENCH_FROM")" || { printf '%s\n' "$bench_out" | tail -3; echo "fuzz-long: the bench could not be made. NOTHING PROVEN."; exit 2; }
+  # the bench lives in THIS project's .gauntlet/ (not in the parent's, when the parent is what is benched): bench.sh
+  # allows a root strictly under a .gauntlet directory inside what it copies, and no copy enters one
+  bench_root="${BENCH_ROOT:-$SRC/.gauntlet/bench}"
+  bench_out="$(BENCH_ROOT="$bench_root" BENCH_KEEP="${BENCH_KEEP:+$BENCH_KEEP }$keep" "$HERE/bench.sh" "$bench_name" "$BENCH_FROM")" || { printf '%s\n' "$bench_out" | tail -3; echo "fuzz-long: the bench could not be made. NOTHING PROVEN."; exit 2; }
   RUN_IN="$(printf '%s\n' "$bench_out" | tail -1)${REL_IN:+/$REL_IN}"
   [ -n "$REL_IN" ] && echo "fuzz-long: the project reaches $ups level(s) up, so the bench is of $BENCH_FROM and the campaign runs in <bench>/$REL_IN"
 fi

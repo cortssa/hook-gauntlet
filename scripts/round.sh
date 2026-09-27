@@ -11,7 +11,7 @@
 # There is no second file. The JSON is a VIEW, derived from the ROUND lines on demand (`--json`), never stored: a
 # fourth state file was tried once, nothing read it, and it was cut (state/README.md, "The ROUND line").
 #
-# Usage:   scripts/round.sh <LOG.md> --id r05 --phase 4 --type regression --model "vendor-a/large" --bench "~/hg-a05" \
+# Usage:   scripts/round.sh <LOG.md> --id r05 --phase 4 --type regression --model "vendor-a/large" --bench .gauntlet/bench/a05 \
 #            --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate pass \
 #            [--tokens 230k] [--minutes 95] [--files-read 41] [--tests-written 6] --report reports/r05.md [--conf 0.7]
 #          scripts/round.sh --json <LOG.md>      one JSON object per ROUND line, in file order, on stdout
