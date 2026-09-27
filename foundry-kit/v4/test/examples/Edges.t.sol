@@ -10,6 +10,8 @@ import {CustomRevert} from "v4-core/src/libraries/CustomRevert.sol";
 import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {Pool} from "v4-core/src/libraries/Pool.sol";
+import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
@@ -21,8 +23,9 @@ import {SwapEventReader} from "../../src/SwapEventReader.sol";
 import {DeltaFeeHook} from "../../src/examples/DeltaFeeHook.sol";
 import {ClaimsFeeHook} from "../../src/examples/ClaimsFeeHook.sol";
 import {CappedDynamicFeeHook} from "../../src/examples/CappedDynamicFeeHook.sol";
+import {InRangeDonateHook} from "../../src/examples/InRangeDonateHook.sol";
 
-/// @notice ITEM 4 of K15: the three example hooks, and the harness under them, at the EDGES - tick spacing 1 and the
+/// @notice ITEM 4 of K15: the example hooks (the fourth, `InRangeDonateHook`, since K18), and the harness under them, at the EDGES - tick spacing 1 and the
 /// maximum (32 767), prices near and AT the ends of the sqrt-price range, an LP fee of 0 and of 100 %, and a dynamic fee
 /// at the manager's cap. Every other test in this module runs at spacing 60 (or 10) and a price of 1 or 4.
 ///
@@ -41,6 +44,7 @@ contract ExampleHookEdgesTest is V4Harness {
     DeltaFeeHook internal delta;
     ClaimsFeeHook internal claims;
     CappedDynamicFeeHook internal capped;
+    InRangeDonateHook internal donating;
     address internal provider = address(0xA11CE);
     address internal trader = address(0xB0B);
     address internal treasury = address(0x7EA5);
@@ -74,6 +78,14 @@ contract ExampleHookEdgesTest is V4Harness {
                 type(CappedDynamicFeeHook).creationCode,
                 abi.encode(manager),
                 Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG
+            )
+        );
+        donating = InRangeDonateHook(
+            _deployHook(
+                type(InRangeDonateHook).creationCode,
+                abi.encode(manager, treasury),
+                Hooks.BEFORE_ADD_LIQUIDITY_FLAG | Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG | Hooks.BEFORE_SWAP_FLAG
+                    | Hooks.AFTER_SWAP_FLAG | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
             )
         );
         _fundAndApprove(provider, 1e38);
@@ -149,11 +161,15 @@ contract ExampleHookEdgesTest is V4Harness {
             PoolKey memory k;
             if (which == 0) k = _initPool(IHooks(address(delta)), 3000, e[i].spacing, e[i].sqrtPrice);
             else if (which == 1) k = _initPool(IHooks(address(claims)), 3000, e[i].spacing, e[i].sqrtPrice);
+            else if (which == 3) k = _initPool(IHooks(address(donating)), 3000, e[i].spacing, e[i].sqrtPrice);
             else k = _initPool(IHooks(address(capped)), LPFeeLibrary.DYNAMIC_FEE_FLAG, e[i].spacing, e[i].sqrtPrice);
             _addFullRangeLiquidity(k, provider, 1e18);
             for (uint256 a = 0; a < amounts.length; a++) {
                 for (uint256 o = 0; o < 4; o++) {
                     SwapParams memory p = _p(o < 2, o % 2 == 0, amounts[a]);
+                    // the donating hook pays its pot at the start of a swap: pay it first, so that the swap's books
+                    // hold this swap's fee alone (the pot is `_donatingAfter`'s)
+                    if (which == 3) donating.sweep(k);
                     try this.swapAndCheck(k, p, which) {
                         t.stood += 1;
                     } catch (bytes memory err) {
@@ -194,6 +210,69 @@ contract ExampleHookEdgesTest is V4Harness {
         assertEq(t.stood, 56);
         assertEq(t.atTheWall, 4);
         assertEq(t.feeNotHeld, 0);
+    }
+
+    /// @notice the same 60 swaps under `InRangeDonateHook` (K18): 56 stand and close per party (its fee a claim, as the
+    /// claims example's), 4 at the wall; and after the battery, per edge, every fee it took was either donated to the one
+    /// provider or - where the provider is not in range (spacing 32 767 near the bottom, outside the widest position that
+    /// spacing allows) - unowned, and the provider was paid exactly the donations, to the manager's rounding
+    function test_the_in_range_donate_example_at_the_edges() public {
+        Tally memory t = _battery(3);
+        assertEq(t.stood, 56);
+        assertEq(t.atTheWall, 4);
+        assertEq(t.feeNotHeld, 0);
+        _donatingAfter();
+    }
+
+    /// @notice the edges again, with the payout checked: per edge, the provider's fees owed equal what the hook donated
+    /// (less at most 1 wei per donation), and the rest of what it took is unowned
+    function _donatingAfter() internal {
+        Edge[5] memory e = _edges();
+        for (uint256 i = 0; i < e.length; i++) {
+            uint256 snap = vm.snapshotState();
+            PoolKey memory k = _initPool(IHooks(address(donating)), 0, e[i].spacing, e[i].sqrtPrice);
+            _addFullRangeLiquidity(k, provider, 1e18);
+            uint256[2] memory d0 = [donating.donated(currency0), donating.donated(currency1)];
+            uint256 donations;
+            for (uint256 o = 0; o < 4; o++) {
+                try this.swapOnly(k, _p(true, o % 2 == 0, 1e6)) {} catch {}
+                donating.sweep(k);
+                donations += 1;
+            }
+            (int24 lo, int24 hi) = _fullRange(e[i].spacing);
+            (uint256 owed0, uint256 owed1) = _owed(k, lo, hi);
+            uint256 given0 = donating.donated(currency0) - d0[0];
+            uint256 given1 = donating.donated(currency1) - d0[1];
+            assertLe(owed0, given0, string.concat(e[i].name, ": the provider was paid more than was donated"));
+            assertLe(owed1, given1, string.concat(e[i].name, ": the provider was paid more than was donated"));
+            assertLe(given0 - owed0, donations, string.concat(e[i].name, ": a donation did not reach the provider"));
+            assertLe(given1 - owed1, donations, string.concat(e[i].name, ": a donation did not reach the provider"));
+            assertEq(
+                donating.feesTaken(currency0) + donating.feesTaken(currency1),
+                donating.donated(currency0) + donating.donated(currency1) + donating.unownedTotal(currency0)
+                    + donating.unownedTotal(currency1),
+                string.concat(e[i].name, ": a fee is neither donated nor unowned")
+            );
+            vm.revertToState(snap);
+        }
+    }
+
+    function swapOnly(PoolKey memory k, SwapParams memory p) external {
+        require(msg.sender == address(this), "self only");
+        vm.prank(trader);
+        router.swap(k, p, "");
+    }
+
+    /// @dev what the provider's full-range position is owed now: v4's own formula
+    function _owed(PoolKey memory k, int24 lo, int24 hi) internal view returns (uint256 o0, uint256 o1) {
+        bytes32 salt = liquidity.positionSalt(provider, bytes32(0));
+        (uint128 liq, uint256 last0, uint256 last1) =
+            StateLibrary.getPositionInfo(manager, k.toId(), address(liquidity), lo, hi, salt);
+        (uint256 in0, uint256 in1) = StateLibrary.getFeeGrowthInside(manager, k.toId(), lo, hi);
+        unchecked {
+            o0 = FullMath.mulDiv(in0 - last0, liq, 1 << 128);
+            o1 = FullMath.mulDiv(in1 - last1, liq, 1 << 128);
+        }
     }
 
     /// @notice the same 60 swaps: 56 stand, the hook's delta zero in every one, 4 at the wall

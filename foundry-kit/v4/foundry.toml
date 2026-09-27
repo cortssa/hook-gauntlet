@@ -40,11 +40,11 @@ no_match_path = "test/fork/**"
 [rpc_endpoints]
 mainnet = "${RPC_URL}"
 
-# FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4 - the fork suites, and the three example hooks'
+# FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4 - the fork suites, and the four example hooks'
 # unit suites unchanged, on the deployed mainnet manager at the harness's pinned block (foundry-kit/v4/README.md, "The
 # fork"). Everything else is inherited from the default profile, the compiler settings included, so the build is shared.
 [profile.fork]
-match_path = "test/{fork/**,examples/CappedDynamicFeeHook.t.sol,examples/ClaimsFeeHook.t.sol,examples/DeltaFeeHook.t.sol}"
+match_path = "test/{fork/**,examples/CappedDynamicFeeHook.t.sol,examples/ClaimsFeeHook.t.sol,examples/DeltaFeeHook.t.sol,examples/InRangeDonateHook.t.sol}"
 no_match_path = "test/sim/**"
 
 # FOUNDRY_PROFILE=periphery scripts/battery.sh foundry-kit/v4 - the three example hooks through Uniswap's REAL periphery

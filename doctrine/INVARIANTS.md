@@ -44,9 +44,48 @@ These are prompts, not a checklist. Your hook will need rules that are not here.
 | **vault / rehypothecation** | shares times price never exceeds assets; nobody can withdraw more than they deposited plus their share of yield |
 | **any hook that quotes** | the quote equals the execution when nothing changed in between; under a hostile token the execution is never MORE than the quote |
 | **any hook that emits events** | the state rebuilt from the events alone equals the state on chain |
+| **pays in-range LPs, or traders by volume** | per party, what it RECEIVED never exceeds what it was ENTITLED to by the spec's rule, plus a stated tolerance - below |
 
 The last two rows are there because they are the ones most often forgotten. A fuzz suite that checks where the
 money went and never checks what the contract **said** about it will pass while the quote and the event log lie.
+
+## Who was paid, not only how much
+
+A payout can be exact in every amount and still go to the wrong people. `manager.donate` pays the positions in range AT
+THE MOMENT it runs; a sweep, a reward or a rebate paid "to whoever is in range" or "by volume" does the same kind of
+thing. Every conservation invariant stays green while a position placed one call before the payout - or a trader who
+is also the LP - takes what others earned: a fresh reader's hook lost about 100 % of each sweep that way with every
+amount invariant and the census gate green (`HOOK-ATTACKS.md` class 20). The invariant that sees it is about PARTIES:
+
+1. **Write the rule of entitlement in the spec, with its clock.** Who earns a payout, and WHEN is it earned: the
+   liquidity in range when each fee was taken (the fee is the clock), liquidity x seconds over an interval, volume
+   traded in an epoch. "The LPs" is not a rule.
+2. **Feed a reference model at the moment the spec says a payout is earned**, not when it is paid: after each swap,
+   after each interval, at the end of each epoch. It splits what was earned over the parties that qualified THEN, read
+   from the manager (the tick, each position's liquidity) or from the swap events - never from the hook's own books.
+3. **Measure what each party actually received from the truth**: for liquidity, the fees the manager paid it on every
+   modification plus what it is owed now (fee growth inside the range, v4's own formula) - on a pool whose LP fee is 0
+   every unit of fee growth is a payout; for traders, their balances.
+4. **The invariant, per party: received <= entitled + tolerance**, and the tolerance DERIVED from the arithmetic (for a
+   donation: the manager rounds each position down once per donation and once per modification, so a model kept in
+   units of 2^-128 is within 1 wei per party over a whole campaign). The other direction, received >= entitled minus
+   rounding once what is pending is counted, catches a payout that went missing.
+5. **Put the actor that tries to be paid for what it did not earn in the handler** (`FUZZ-ACTIONS.md` question 4: the
+   just-in-time recipient), and make the smoke test prove it was in range, and alone in range, at a payout.
+6. **Attack the rule itself, not only the conformance to it.** The invariant checks that every payout CONFORMS to the
+   rule of step 1. A rule can be exploitable, and then the invariant is green while the exploit works - by
+   construction, because the rule is what pays. For each clause, ask who can make themselves qualify cheaply at the
+   moment it pays (a dust position parked where nobody else is, a position placed at the price limit of a large swap,
+   volume traded by one party on both sides), measure each as a scenario of its own, and write the result in the spec
+   as a residual or change the rule.
+
+The v4 module has all six on a worked example: `foundry-kit/v4/src/examples/InRangeDonateHook.sol` (the rule, D2),
+`src/InRangeLedger.sol` (the model and the truth, reusable for any payout to in-range liquidity),
+`src/JitRecipient.sol` (the actor), the campaign that shows the invariant red on the hook's first draft while every
+amount invariant stays green, and step 6's example: its residual R3 - dust parked beyond every honest range, before
+anything happens, is alone in range where a stranger's swap ends, and the rule owes it that whole fee while the WHO
+invariant stays green (pinned as it is by a unit test). A volume rule needs a model of its own (traders, epochs); the
+pattern is the same.
 
 ## Two kinds of check, and you need both
 

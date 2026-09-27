@@ -2,9 +2,10 @@
 
 The Uniswap v4 half of the foundry kit: a harness that gives a hook a PoolManager to be tested against, a
 salt miner for the flag bits, two deliberately stupid fixtures to trade through (ETH on either side too), a hostile
-hook, a hostile native counterparty, the other end of a token's transfer callback pointed at the manager, and three
+hook, a hostile native counterparty, the other end of a token's transfer callback pointed at the manager, and four
 worked examples with their unit tests and invariant suites: a hook that
-returns no delta, one that does, and one that keeps what it takes as ERC-6909 claims.
+returns no delta, one that does, one that keeps what it takes as ERC-6909 claims, and one that pays it to "whoever is in
+range" with `donate` - with the just-in-time recipient that tries to take that payout, and an invariant on WHO was paid.
 
 It is a **separate Foundry project** from the kit's root, at `foundry-kit/v4`. The root kit's only dependency
 is `forge-std`, and nobody who is not writing a v4 hook should have to compile a PoolManager to run it.
@@ -146,10 +147,16 @@ behaviour, the upstream one is right.
 | `test/examples/DeltaFeeHook.invariants.t.sol` | its handler (per-swap books from three sources), its invariants, its smoke test |
 | `test/examples/PrepayRouter.sol` | a router that pays FIRST (sync, transfer, swap, settle): the payment in flight a delta hook must not clobber |
 | `test/examples/DeltaFeeHook.native.t.sol` | the delta example on an ETH / 6-decimal-token pool at 3 000 per ETH: the four orientations with ETH specified and unspecified, the rebate paid in ETH, the cap in ETH, a payment in flight in the fee currency, a second pool sharing ETH |
-| `test/examples/Edges.t.sol` | the three examples and the harness at the edges: tick spacing 1 and 32 767, prices near and at the ends of the range, an LP fee of 0 and of 100 %, a dynamic fee at the cap, a cap above 2^96, a fee the manager does not hold yet |
+| `test/examples/Edges.t.sol` | the four examples and the harness at the edges: tick spacing 1 and 32 767, prices near and at the ends of the range, an LP fee of 0 and of 100 %, a dynamic fee at the cap, a cap above 2^96, a fee the manager does not hold yet |
 | `src/examples/ClaimsFeeHook.sol` | the worked CLAIMS toy: a fee kept as an ERC-6909 claim (`mint`), withdrawn by a treasury (`burn` + `take`); its promises C1-C5 in the file header |
 | `test/examples/ClaimsFeeHook.t.sol` | its unit tests: the four orientations counted by balance and by party, the withdrawal in both currencies, a treasury that refuses ETH |
 | `test/examples/ClaimsFeeHook.invariants.t.sol` | its campaign on an ETH / token pool: every party's ETH, token and claims per swap, three naive invariants kept next to the per-party ones |
+| `src/examples/InRangeDonateHook.sol` | the worked PAYOUT toy: a fee kept as a claim and donated to "whoever is in range", paid before anything can change who that is; its promises D1-D5 and limits R1-R4 in the file header ("Paying whoever is in range") |
+| `test/examples/InRangeDonateHookNaive.sol` | its first draft, a fixture: a `sweep` that donates the pot to whoever is in range when it runs |
+| `test/examples/InRangeDonateHook.t.sol`, `InRangeDonateHook.invariants.t.sol`, `InRangeDonateWatcher.sol` | its unit tests (both drafts, the JIT scenarios), its campaign (WHO was paid next to HOW MUCH) and the feed of its rule into the reference model |
+| `test/fork/ForkInRangeDonate.t.sol` | the payout scenarios on real USDC / WETH, and the JIT actor against the liquidity of the chain's own ETH / USDC pool |
+| `src/JitRecipient.sol` | the JIT-recipient actor, for any hook's campaign: a position exactly around the price just before a payout, out right after; after a push; as the trader too. Its hook points are in "Paying whoever is in range" |
+| `src/InRangeLedger.sol` | the reference model for any payout to in-range liquidity: who was entitled (liquidity in range when the payout was earned) and what each party received (read off the manager); `excess`, `shortfall`; the exact total the positions received (`receivedX128`) |
 | `test/NativeHarness.t.sol` | the harness on a native pool: four orientations hookless and with a delta hook settling in ETH, refunds, too little ETH, liquidity |
 | `test/NativeCounterparty.t.sol` | `HostileNativeActor` in every mode, as swapper and provider, at both receipts (inside the unlock, after it) |
 | `test/DeltaAccounting.t.sol` | the harness against a hook that returns deltas: every party's books in the four orientations, and a router that pays the pool's delta, refused |
@@ -403,8 +410,8 @@ never the endpoint. The harness asks only whether `RPC_URL` exists (`vm.envExist
 cheatcode's return value is printed in a trace. **Never put the endpoint in a file of the repository**: the key rule
 above holds here word for word.
 
-The `fork` profile runs `test/fork/` and the three example hooks' unit suites (`test/examples/CappedDynamicFeeHook.t.sol`,
-`ClaimsFeeHook.t.sol`, `DeltaFeeHook.t.sol`) and nothing else. The default profile does NOT run `test/fork/`
+The `fork` profile runs `test/fork/` and the four example hooks' unit suites (`test/examples/CappedDynamicFeeHook.t.sol`,
+`ClaimsFeeHook.t.sol`, `DeltaFeeHook.t.sol`, `InRangeDonateHook.t.sol`) and nothing else. The default profile does NOT run `test/fork/`
 (`no_match_path`): without an endpoint those suites can only skip, and the battery counts a skip as a failure. So the
 everyday `scripts/battery.sh foundry-kit/v4` is what it was, and the fork is two commands more.
 
@@ -1316,6 +1323,7 @@ reason the test names:
 | `DeltaFeeHook` | 48 | 4 | **8** |
 | `ClaimsFeeHook` | 56 | 4 | 0 |
 | `CappedDynamicFeeHook` | 56 | 4 | 0 |
+| `InRangeDonateHook` (its pot paid before each swap of the grid, so the swap's books hold its own fee alone; per edge, what the provider is owed is what was donated, the rest `unowned`) | 56 | 4 | 0 |
 
 **The 8: a fee taken before its currency arrives** (a LIMIT of `DeltaFeeHook`, measured, not fixed). On an exact-out swap
 the hook's fee is in the INPUT currency, which the swapper pays after the swap returns; `take` is a transfer out of what
@@ -1348,6 +1356,296 @@ fee on nothing is 0 - and an exact-out swap is refused by the manager (`InvalidF
 OWN cap on a spacing-32 767 pool charged exactly `MAX_FEE`, read off the manager's `Swap` event
 (`test_a_dynamic_fee_at_the_cap`). None of these is red on the current code except the cap above 2^96: they are pinned,
 and a change to what they measure has to be re-measured.
+
+## Paying whoever is in range: `InRangeDonateHook`, the JIT-recipient actor, and who was paid
+
+`HOOK-ATTACKS.md` class 20, with code (K18, 2026-09-27). A hook that pays "whoever is in range" - it keeps a fee and later
+`donate`s it to the pool's liquidity, a keeper sweeps accrued fees back to LPs, a reward is streamed to the active tick
+- has a failure that no amount invariant can see: `donate` pays the positions in range AT THE MOMENT it runs, so a
+position placed one call before the payout takes a share of what others earned, and a dust position placed where nobody
+else is (after pushing the price, or once the price has left every honest range) is alone in range and takes all of it.
+A fresh reader's hook lost about 100 % of each sweep that way with every conservation invariant and the census gate green.
+Three pieces address it, and two of them are for any hook, not only this one. What they leave open is named below (R1-R3,
+and a treasury skim below 3 wei per donation that only the unit suite catches).
+
+| file | what it is |
+| --- | --- |
+| `src/examples/InRangeDonateHook.sol` | the worked example: a 0.30 % fee on the unspecified side kept as an ERC-6909 claim, donated to the in-range liquidity; its SPEC (D1-D5, and what it does not promise, R1-R4) in the file header |
+| `test/examples/InRangeDonateHookNaive.sol` | its FIRST DRAFT, kept as a fixture: the same fee and books, and a `sweep` that anyone may call to donate the pot to whoever is in range now |
+| `src/JitRecipient.sol` | **the JIT-recipient actor**, for any hook's campaign: a position exactly around the price just before the payout, the payout called, the position removed - in one transaction or step by step; optionally after moving the price (the dust-alone variant); optionally as the trader too (wash + JIT) |
+| `src/InRangeLedger.sol` | **the reference model and the truth**, for any payout to in-range liquidity: what each party was ENTITLED to, split by liquidity at the moment the spec says a payout was earned, and what it RECEIVED, read off the manager |
+| `test/examples/InRangeDonateWatcher.sol` | this hook's rule fed to the ledger: after every swap, the fee the SPEC says it paid, earned where it left the price; the observer of the actors |
+| `test/examples/InRangeDonateHook.t.sol` | unit tests: D1-D5, R1, R2, R3 (pinned as it is), the JIT scenarios on both versions, a second pool, a native pool |
+| `test/examples/InRangeDonateHook.invariants.t.sol` | the campaign: the invariant on WHO was paid next to the ones on HOW MUCH, the actor in three kinds of action plus one that sits in range, the first draft shown red on WHO only |
+| `test/fork/ForkInRangeDonate.t.sol` | the scenarios on real USDC / WETH, and the actor against the chain's own ETH / USDC pool |
+
+### The rule, and the defence the SPEC chooses
+
+**Who is paid (D2).** A fee is owed to the positions in range at the moment the hook takes it - the price the swap that
+paid it LEFT - in proportion to their liquidity. The clock of this liquidity-time is the fee itself, as it is for the
+pool's own LP fee. Not liquidity x seconds: `donate` can only pay the liquidity in range at one instant, so a per-second
+promise would need a release schedule, and this hook has none. A fee taken while NO liquidity is in range is owed to no LP
+(D3): it goes to `unowned`, which only the treasury withdraws, and never waits for whoever arrives next.
+
+**The defence (D4): the pot is donated before anything can change who is in range.** Only three things change the set of
+in-range positions: a swap, adding liquidity, removing it. The hook declares `beforeSwap`, `beforeAddLiquidity` and
+`beforeRemoveLiquidity`, and each of them donates the pot FIRST - so between the moment a fee enters the pot and the moment
+it is donated, the set cannot have changed. A JIT position's own arrival pays the pot to the positions that were there; the
+sweep it calls finds nothing. `sweep` stays public and changes only timing. The choice is testable because it is one rule
+with three call sites: each mutant that drops one of them is red (below).
+
+**What it does not promise, measured.** R1: the fee follows the END of its swap, not its path. A trader that places dust
+beyond every honest range and swaps INTO it is paid its own swap's fee back (34 430 928 706 725 773 of 34 430 928 706 725 773,
+`test_R1_a_trader_that_ends_its_swap_in_its_own_dust_range_is_paid_its_own_fee`) although the swap traded against the honest
+liquidity all the way; bounded by that one swap's fee, never an earlier one. R2: just-in-time liquidity around somebody
+ELSE's swap takes its liquidity's share of that swap's fee (150 228 491 932 136 of 300 456 983 864 274, with liquidity equal
+to the one honest LP in range), as it takes its share of the pool's own LP fee (class 14); by D2 it is owed. R4: the
+manager's rounding.
+
+**R3, the entitlement rule itself is exploitable (found by the verifier V18, not closed).** Dust PARKED beyond every
+honest range, BEFORE anything happens, takes 100 % of a STRANGER's swap fee whenever that swap ends there:
+15 294 628 711 693 168 of 15 294 628 711 693 168, for liquidity 1 on [1000, 1010) (V18's geometry: spacing 10, two honest
+LPs on [-600, 600] and [-200, 1000]); without the dust the same fee is the treasury's (D3). It is neither R1 (the fee is not the
+dust owner's own) nor R2 (the dust is not one share among others: it is alone in range where the swap stops). D2 owes it
+the whole fee, so the WHO invariant is green by construction - it checks that payouts CONFORM to D2, and here D2 is what
+pays. The same follows (reasoned, not measured) for dust placed just in time at the price limit of a large swap seen
+before it lands. Closing it means changing the rule (D2), not the code; the example keeps D2 and documents it.
+`test_R3_dust_parked_beyond_every_honest_range_takes_a_strangers_whole_fee` pins the behaviour AS IT IS - a residual, not
+a promise: if it goes red, the rule changed, and R3 must be rewritten here and in the hook's header.
+
+### The actor, and where another hook plugs it in
+
+`JitRecipient` is a contract (a hook sees a contract, not a wallet) that trades through the kit's `MinimalRouter` and
+`LiquidityHelper`, so its position is, to the manager, the helper's, with salt `liquidity.positionSalt(actor, SALT)`. It
+decides nothing: the campaign says what, when and how much. The hook points, all in its NatSpec:
+
+* **the payout**: `Plan.payoutTarget` and `Plan.payoutCall` - any entry point as a call (`sweep(key)`, `distribute()`,
+  `claim(...)`), or none when the payout rides on a swap or a liquidity change the actor already makes;
+* **the position**: `Plan.liquidity` (1 is dust) and `Plan.spacings`, around the tick spacing that holds the price
+  (`rangeHoldingThePrice`: `lower <= tick < upper`, v4's "in range");
+* **the push**: `Plan.pushToSqrtPrice` (and `pushBack`) - move the price first, to where nobody else is in range;
+* **the trader**: `Plan.washAmount`, `washLimitSqrtPrice`, `washBack` - a swap of its own inside the window, and back;
+* **the observer**: `setObserver(IJitObserver)` - called after EVERY step with the swap just made, so a reference model
+  attributes each fee at the price that swap left, and tracks the position and what it was paid;
+* **the steps one by one** (`push`, `enter`, `wash`, `payout`, `exit`) for a campaign that interleaves other actors, and
+  `run` for all of them in ONE transaction - which is what an attacker does against a rule that only looks at blocks;
+* **its owner**: the constructor's last argument, and the only caller of `setObserver`, `approveToken` and every step -
+  the handler, the test, or the observer that drives it (`InRangeDonateWatcher.newJit` makes the watcher its owner and
+  its observer);
+* **its funds**: it pays for its position, pushes and washes with its OWN balance - mint or deal the ERC-20s to it, have
+  its owner call `approveToken` once per ERC-20 (it approves the kit's router and liquidity helper for the maximum), and
+  send it ETH for a native pool (it has a `receive`). An actor without funds or approvals reverts on its first step;
+  this campaign's handler counts that as an unexplained revert, never as "safe".
+
+For a hook that pays traders by volume, the payout call is the claim and the wash is the volume; the model is the
+project's to write (`doctrine/INVARIANTS.md`, "Who was paid, not only how much").
+
+### The reference model, and the invariant on WHO
+
+`InRangeLedger` keeps two columns per party and per currency. ENTITLED: the campaign calls `accrue(a0, a1)` at the moment
+the spec says a payout is earned, and the ledger splits it over the tracked positions in range then, by liquidity read
+from the manager; liquidity in range that no tracked position explains is the `WORLD`'s (a real pool's other LPs), and a
+payout earned while nothing is in range is `unownedEntitled`. RECEIVED: for every tracked position, what the manager paid
+it on each modification (`feesAccrued`) plus what it is owed now (v4's own `Position.update` formula). The campaign's pool
+has an LP fee of 0, so every unit of fee growth is a payout - the hook's, or a third party's donation, which the model owes
+to whoever is in range when it lands.
+
+The invariant is one line per party: **received <= entitled + 1 wei**
+(`invariant_nobody_is_paid_for_fees_taken_before_it_was_in_range`). The 1 wei is derived, not chosen: a donation of `d` to
+liquidity `L` raises fee growth by `floor(d * 2^128 / L)` and pays a position `floor(growth * l / 2^128)` per segment, never
+more than `d * l / L`; the model keeps shares in units of 2^-128 wei, rounded down once per accrual, so a party paid exactly
+by the rule is at most `floor(entitled) + 1`. The other direction
+(`invariant_every_party_is_paid_for_the_fees_taken_while_it_was_in_range`): once the pot not yet paid is counted, nobody
+holds less than it was owed, beyond 1 wei per accrual and per position change. The ledger reads the manager and nothing of
+the hook; the model is also checked against the manager at every accrual (the tracked liquidity in range IS the pool's,
+`invariant_the_model_agrees_with_the_manager`), and on every modification of a tracked position (the manager paid exactly
+v4's formula over the segment the ledger saw begin).
+
+**The total, exactly** (`invariant_what_was_donated_was_received`, K18b). What LEFT the hook for the pool's liquidity is
+read off the manager, not off the hook's `donated` counter: the claims the SPEC's fees minted (each swap's fee from the
+manager's `Swap` event, as D1 checks) less the claims the hook still holds less what the treasury took out, plus third
+parties' donations. What the positions received is read exactly, in units of 2^-128 wei (`InRangeLedger.receivedX128`):
+the ledger keeps the part the manager rounds away from each position's fees, once per segment. The two are equal but for
+the one remainder no position is ever paid, `d * 2^128 mod L` units of a donation of `d` to liquidity `L` - fewer than
+`L` per donation, so the tolerance is derived, not padded: accruals x liquidity ever placed
+(`InRangeLedger.unreceivableBoundX128`), in this campaign far below one wei. It needs a closed world (every position of
+the pool tracked). The check it replaces read the hook's own counter against a slack of `(accruals + 1) x (positions + 1)
++ 64` wei, and V18's mutant VM3 - one wei per donation to an address nobody follows, the counter still saying "donated" -
+passed it and all eight invariants (below, "Mutants").
+
+### What the actor takes: the first draft against the defended hook (source manager)
+
+`test/examples/InRangeDonateHook.t.sol`. Pool: LP fee 0, spacing 60, price 1; alice 1e20 on [-1200, 1200], bob 5e19 on
+[0, 2400], nobody outside [-1200, 2400]; eight swaps of 2e18 before each scenario (40 100 869 420 463 611 owed to alice and
+7 898 823 791 176 256 to bob; the defended hook pays each exactly that, alice to 1 wei).
+
+| scenario (one transaction each) | first draft (`sweep` donates to whoever is in range now) | defended |
+| --- | --- | --- |
+| a position as large as alice's placed around the price, sweep, out | takes 23 999 846 605 819 932 - half of every fee taken before it arrived (it is owed 0) | takes 0 |
+| push to tick 3 000 (nobody in range), DUST (liquidity 1), sweep, out, push back | takes the whole pot (23 696 471 373 528 770 + 24 303 221 838 111 098) and its own push's fee; the run ends about +1.0e16 at price ~1 | takes 0; the push's fee, taken with nobody in range, is the treasury's |
+| the price already left every honest range (an honest swap); dust placed there AFTER that swap, sweep | takes the 34 430 928 706 725 773 that swap paid with nobody in range | takes 0; that fee is the treasury's. Dust placed there BEFORE the swap is alone in range when it ends and takes all of it: R3, not closed |
+| wash + JIT: ten times alice's liquidity, 1e18 traded there and back, sweep, out | receives 49 074 475 851 826 896, owed 5 438 391 113 972 471; the run ends +4.3e16 | receives 5 438 391 113 972 470, its share of its own fees (R1, R2); the run ends -5.4e14 |
+
+In every first-draft row every AMOUNT is right: what was taken is what was donated, the claims are the pot, the donations
+are what the positions received. `test_on_the_naive_hook_only_the_who_invariant_goes_red` runs three of these scenarios on
+the first draft inside the campaign's own handler and requires exactly ONE of its eight invariants to fail: the WHO one.
+
+### The campaign
+
+`test/examples/InRangeDonateHook.invariants.t.sol`: one pool (LP fee 0, spacing 60, price 1), honest LPs on [-1200, 1200],
+[0, 2400] and [-3000, -600], every swap stopped inside [-4200, 4200] so the price reaches ticks where NOBODY is in range. The
+actions: `swap` (twice as often as the rest), `addLiquidity`, `removeLiquidity`, `sweep`, `thirdPartyDonate`,
+`withdrawUnowned`, and the actor as four actions - `jitAroundPayout` (dust one run in four, weight otherwise, in one
+transaction), `jitAfterPush` (push anywhere in the range first, often to where nobody is), `washJit` (the trader variant),
+and `sitterEnter` / `sitterExit` (a position that stays in range across other actors' actions). Eight invariants: WHO
+(nobody paid more than it was in range for, per party), WHO the other way (nobody paid less, once the pot is counted), D3
+(the treasury's share is exactly what nobody was owed), D1 (every fee the SPEC's, per swap), every fee donated, pending
+or unowned and the claims exactly the pot and the unowned, what left the hook (by the manager's books) is what the
+positions received (exactly, to the donations' own remainders), the model agrees with the manager, and no unexplained
+revert. The smoke test walks every action and requires every
+boundary below, a JIT position alone in range at a payout among them.
+
+The census of ONE 64 x 64 campaign on each manager (65 lines each), 0 unexplained reverts, every name above the default
+floor. The fork column is a MEASUREMENT, run once by hand (K18, before K18b's changes to the ledger and to "donated =
+received"): the fork profile does not run this campaign - it runs the unit suite and `test/fork/`. On the fork the pool is
+a fresh one of the harness's tokens on the deployed manager (4 min 15 s, 1 357 RPC requests, one fuzz caller -
+`targetSender` - so the fork fetches no new account per call). One draw each; `census.sh` judges the floor:
+
+| runs (of 65) with >= 1 success | source | fork |
+| --- | --- | --- |
+| `swap` / `addLiquidity` / `removeLiquidity` / `sweep` | 65 / 64 / 65 / 64 | 65 / 65 / 65 / 64 |
+| `jitAroundPayout` / `jitAfterPush` / `washJit` | 63 / 65 / 63 | 65 / 64 / 65 |
+| `sitterEnter` / `sitterExit` / `thirdPartyDonate` / `withdrawUnowned` | 63 / 61 / 60 / 63 | 65 / 64 / 60 / 64 |
+| runs reaching: a JIT position in range at a payout / ALONE in range at one / paid something | 65 / 64 / 63 | 65 / 64 / 65 |
+| a fee taken with nobody in range / a sitter paid for what it sat through | 64 / 34 | 65 / 43 |
+| the pot paid before a swap / before liquidity arrived / before it left | 51 / 31 / 36 | 56 / 36 / 25 |
+
+```sh
+MATCH="--match-contract InRangeDonateHookInvariants" \
+  CORE="swap addLiquidity removeLiquidity sweep jitAroundPayout jitAfterPush washJit sitterEnter sitterExit thirdPartyDonate" \
+  REACH="a fee taken with nobody in range;the pot paid before a swap;the pot paid before liquidity arrived;the pot paid before liquidity left;a JIT position was in range at a payout;a JIT position was ALONE in range at a payout;a JIT position was paid something;a sitter was paid for what it sat through" \
+  scripts/census.sh foundry-kit/v4
+```
+
+**The same campaign on the first draft finds the WHO invariant red by itself** (a copy of the suite whose
+`_campaignOnTheDefendedHook()` answers false; not in the battery, which must be green). Three campaigns in a row: all
+three red on `invariant_nobody_is_paid_for_fees_taken_before_it_was_in_range` and on nothing else, each shrunk to ONE call
+of `jitAfterPush` (a push to where nobody is, dust, sweep: the push's own fee, taken with nobody in range, waits in the
+draft's pot for the dust). The other seven invariants stayed green in all three.
+
+### Mutants: the hook, the actor and the referee
+
+Hand mutants (26, by a script kept outside the repository: each applied to the tree, the unit suite, the campaign and the
+edge grid run, then restored), every one KILLED - and for each, where (N5-N8 are in forge's pass, below):
+
+| mutant | what it breaks | killed by |
+| --- | --- | --- |
+| M1 no payout in `beforeAddLiquidity` | a JIT's arrival no longer pays the pot first | WHO (both ways), the JIT unit scenarios, R2, the native pool, the smoke test |
+| M2 no payout in `beforeSwap` | the price moves with a pot in it | WHO, D3, D2, D4 |
+| M3 no payout in `beforeRemoveLiquidity` | a position leaves with a pot owed to it | WHO, D3, R2, the smoke test (a sitter never paid) |
+| M4 a fee taken with nobody in range goes to the pot | the next arrival takes it | the campaign alone (D3) |
+| M5 the empty-range guard removed | a pot found with nobody in range is donated: the manager refuses, the swap dies | the planted D4 test only (the state is unreachable while D4 holds) |
+| M6 the fee on the specified side | | the manager (`CurrencyNotSettled`), everywhere |
+| M7 `onlyManager` as `<` | a caller above the manager passes | the callers on both sides of the manager's address |
+| M8 no treasury check / N2 the check as `>` | a stranger withdraws | the strangers on both sides of the treasury's address |
+| M9 one pot for every pool | pool A's fees paid to pool B | the per-pool test, WHO, the fee books |
+| M10 the fee one wei high | | D1, D3, WHO, the unit books |
+| M11 only currency0's claims burned | | the manager (`CurrencyNotSettled`) |
+| M12 a withdrawal does not decrement `unowned` / N3 only all of it may be withdrawn / N4 `unownedTotal` not kept | | the D3 unit test, the campaign |
+| M13 the pot in the wrong currency | | the manager (an underflow on burn), WHO |
+| N1 the fee on the input computed from `~u` | one wei less, about one swap in 330 | the 1 500-swap exact-out test (added for it: forge's native pass and a 64 x 64 campaign had left it alive); the campaign on some draws |
+| A1 the actor's range one spacing above the price | the actor is never in range: every JIT result would read "safe" | every first-draft assertion, `test_on_the_naive_hook_only_the_who_invariant_goes_red`, the smoke test |
+| A2 the actor tells the observer nothing | the model never sees its swaps or its position | D1, D3, WHO, "donated = received", the smoke test |
+| L1 the ledger forgets what was collected on exit | a JIT that left looks paid nothing | every first-draft WHO assertion, "donated = received", WHO the other way |
+| L2 the ledger's upper tick inclusive | the model's "in range" is not v4's | the model-agrees invariant, WHO the other way |
+| L3 the ledger's tolerance 1e17 instead of 1 wei | the referee forgives what the actor takes | every first-draft WHO assertion |
+
+**Found after, by the verifier V18, and closed by K18b.** VM3 - every donation skims 1 wei per currency to an address
+nobody follows, the hook's `donated` counter unchanged - and K18b's VM4 - the same, 1 wei per fee that entered the pot -
+passed all eight invariants, the smoke test, `test_on_the_defended_hook_the_same_three_trip_nothing` and the edge grid;
+only an incidental assertion of the native-pool unit test saw them. "Donated = received" read the hook's own counter
+against a padded slack. It now reads the manager and is exact to the donations' own remainders ("The reference model,
+and the invariant on WHO"): both are red in the campaign on that invariant alone - one skimmed wei is 2^128 units
+against a bound of about 10^22 - and in the smoke test and the three-scenario test (bit 5 of `_failing`, and no other).
+V18's VM3b (5 wei) is red there and on WHO the other way, as before. Not weakened: V18's VM1 (the pot paid one swap late)
+and VM2 (only zeroForOne swaps pay first) are still red on WHO. And a hook where dust cannot own a fee (in-range
+liquidity under 1e6 counts as nobody) turns the R3 pin red (3 of 15 294 628 711 693 168), with R1 and the campaign's D3
+and WHO-the-other-way: the pin notices when the rule changes. The edge grid kills none of VM3 / VM4 (it still reads the
+counter, at 1 wei per donation; VM3b it kills). The referee's new code, mutated on the unmutated hook: the manager's
+rounding not kept (L4), a re-tracked position keeping its old segment (L5), the open segment floored (L6) - each red in
+the campaign by itself ("donated = received"; L5 also the model-agrees invariant; L4 and L6 also the first-draft test).
+L7, the bound padded to one wei per accrual, lets VM3 through all eight invariants: the derived bound is what kills it.
+**Still open (V18b):** a skim of 1-2 wei per donation sent to the hook's own TREASURY (taken, or booked as withdrawable)
+passes all eight invariants - the treasury's whole balance is subtracted from what left the hook and nothing checks it
+against what the model says nobody was owed. The unit suite's per-party books catch it; 3 wei is red on WHO.
+
+**forge's own pass**, `forge test --mutate src/examples/InRangeDonateHook.sol --match-path test/examples/InRangeDonateHook.t.sol`
+(the unit suite alone: with the campaign in the loop every mutant it kills is shrunk, and one pass did not finish in 10
+minutes). This section is the only place these numbers live.
+
+| | generated | valid | killed | survived | invalid | score | time |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| first pass | 270 | 261 | 190 | **71** | 8 (+1 skipped) | 72.8 % | 11 min 51 s |
+| after the tests the survivors asked for | 270 | 262 | 233 | 29 | 8 | 88.9 % | 12 min 34 s |
+| and one more line of setup (N5-N8, by hand) | | | +4 | **25, all equivalent** | | | |
+
+42 of the first pass's 71 were REAL gaps of the unit suite, all in D3's books and D1's rounding: `unownedTotal` read by no
+unit test (only the campaign's D3 invariant); `unowned` never added to twice; a withdrawal only ever of everything, and
+only once; a stranger only ever above the treasury's address; the fee on a NEGATIVE amount (`-u` -> `~u`, one wei less
+about once in 330 swaps). `test_D3_fees_nobody_was_owed_add_up_and_are_withdrawn_in_parts_by_the_treasury_only` and
+`test_D1_the_fee_on_the_input_of_an_exact_out_swap_is_exact_at_every_rounding_edge` close them; the second pass left 29, and
+four of those (`unowned` / `unownedTotal` of currency1 in the empty-range guard, `+=` as `^=` or `|=`) survived only
+because the planted test started from zero there - it now starts from a currency1 fee nobody was owed, and the four are
+killed by hand. The 25 left, argued:
+
+* **line 114, `requiredFlags` (8)**: `|` as `+` or `^` between flags that are distinct single bits: the same number.
+* **`amountSpecified < 0` as `<= 0`**: the manager refuses an amount of 0 before any hook runs.
+* **`u < 0` as `<= 0`; `fee == 0` as `<= 0`; `getLiquidity != 0` as `> 0`; `p == 0` as `<= 0` (2); `getLiquidity == 0` as
+  `<= 0`; `p != 0` as `> 0` (2)**: unsigned values, or a zero whose fee is zero either way (8).
+* **`action == Action.SWEEP` as `<=`**: `SWEEP` is the enum's 0.
+* **`_pot[id][i] += fee` as `^=` or `|=` (2)**: the pot is always 0 there - the same swap's `beforeSwap` paid it (D4; the
+  mutant M2, which removes that, is killed).
+* **`fee == 0` as `fee < 0`; `p0 == 0` / `p1 == 0` as `< 0` (2); `p != 0` as `>= 0` (2)**: the early return is never taken, so
+  a zero fee is minted, added and announced, or an empty pot is donated / burned as zero - every balance and every ledger
+  the same; only a zero-amount event more (5).
+
+### At the edges, and on the fork
+
+The edge grid of "At the edges" runs the example too: 56 of 60 swaps stand and close per party to the wei, 4 at the wall,
+none refused by the hook; and per edge, what the one full-range provider is owed is what the hook donated, less at most
+1 wei per donation, and the rest of what it took is `unowned` (spacing 32 767 near the bottom, where the widest position
+does not reach the price) - `test_the_in_range_donate_example_at_the_edges`.
+
+On the fork (`FOUNDRY_PROFILE=fork`: `test/fork/ForkInRangeDonate.t.sol`, and the unit suite unchanged). A hook cannot be
+attached to a pool that exists - the hook is part of the pool's key - so the example runs on a FRESH pool of real USDC /
+WETH at 4 000 USDC per ETH, honest liquidity 1e15 and 5e14 around the price, LP fee 0. The first draft gives the actor 19.66
+USDC + 0.00435 WETH around a sweep, the whole pot plus its push's fee after a push (65.36 USDC + 0.01181 WETH), and ends
+wash + JIT at +42.15 USDC + 0.0136 WETH; the defended hook gives 0, 0, and its share of its own wash fees (the run ends
+-9.75 USDC - 0.00077 WETH).
+
+**The actor against real liquidity.** The chain's own ETH / USDC 0.05 % pool (no hook, spacing 10) at block 26 050 000:
+171 357 403 690 873 183 of liquidity in range at tick -197 354 (about 2 690 USDC per ETH). A donation of 1 ETH + 2 700 USDC
+stands for a naive payout of fees its LPs earned (the model is told first, so the chain's LPs - `WORLD` - are owed it).
+The actor, one tick spacing wide, placed just before it:
+
+| the actor's liquidity | what it put in | what it took of 1 ETH + 2 700 USDC |
+| --- | --- | --- |
+| 1 (dust) | 4 wei + 0.000001 USDC | 5 wei: the chain's LPs are in range with it |
+| equal to the chain's | 0.660 ETH + 2 666.29 USDC | 0.5 ETH + 1 350 USDC |
+| nine times the chain's | 5.943 ETH + 23 996.58 USDC | 0.9 ETH + 2 430 USDC |
+
+Its capital comes back in the same transaction; half of any payout to that pool costs about 4 400 USD of capital for the
+length of one transaction. In the defended order - the payout before anybody can arrive - it takes 0 at every size, and the
+WHO check (`WORLD` = the chain's LPs, `closedWorld` off) sees every row of the naive order. The two fork tests cost 170 RPC
+requests, through a counting relay.
+
+### What it cost
+
+Measured on this machine (forge 1.8.1, 16 CPUs, WSL2), 2026-09-27: the everyday battery from clean, with the fourth example,
+236 s and 8 955 748 KB peak RSS (270 passed, 0 skipped; it was 200 s and 7.74 GB before; 271 since K18b's R3 pin); the example's own suites 10 s
+(unit) and 9 s (the 64 x 64 campaign); forge's mutation pass on the unit suite 12 min 34 s; the fork battery (fetch included,
+117 passed, 0 skipped; 118 since K18b's R3 pin) 469 RPC requests through a counting relay with forge's fork cache already holding most of the
+block's state; the campaign once on the fork 4 min 15 s and 1 357 requests (1 330 `eth_getStorageAt`).
 
 ---
 
@@ -2004,7 +2302,8 @@ Written down because a list of gaps is the only honest end to a README.
   the WHOLE swap (a custom curve, `HOOK-ATTACKS.md` class 35) have no test. Nor has `DeltaFeeHook` a fixture-manager
   run, a long campaign or a native mutation pass: see "Hooks that return deltas".
 * **What is left of the fork** (fork tests and a block-pinned fixture left this list on 2026-09-25: "The fork", above).
-  Not run on the fork: the invariant campaigns, the sandbox (`test/sim`), the native, multipool, edge and re-entrancy
+  Not run on the fork: the invariant campaigns (but for one measurement run of `InRangeDonateHook`'s, by hand, "The
+  campaign" in "Paying whoever is in range"), the sandbox (`test/sim`), the native, multipool, edge and re-entrancy
   suites (they use `_setUpV4` and would run; nobody has run them there), a pool the chain already has (every pool here is
   fresh), a token with a transfer fee in a v4 pool, and any chain but Ethereum mainnet (the harness refuses another
   chain id - `test_a_fork_of_another_chain_is_refused`, and end to end under `FOUNDRY_CHAIN_ID=5` or an endpoint that
@@ -2021,6 +2320,22 @@ Written down because a list of gaps is the only honest end to a README.
   `ClaimsFeeHook` through it; the fixture manager with the periphery (`V4_MANAGER=fixture` deploys the pinned periphery
   in front of it; not run); and the deployed position manager against the pinned one beyond what these suites do (their
   code differs; no diff was made).
+
+* **What is left of payouts to "whoever is in range"** (the JIT-recipient actor left this list on 2026-09-27: "Paying
+  whoever is in range", above). Not modelled: a payout earned per SECOND (a reward streamed to the active tick: the ledger
+  accrues at any moment it is told to, but no example feeds it per interval) and a payout to TRADERS by volume (the
+  actor's wash variant is the trader; no example hook, no model of volume, no invariant). Not run: the actor through the
+  PositionManager or a router of the periphery (it uses the kit's `MinimalRouter` and `LiquidityHelper`; a JIT position
+  that is an ERC-721 is the same liquidity to the manager - not measured); the campaign with the hostile tokens' switches
+  on, on a native pool, with two pools, or in the fork profile (it ran on the fork once, by hand, as a measurement, before
+  K18b changed the ledger: "The campaign", above; the profile runs its unit suite and `test/fork/ForkInRangeDonate.t.sol`);
+  a pool with an LP fee (the received column counts every unit of fee growth as a payout; with an LP fee it must take the
+  payouts' share only - not built); a JIT spread over several transactions of one block (the defended rule does not look
+  at blocks; a rule that does needs that sequence). The only real liquidity the actor met is a hook-less pool paid by a
+  stand-in donation: no example hook can be attached to a pool that exists. R1 (the fee follows the END of its swap) and
+  R3 (dust parked beyond every honest range takes a stranger's whole fee) are measured and stated, not closed: `donate`
+  pays one price, and R3 is the entitlement rule D2 itself. The edge grid still checks its one provider against the hook's
+  `donated` counter, at 1 wei per donation ("At the edges, and on the fork"); only the campaign's total reads the manager.
 
 The attack list this module was written from — re-entrancy through `unlock`, hijacking `sync`, `hookData` as
 attacker input, read order, delta accounting, ERC-6909 claims, native currency, fee and tick edges,

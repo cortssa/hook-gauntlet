@@ -23,7 +23,17 @@ questions below.** Write the list in `SPEC.md` before you write the code.
    action out - two of a blind round's findings, one high, sat exactly where a reader had left the switches out.
 4. **The strange actors.** Someone who donates tokens straight to the hook, to the router, to the pool manager.
    Someone who is a contract, not a wallet. Someone who re-enters from inside a transfer callback. Someone who
-   is both sides of the same trade. Two operations inside one `unlock`.
+   is both sides of the same trade. Two operations inside one `unlock`. And, for any hook that pays "whoever is in
+   range" (a donation, a sweep, a reward streamed to the active tick) or pays traders by volume: **the just-in-time
+   recipient** - it places a position exactly around the price just before the payout and removes it right after, in
+   ONE transaction; a variant that first moves the price to where nobody else is in range (then even dust is alone and
+   takes everything); a variant that is also the TRADER inside its own window (it pays the fee or earns the volume, and
+   is in range to be paid back); and one that enters and stays across other actors' actions. The v4 module has it as
+   a contract with hook points for any payout (`foundry-kit/v4/src/JitRecipient.sol`); it is useless without an
+   invariant on WHO was paid (`INVARIANTS.md`, "Who was paid, not only how much"). That invariant checks conformance
+   to the entitlement rule, so point the actor at the rule too: a position that qualifies by the rule, cheaply, and
+   was parked before anything happened (dust beyond every honest range, owed a stranger's whole fee when the swap ends
+   there) is paid while every invariant stays green - measure it as a scenario and write it down as a residual.
 5. **The reads.** Quotes and views are entry points. After a state-changing action, call the quote and the view
    and check them against what just happened. They are the part of the contract that other people's software
    will trust, and they are usually the part nobody fuzzes.
