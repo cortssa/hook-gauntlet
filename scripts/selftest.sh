@@ -225,6 +225,15 @@ if command -v git > /dev/null 2>&1 && [ -f "$DK/scripts/doctor.sh" ]; then
   gpins="$(sed -n 's/^  FOUNDRY_VERSION: v\(.*\)$/\1 /p; s/^  FOUNDRY_VERSION_2: v\(.*\)$/\1 /p; s/^  FORGE_STD_TAG: v\(.*\)$/\1 /p; s/^  REPORTLAB_VERSION: "\(.*\)"$/\1 /p; s/^  PYPDF_VERSION: "\(.*\)"$/\1/p' "$HERE/../.github/workflows/gates.yml" | tr -d '\n')"
   if [ -n "$dpins" ] && [ "$dpins" = "$gpins" ]; then echo "  ok    doctor.sh's pins ($dpins) are gates.yml's"; else
     echo "  FAIL  doctor.sh's pins ($dpins) are not gates.yml's ($gpins)"; fails=$((fails + 1)); fi
+  # the workflow must PARSE: an invalid gates.yml is not a red run, it is no run at all (GitHub shows "workflow file
+  # issue" and none of the jobs start). An unquoted step name holding ": " did exactly that for four pushes.
+  if command -v python3 > /dev/null 2>&1 && python3 -c 'import yaml' > /dev/null 2>&1; then
+    if python3 -c 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); assert d["jobs"]' "$HERE/../.github/workflows/gates.yml" > "$TMP/o234y" 2>&1; then
+      echo "  ok    .github/workflows/gates.yml parses as YAML and has jobs"; else
+      echo "  FAIL  .github/workflows/gates.yml does not parse - GitHub would start none of its jobs:"; tail -n 2 "$TMP/o234y" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  else
+    echo "  --    python3 with PyYAML is not here: gates.yml NOT parsed on this machine (GitHub refuses an invalid one before any job)"
+  fi
   # and on this machine, for real: whatever it finds, its last line and its exit code agree
   "$HERE/doctor.sh" > "$TMP/o233" 2>&1; rc233=$?
   case "$rc233:$(tail -n 1 "$TMP/o233")" in
