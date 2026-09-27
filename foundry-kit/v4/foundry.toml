@@ -47,6 +47,39 @@ mainnet = "${RPC_URL}"
 match_path = "test/{fork/**,examples/CappedDynamicFeeHook.t.sol,examples/ClaimsFeeHook.t.sol,examples/DeltaFeeHook.t.sol}"
 no_match_path = "test/sim/**"
 
+# FOUNDRY_PROFILE=periphery scripts/battery.sh foundry-kit/v4 - the three example hooks through Uniswap's REAL periphery
+# (PositionManager, V4Router, Permit2) on the source manager (K17b; foundry-kit/v4/README.md, "The periphery"). Needs
+# `V4_WITH_PERIPHERY=1 scripts/install-v4.sh`. Its suites live in `test-periphery/`, NOT in `test/`, because forge compiles
+# every file under the profile's `test` directory whatever the filters say: under `test/`, the everyday build would need
+# the periphery installed. The compiler settings are the default profile's plus the one the periphery ships with for
+# the position manager (the IR pipeline at 500 runs: `lib/v4-periphery/foundry.toml`); without it the position manager
+# does not compile at our settings.
+[profile.periphery]
+test = "test-periphery"
+no_match_path = "test-periphery/fork/**"
+additional_compiler_profiles = [
+  { name = "manager", via_ir = true, optimizer_runs = 44444444 },
+  { name = "posm", via_ir = true, optimizer_runs = 500 },
+]
+compilation_restrictions = [
+  { paths = "lib/v4-core/src/PoolManager.sol", via_ir = true, optimizer_runs = 44444444 },
+  { paths = "lib/v4-periphery/src/PositionManager.sol", via_ir = true, optimizer_runs = 500 },
+]
+
+# FOUNDRY_PROFILE=periphery-fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4 - the same suites on the mainnet fork,
+# through the periphery that is DEPLOYED there (PositionManager, UniversalRouter, Permit2 at their mainnet addresses,
+# checked on the chain by `test-periphery/fork/`), plus those checks. Everything else as `periphery`.
+[profile.periphery-fork]
+test = "test-periphery"
+additional_compiler_profiles = [
+  { name = "manager", via_ir = true, optimizer_runs = 44444444 },
+  { name = "posm", via_ir = true, optimizer_runs = 500 },
+]
+compilation_restrictions = [
+  { paths = "lib/v4-core/src/PoolManager.sol", via_ir = true, optimizer_runs = 44444444 },
+  { paths = "lib/v4-periphery/src/PositionManager.sol", via_ir = true, optimizer_runs = 500 },
+]
+
 [fuzz]
 runs = 256
 

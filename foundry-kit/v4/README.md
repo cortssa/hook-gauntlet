@@ -39,10 +39,13 @@ Pins, printed on every install and recorded here so a reader does not have to ru
 | `Uniswap/v4-core` | `59d3ecf53afa9264a16bba0e38f4c5d2231f80bc` (the commit `v4-periphery` pins as its submodule) |
 | ↳ `forge-std` | `1de6eecf821de7fe2c908cc48d3ab3dced20717f` |
 | ↳ `solmate` | `4b47a19038b798b4a33d9749d25e570443520647` |
+| ↳ `openzeppelin-contracts` (only with `V4_WITH_PERIPHERY=1`) | `dbb6104ce834628e473d2173bbc9d47f81a9eec3` (the commit v4-core's tree pins) |
 | `Uniswap/v4-periphery` (optional, `V4_WITH_PERIPHERY=1`) | `9969eec44cfdf07e24b41de47f40276a58401976` |
+| ↳ `permit2` | `cc56ad0f3439c502c246fc5cfcc3db92bb8b7219` (the commit the periphery's tree pins); the periphery's own `lib/v4-core` is NOT installed |
 
-The harness needs only `v4-core`. `v4-periphery` is there for hooks that import the position manager, the
-quoter or the routers; it is not installed by default, and nothing in this module depends on it.
+The harness needs only `v4-core`. `v4-periphery` is there for the `periphery` and `periphery-fork` profiles (the example
+hooks through Uniswap's real periphery: "The periphery", below) and for hooks that import the position manager, the
+quoter or the routers; it is not installed by default, and nothing outside `test-periphery/` depends on it.
 
 The v4 API moves. The structs for swapping and modifying liquidity left `IPoolManager` for
 `types/PoolOperation.sol`, `BaseHook` and `HookMiner` left `v4-periphery/src`, and the `v4.0.0` tag of
@@ -156,6 +159,12 @@ behaviour, the upstream one is right.
 | `test/HookFlags.t.sol` | the mining, and the two different refusals of a wrong address |
 | `test/HostileHook.t.sol` | one test per switch on the hostile hook, plus all ten entry points driven once |
 | `test/Harness.t.sol` | the fixtures' own smoke test |
+| `test-periphery/PeripheryHarness.sol` | `V4Harness` plus Uniswap's periphery: `_deployPeriphery()` (the pinned one on source, the deployed one on the fork), liquidity through the PositionManager, swaps through the router, every party's books and every callback the hook received, read off the calldata. Only under `FOUNDRY_PROFILE=periphery` / `periphery-fork` ("The periphery") |
+| `test-periphery/PeripheryPlans.sol` | what a user sends the periphery, encoded: PositionManager plans, the pinned V4Router layout, the deployed UniversalRouter's |
+| `test-periphery/PeripheryExamples.t.sol` | the three example hooks through the periphery: a position's life, swaps in four orientations, ERC-20 and native pools |
+| `test-periphery/PeripherySender.t.sol`, `PeripheryProbeHook.sol` | what a hook sees through the periphery: `sender`, `msgSender()`, `hookData`, `salt` |
+| `test-periphery/DeltaFeeHook.periphery.invariants.t.sol` | `DeltaFeeHook`'s per-party books in a campaign whose every action goes through the periphery |
+| `test-periphery/fork/PeripheryAddresses.t.sol` | the deployed periphery checked on the chain; the two swap layouts; the source harness's Permit2 against mainnet's |
 | `STATIC-TRIAGE.md` | the example hook's `forge lint` warnings (5 `unsafe-typecast`), each answered with a verdict and a test |
 | `fixtures/` | where fetched bytecode lands. Empty in git, on purpose |
 
@@ -496,6 +505,182 @@ Forge does not report RPC requests; they were counted through a local relay (202
 profile from a cold cache: **378 requests** for 89 tests in 13 s (294 `eth_getStorageAt`, 28 `eth_getAccountInfo`, 20 `eth_chainId`, 20 `anvil_nodeInfo` - a probe forge makes, answered with an error -, 10 `eth_getBlockByNumber`, 2 each of `eth_getCode`, `eth_getBalance`, `eth_getTransactionCount`). A second run of the same tests reads forge's fork cache
 (`~/.foundry/cache/rpc/mainnet/26050000`) and asks the endpoint only to open each fork: **50 requests** (20 `eth_chainId`, 20 `anvil_nodeInfo`, 10 `eth_getBlockByNumber`), none for state, 89 tests in 2 s. The
 block-pinned fetch of the fixture: 3 requests (`eth_chainId`, `eth_getBlockByNumber`, `eth_getCode`).
+
+---
+
+## The periphery
+
+Real users do not call the manager through the kit's `MinimalRouter` and `LiquidityHelper`. They go through Uniswap's
+periphery: `PositionManager` (an ERC-721 per position, `modifyLiquidities` with a list of actions, paid through
+Permit2) and a V4Router (swap actions; on mainnet, inside the `UniversalRouter`). A hook can see something different
+there - another `sender`, `hookData` that went through somebody's encoder, deltas settled by somebody else's code - so
+the three example hooks run through the REAL periphery too, on the source manager AND on the fork (K17b, 2026-09-27).
+
+### How to run it
+
+```sh
+V4_WITH_PERIPHERY=1 scripts/install-v4.sh foundry-kit/v4          # + v4-periphery, its lib/permit2, v4-core's OpenZeppelin
+FOUNDRY_PROFILE=periphery scripts/battery.sh foundry-kit/v4        # the source manager, the pinned periphery
+# on the fork, with RPC_URL exported as in "The fork":
+FOUNDRY_PROFILE=periphery-fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4
+```
+
+The suites live in **`test-periphery/`, not in `test/`**, and run only under these two profiles. The reason is forge's:
+it compiles every file under the profile's `test` directory whatever the filters say, so a suite under `test/` that
+imports the periphery would make the everyday build need the periphery installed. The everyday
+`scripts/battery.sh foundry-kit/v4` is what it was (it compiles nothing in `test-periphery/`), and so is its install.
+`periphery` skips `test-periphery/fork/` (`no_match_path`, named by the battery as its filter); `periphery-fork` runs
+everything in `test-periphery/` - on the fork, where the suites use the deployed periphery (its battery line names the
+default profile's `no_match_path = "test/fork/**"`, inherited, which matches nothing under `test-periphery/`). Without `RPC_URL`,
+`periphery-fork` skips every suite with the reason and the battery fails, as in "The fork".
+
+**One v4-core, not two.** The periphery pins v4-core as a submodule of its own. `install-v4.sh` never installs that one:
+it checks that the periphery pins the SAME v4-core commit as the script (refused otherwise), leaves the periphery's
+`lib/v4-core` empty (an offline source cloned `--recursive` is copied without it; a project where it is checked out is
+refused, `V4_FORCE=1` re-installs), and `remappings.txt` sends `@uniswap/v4-core/` - and `openzeppelin-contracts/`,
+which forge would otherwise map into the periphery's `lib/v4-core` from the periphery's own `remappings.txt` - to the
+project's `lib/v4-core`. The build then compiles with the periphery's `lib/v4-core` empty, so nothing resolved into it.
+The periphery install also fetches the periphery's `lib/permit2` (the position manager and the routers import it) and
+v4-core's `lib/openzeppelin-contracts` (the position manager imports OpenZeppelin's `IERC20` through `IWETH9`); a
+source without either is refused. A periphery this run fetched and then refused (another v4-core pin, a missing
+submodule) is removed from `lib/`, and a periphery installed before the run is put back as it was (K17c). `scripts/selftest.sh` holds all of that to fake clones, offline, each case seen red
+against the script and the remappings before this change.
+
+### Which periphery, on which manager
+
+| | source (or fixture) manager: `_deployPeriphery()` | fork: the chain's own, at block 26 050 000 |
+| --- | --- | --- |
+| position manager | `PositionManager` from the pinned periphery, its real constructor: this manager, Permit2, unsubscribe gas limit 150 000 (mainnet's, read on the fork), no token descriptor (`tokenURI` is not covered), a WETH (solmate's). Deployed from its artifact (`vm.deployCode`): a test that imports both it and `PoolManager` asks forge for two incompatible compiler restrictions in one unit, so `test-periphery/PeripheryArtifacts.sol` compiles it alone, at the periphery's settings (IR, 500 runs). 20 006 B | `0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e`: 23 877 B - not the pinned build: a larger runtime, dispatching the same 39 external functions as the pinned source and no others (measured off its code). Which source it was built from is not measured |
+| swap router | the periphery's own test router, `MockV4Router` (`V4Router` is abstract; the `UniversalRouter` that completes it on mainnet is another repository the kit does not install). It pays the input with `transferFrom` from the user, not through Permit2 | the `UniversalRouter`, `0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af`, 19 499 B, pulling through Permit2 (`V4_SWAP` and, when the input is ETH, `SWEEP`) |
+| Permit2 | etched at its canonical address by Permit2's own test deployer (Permit2 is pinned at solc 0.8.17; this project compiles 0.8.26) | `0x000000000022D473030F116dDEE9F6B43aC78BA3`, 9 152 B |
+| payment | on-chain allowances only: token -> Permit2 -> spender (`_approvePeriphery`); no signature | the same |
+
+How each fork address was checked on the chain, not taken from a page (`test-periphery/fork/PeripheryAddresses.t.sol`):
+code at the pinned block, of the sizes above; the position manager answers the v4 manager, the canonical Permit2 and
+WETH9, "Uniswap v4 Positions NFT" / "UNI-V4-POSM", an unsubscribe gas limit of 150 000, and a next token id of 415 911;
+the router answers the v4 manager and swaps on a pool of ours; Permit2's EIP-712 domain is "Permit2" on chain 1 at its
+address. The Permit2 the source harness etches is mainnet's code byte for byte except two words, the immutables its
+EIP-712 base caches: chain id 31 337 against 1, and a domain separator that is NOT the canonical address's on 31 337 -
+so on the source harness's chain `DOMAIN_SEPARATOR()` answers a domain nobody would compute. Nothing here signs a permit.
+
+**Two layouts of the same swap.** The pinned periphery's `ExactInputSingleParams` / `ExactOutputSingleParams` have a
+`minHopPriceX36` field; the deployed `UniversalRouter` decodes them without it (`PeripheryPlans` encodes each router its
+own way). Sent the pinned layout, the deployed router REVERTS an exact-in swap on an ERC-20 pool - and on a NATIVE pool it
+SWAPS, handing the hook EMPTY `hookData`: it reads the pinned layout's `minHopPriceX36` (0) as the offset of `hookData`,
+lands on `currency0`, which is 0 on a native pool, and reads a length of 0
+(`test_the_pinned_layout_on_a_native_pool_swaps_and_the_hook_gets_empty_hookData`). A hook's tests that encode against the
+pinned periphery and run against the deployed router test a revert at best, and at worst a swap whose `hookData` is not
+the user's. Encode for the router your hook will be called through.
+
+### What a hook sees through it, measured
+
+`test-periphery/PeripherySender.t.sol` puts a probe hook (every callback without a delta, `test-periphery/PeripheryProbeHook.sol`)
+behind the periphery, on both managers; the harness also reads every callback off the calldata the manager sent
+(`_hookCallsIn`), for the example hooks, which ignore both arguments.
+
+| callback | `sender` | `IMsgSender(sender).msgSender()` | `hookData` | liquidity `salt` |
+| --- | --- | --- | --- | --- |
+| before/after initialise, through `PositionManager.initializePool` | the PositionManager | the zero address (outside its lock) | none | - |
+| before/after add and remove liquidity (mint, increase, decrease, burn) | the PositionManager | the LP | the LP's, byte for byte | the token id |
+| before/after swap | the router (`MockV4Router`, the `UniversalRouter`) | the trader | the trader's, byte for byte | - |
+
+The position is the PositionManager's in the manager (`getPositionInfo(…, positionManager, …, bytes32(tokenId))`); who
+the LP is lives in the ERC-721, not in the manager. `msgSender()` is whatever the CALLER says: a router that names
+someone else is believed by any hook that asks without knowing the router (`LyingRouter`), and the kit's own
+`MinimalRouter`, which has no `msgSender()`, makes the question revert - a hook that asks unguarded refuses every
+router without it. For a hook author: `doctrine/V4-ACCOUNTING.md` items 30-32.
+
+### The three example hooks through it
+
+`test-periphery/PeripheryExamples.t.sol`, per hook, on both managers: a pool initialised through the PositionManager (the
+hook's initialise callbacks come from it); a position's whole life - mint, increase, decrease, burn - on an ERC-20 pool
+and a native one, each step's books over five parties (the LP, the hook, the manager, the router, the PositionManager)
+closing to the wei, the PositionManager square, the manager's position equal to what was put there, the token owned
+then burned; and swaps through the router - exact-in and exact-out, both directions, twice (the second round in the next
+block), on both pools - each with the five-party books closing to the wei, the router square, the user paying or
+receiving exactly what it specified, the manager keeping the pool's delta plus the hook's claims, the hook's own delta
+(`pool - user`) what its promises say (none for `CappedDynamicFeeHook`, whose fee schedule is also run through the router,
+each of its swaps held to one callback with `sender` = the router;
+the fee and the rebate of `DeltaFeeHook`, with a rebate seen paid; the claims of `ClaimsFeeHook`), and `sender` =
+the router and `hookData` = the user's in every callback. None of the three declares a liquidity callback: through the
+PositionManager each is called zero times and holds what it held.
+
+**The campaign.** `test-periphery/DeltaFeeHook.periphery.invariants.t.sol`: `DeltaFeeHook`'s per-party books with every
+action through the periphery - positions minted, increased, decreased and burned through the PositionManager, swaps
+(exact-in / exact-out, both directions) through the router; five-party books per action, the hook's balance exactly its
+booked delta, the router and the PositionManager square, the user exactly its specified amount, the fee exact and on
+the unspecified side, the rebate bounded, the manager's positions as the handler put them, both currencies conserved
+over every holder, no unexplained revert - and every action seen to reach the manager THROUGH the periphery
+(`invariant_every_action_reached_the_manager_through_the_periphery`, K17c). No hostile switch is turned (the everyday
+suite does that); every precondition is checked before a call, so every revert is unexplained.
+
+**"Through the periphery" is checked, not only built.** Until K17c it held only because the handler was written that
+way: with the campaign's swaps sent through the kit's `MinimalRouter`, straight to the manager, every other invariant
+stayed green (the verifier V17b). Now each of the five actions runs under the handler's `throughThePeriphery` modifier,
+which records every call the action makes (`vm.startStateDiffRecording`) and, when the action returns, holds the
+recording to one rule: the manager was entered (`swap`, `modifyLiquidity`, `donate`, `initialize`) only by the
+periphery contract the action is for - one `swap` from the router per swap, one `modifyLiquidity` from the
+PositionManager per liquidity change (none for a burn of an empty position) - and every hook callback of the action
+carried that contract as `sender`, a swap's as many as the hook's flags declare. Ghost counters add it up over the run
+(entries expected / entries seen from the periphery; the hook's swap callbacks / those from the router), and the smoke
+test holds them to their numbers (14 entries, 18 callbacks), so the check is not vacuous.
+
+**If you copy this handler for your own hook, keep:** the `throughThePeriphery` modifier on EVERY action that can reach
+the manager (an action without it is not checked); the line in each action's success path that says how many entries
+it had to make (`_entriesThisAction = 1` after a swap, the last argument of `_posm`) - a success that sets nothing is
+held to zero entries, so its own periphery entry goes red as one too many, and a success that sets 1 but reached the
+manager from nowhere goes red as one too few; `swapRouter` and `posm` set to the contracts your users call; the
+reverted-call skip (a reverted call did not happen); and the invariant, in the list your smoke test runs. If
+your hook declares liquidity callbacks, they are held to `sender` = the PositionManager by the same modifier; the swap
+callbacks' number comes from the hook's address (`swapCallbacksDeclared`).
+
+The census of ONE 64 x 64 campaign on each manager (65 census lines each: forge calls `afterInvariant` once more than
+`runs`), 0 unexplained reverts in any run, every name in the command below above the default floor. The counts are one
+draw of the fuzzer and change from run to run (a verifier's run of the same campaign: increase 51 and decrease 61 on the
+source manager); what `census.sh` judges is only the floor - each named action and boundary in at least `MIN_PCT` per
+cent of the runs - never these numbers:
+
+| | source | fork |
+| --- | --- | --- |
+| runs with >= 1 successful swap / mint / increase / decrease / burn | 65 / 65 / 57 / 54 / 61 | 65 / 64 / 60 / 58 / 61 |
+| runs reaching: fee taken / rebate paid / exact-out swap / position burned | 65 / 64 / 65 / 61 | 65 / 64 / 64 / 61 |
+
+```sh
+CORE="swap mint increase decrease burn" REACH="fee taken;rebate paid;exact-out swap through the router;position burned" \
+  FOUNDRY_PROFILE=periphery scripts/census.sh foundry-kit/v4
+```
+
+**Seen red first** (each claim against a broken harness, plan, router or hook): the calldata reader emptied
+(every callback count red); `hookData` dropped from the swap plan, and from the mint plan (red on the hookData checks);
+the expectations "sender is the trader", "sender is the LP", "salt is 0" (red: the router, the PositionManager, the token
+id); `MockV4Router` keeping the ETH change (router not square), a plan that leaves the output in the router (router not
+square, the hook's books, the campaign); `DeltaFeeHook` taking its fee off the specified side (the fee checks, the
+campaign); `ClaimsFeeHook` the same (the manager refuses: `CurrencyNotSettled`); a plan that mints the position to
+someone else (the owner check, the campaign); on the fork, the pinned layout sent to the deployed router, the router's
+address pointed at the position manager, and the native-pool expectation "hookData arrives". One **survivor**: the
+harness's check that a deployed periphery contract answers THIS manager (`PeripheryOfAnotherManager`) - with the right
+addresses it cannot fire, and no test points it at another manager.
+
+K17c, each against the code before it and after it, source manager: the campaign's swaps sent through the kit's
+`MinimalRouter` (the verifier V17b's MV3) - before, every invariant green; after, red on
+`invariant_every_action_reached_the_manager_through_the_periphery` ("0 of 1 entries from the router, 1 from elsewhere")
+and on the smoke test. The campaign's `increase` sent through the kit's `LiquidityHelper` - before, red only through the
+position check and the reverts that follow it; the same with the handler's bookkeeping line dropped with the path (what
+a copier who changes the path leaves) - before, every invariant GREEN; after, red on the new invariant and the smoke
+test's counts. The harness's swaps sent through `MinimalRouter` (V17b's MV4) - before,
+`test_the_fee_schedule_through_the_router` green; after, red on the callback's `sender`.
+
+### What it cost
+
+Measured on this machine (forge 1.8.1, 16 CPUs, WSL2), 2026-09-27:
+
+| | |
+| --- | --- |
+| `install-v4.sh` from GitHub into an empty project | 3.8 s and 28 MB of `lib/` without the periphery; **11.2 s and 69 MB** with it |
+| the everyday build (`foundry-kit/v4`, default profile, clean) with the periphery installed | unchanged: 200 s, 7.74 GB peak RSS, 245 passed, 0 skipped, and no artifact of `test-periphery/` or of the periphery in `out/` |
+| `FOUNDRY_PROFILE=periphery forge build`, clean | **50 s, 2.09 GB** peak RSS (`/usr/bin/time -v`); the battery, clean, 55 s: 24 passed, 0 skipped |
+| `FOUNDRY_PROFILE=periphery-fork V4_MANAGER=fork` battery, clean | 56 s: 31 passed, 0 skipped |
+| RPC requests, counted through a local relay | the fork suites with forge's storage cache OFF (`--no-storage-caching`: what a first run on a new machine asks) **465** (402 `eth_getStorageAt`, 30 `eth_getAccountInfo`, 12 `eth_chainId`, 12 `anvil_nodeInfo`, 6 `eth_getBlockByNumber`, 3 others); a later run with the cache 30 (only opening the forks); the fork census 5. The campaign names ONE fuzz caller (`targetSender`): without it every new caller address was an account forge fetched, 969 `eth_getAccountInfo` in one battery |
 
 ---
 
@@ -1824,8 +2009,18 @@ Written down because a list of gaps is the only honest end to a README.
   fresh), a token with a transfer fee in a v4 pool, and any chain but Ethereum mainnet (the harness refuses another
   chain id - `test_a_fork_of_another_chain_is_refused`, and end to end under `FOUNDRY_CHAIN_ID=5` or an endpoint that
   answers another chain id - but no endpoint of another real chain was tried).
-* **`v4-periphery` is optional and untested.** `V4_WITH_PERIPHERY=1` installs it; nothing in this module compiles
-  against it.
+* **What is left of the periphery** (`v4-periphery` left this list on 2026-09-27: "The periphery", above). Not run: the
+  `UniversalRouter` on the source manager (it is another repository; the source runs the periphery's `MockV4Router`,
+  which pays by `transferFrom`, not through Permit2); every SIGNATURE path - Permit2's `permit` / `permitBatch`, the
+  PositionManager's `permit` and ERC-721 `permit`, the router's `PERMIT2_PERMIT` (the kit uses on-chain allowances, and
+  the source harness's Permit2 answers a domain separator that is not the canonical address's); multi-hop swaps
+  (`SWAP_EXACT_IN` / `SWAP_EXACT_OUT` with a path), `donate` (no periphery path), the PositionManager's other actions
+  (`*_FROM_DELTAS`, `CLEAR_OR_TAKE`, `WRAP` / `UNWRAP`, ERC-6909 `MINT_6909` / `BURN_6909`), `multicall`, subscribers
+  and the notifier, `tokenURI` (no descriptor on source), the quoter and `StateView`; the hostile tokens and hostile
+  counterparties THROUGH the periphery (the campaign turns no switch); a campaign for `CappedDynamicFeeHook` or
+  `ClaimsFeeHook` through it; the fixture manager with the periphery (`V4_MANAGER=fixture` deploys the pinned periphery
+  in front of it; not run); and the deployed position manager against the pinned one beyond what these suites do (their
+  code differs; no diff was made).
 
 The attack list this module was written from — re-entrancy through `unlock`, hijacking `sync`, `hookData` as
 attacker input, read order, delta accounting, ERC-6909 claims, native currency, fee and tick edges,

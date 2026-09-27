@@ -38,19 +38,22 @@ scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on 
 Done looks like this, on forge 1.8.1 (CI also runs 1.8.3):
 
 ```
-SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 596 cases, about 135 s
+SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 636 cases, about 150 s
 test      rc=0   (passed 107, failed 0, skipped 0; filter: none)  ...  BATTERY PASSED           # the root kit
 test      rc=0   (passed 245, failed 0, skipped 0; filter: no_match_path = "test/fork/**" (the project's foundry.toml))  suites test=11 test/examples=11 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
 ```
 
 The v4 module on a mainnet fork is two commands more and needs your own endpoint: `FOUNDRY_PROFILE=fork V4_MANAGER=fork
-scripts/battery.sh foundry-kit/v4`, after fetching the pinned fixture (`foundry-kit/v4/README.md`, "The fork").
+scripts/battery.sh foundry-kit/v4`, after fetching the pinned fixture (`foundry-kit/v4/README.md`, "The fork"). The
+example hooks through Uniswap's real periphery (PositionManager, V4Router, Permit2) are `V4_WITH_PERIPHERY=1
+scripts/install-v4.sh foundry-kit/v4`, then `FOUNDRY_PROFILE=periphery scripts/battery.sh foundry-kit/v4`, and on the
+fork `FOUNDRY_PROFILE=periphery-fork V4_MANAGER=fork` (`foundry-kit/v4/README.md`, "The periphery").
 
 What the v4 module covers with a worked example, and what your project must add:
 
 | covered by an example here | project-specific, yours to add |
 |---|---|
-| hooks with no delta; hooks that return deltas; native ETH pools; ERC-6909 claims; a second pool sharing a currency; settlement re-entrancy through a token; dynamic fees; per-pool reserves; price and tick edges; hostile tokens and hostile native counterparties | fork tests on the target chain; the real manager's bytecode for that chain; unusual periphery; rebasing tokens and the other token behaviours `foundry-kit/README.md` lists as not covered; who receives a payout (a JIT-recipient actor); your hook's own threat model, actions and invariants |
+| hooks with no delta; hooks that return deltas; native ETH pools; ERC-6909 claims; a second pool sharing a currency; settlement re-entrancy through a token; dynamic fees; per-pool reserves; price and tick edges; hostile tokens and hostile native counterparties; the hook reached through Uniswap's PositionManager and V4Router (what `sender`, `msgSender()` and `hookData` are there) | fork tests on the target chain; the real manager's bytecode for that chain; periphery beyond PositionManager / V4Router / Permit2 allowances (signature paths, multi-hop, your own router); rebasing tokens and the other token behaviours `foundry-kit/README.md` lists as not covered; who receives a payout (a JIT-recipient actor); your hook's own threat model, actions and invariants |
 
 The ten-step version, with every command and what "done" looks like at each step, is [`QUICKSTART.md`](QUICKSTART.md).
 
@@ -298,7 +301,7 @@ fixed after its verifier on 2026-09-26). One model family, one agent harness.**
 |---|---|
 | doctrine, briefs, state convention | distilled from a real project, then walked twelve times by strangers on twelve new hooks (below); every stall they hit is fixed, and each fix was re-walked |
 | Foundry kit and scripts | written with their own tests (hostile token: one test per switch; guards: a self-test that makes each one go red on purpose). Scripts exercised on bash 5 / Linux only |
-| v4 module | harness with both managers, address mining, three worked hooks with unit, invariant, mutant and edge tests; proven once against the Ethereum mainnet manager's bytecode. **Covered:** delta-returning hooks, native currency with a hostile native counterparty, ERC-6909 claims with conservation per party, settlement re-entrancy through a token's transfer hook, a second pool sharing a currency, tick/price/fee edges (all 2026-09-24, each area verified by a second agent - below). **Fork:** Ethereum mainnet at a pinned block, the deployed manager with its storage, real USDC / WETH / ETH, the three example hooks' unit suites and USDC's blocklist and pause (`FOUNDRY_PROFILE=fork`, needs your own endpoint; 2026-09-25, verified and fixed 2026-09-26). **Not covered:** the invariant campaigns, the sandbox and the other suites on the fork; a JIT-recipient actor for hooks that pay "whoever is in range"; v4-periphery (its README, "What this module still does not do") |
+| v4 module | harness with both managers, address mining, three worked hooks with unit, invariant, mutant and edge tests; proven once against the Ethereum mainnet manager's bytecode. **Covered:** delta-returning hooks, native currency with a hostile native counterparty, ERC-6909 claims with conservation per party, settlement re-entrancy through a token's transfer hook, a second pool sharing a currency, tick/price/fee edges (all 2026-09-24, each area verified by a second agent - below). **Fork:** Ethereum mainnet at a pinned block, the deployed manager with its storage, real USDC / WETH / ETH, the three example hooks' unit suites and USDC's blocklist and pause (`FOUNDRY_PROFILE=fork`, needs your own endpoint; 2026-09-25, verified and fixed 2026-09-26). **Periphery:** the three example hooks through Uniswap's PositionManager and V4Router with Permit2 allowances, on the source manager (the pinned periphery) and on the fork (the deployed PositionManager and UniversalRouter), and one campaign through it (`FOUNDRY_PROFILE=periphery` / `periphery-fork`, `V4_WITH_PERIPHERY=1`; 2026-09-27). **Not covered:** the invariant campaigns, the sandbox and the other suites on the fork (one periphery campaign runs there); a JIT-recipient actor for hooks that pay "whoever is in range"; Permit2 signature paths, multi-hop and the rest of the periphery (its README, "What this module still does not do") |
 | `adapters/claude-code/` | the path the method was actually run on |
 | `adapters/experimental/codex/` | **experimental / untested** - written from the documented convention, kept out of the supported path until an end-to-end run exists |
 | blind benchmark (planted bugs, sealed answer key, measured recall) | **run twice on the same target**: one round, then the full light route - see below |

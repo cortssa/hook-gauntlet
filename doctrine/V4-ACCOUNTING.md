@@ -79,8 +79,9 @@ tested.** No row here has a test in this kit yet. If your pin differs, diff it. 
   with its predicate (`EVIDENCE.md` 6).
 - Run on the real manager's code (`JUDGES.md` row 7): half of this file is behaviour a hand-written mock would not have.
 
-Not covered: the pool's swap loop and tick crossing, position accounting, protocol-fee governance, the periphery
-(routers, position manager, permit2). Verified by reading; nothing here was executed.
+Not covered: the pool's swap loop and tick crossing, position accounting, protocol-fee governance, and the periphery
+(routers, position manager, permit2) beyond what "Through the periphery" below measured. Verified by reading; nothing
+here was executed.
 
 ## Sign and side, measured (added 2026-09-24, K13)
 
@@ -388,3 +389,44 @@ holds it. Evidence label: **TESTED**, on one pin.
   up with `_fundReal`, which refuses. Fund first, blocklist after, fund no more; the harness's
   `_fundReal` refuses a blocklisted USDC account. *(Tests: `test_deal_on_a_blocklisted_usdc_account_reverts_or_silently_unblocklists`,
   `test_a_raw_deal_on_an_account_funded_in_setUp_silently_unblocklists_it`.)*
+
+## Through the periphery - measured (added 2026-09-27, K17b)
+
+Item 10 was read; these were run, through Uniswap's `PositionManager` and a V4Router (the pinned periphery on the source
+manager, the deployed `PositionManager` and `UniversalRouter` on a mainnet fork), with a probe hook that records every
+callback and the calldata the manager sent each hook (foundry-kit/v4/README.md, "The periphery").
+
+- **30. `sender` is the periphery contract, and the user is only what that contract says.** Initialise through
+  `PositionManager.initializePool`: `sender` is the PositionManager. Mint, increase, decrease, burn: `sender` is the
+  PositionManager, and the position is the PositionManager's in the manager - its `salt` is the token id; which LP owns
+  it lives in the ERC-721, nowhere a hook's arguments reach. Swaps: `sender` is the router. The user is visible only as
+  `IMsgSender(sender).msgSender()`, which the PositionManager and both routers answer with the locker during the call
+  (the LP, the trader) and with the zero address during `initializePool` (it runs outside the lock) - and which ANY
+  contract can implement to answer anything: a router that names another address is believed by a hook that asks
+  without knowing the router, and a router without the function (the kit's `MinimalRouter`) makes the question revert.
+  A hook that keys a fee, a limit, a reward or a permission on "the user" needs a list of the routers whose answer it
+  trusts, and a decision for the ones it does not know; per-LP accounting keyed on `sender` sees one LP, the
+  PositionManager. *(Tests: `test-periphery/PeripherySender.t.sol`, each seen red with the naive expectation - sender
+  is the trader, sender is the LP, the salt is 0.)*
+- **31. `hookData` arrives byte for byte - if the router decoded what the user sent.** Through both periphery
+  contracts, on both managers, the hook was handed exactly the user's bytes in every callback (70 bytes, not a whole
+  number of words). But the deployed `UniversalRouter` decodes an older single-swap layout than the pinned periphery
+  (no `minHopPriceX36`), and the pinned layout sent to it on a native pool SWAPPED, with the hook handed EMPTY
+  `hookData`: the decoder read `minHopPriceX36` (0) as the offset of `hookData` and found `currency0` (0 on a native pool)
+  as its length. On an ERC-20 pool the same mistake reverts. So an empty `hookData` on a swap that stands can be an
+  encoding mistake upstream, not the user's choice, and a hook that reads empty `hookData` as a default cannot tell the
+  two apart. *(Tests: `test-periphery/fork/PeripheryAddresses.t.sol`,
+  `test_the_pinned_layout_on_a_native_pool_swaps_and_the_hook_gets_empty_hookData` (seen red with "hookData arrives"),
+  `test_the_deployed_universal_router_reads_the_older_swap_layout`; the byte-for-byte checks in
+  `PeripheryExamples.t.sol` and `PeripherySender.t.sol`, red with `hookData` dropped from the plans.)*
+- **32. The router settles the user's side after the swap, and nothing else.** On every swap through the router -
+  exact-in and exact-out, both directions, ERC-20 and native pools, the three example hooks and a 64 x 64 campaign on
+  `DeltaFeeHook` - the user paid (exact-in) or received (exact-out) exactly its specified amount, the hook's delta landed
+  on the other side of the user's books (`hook = pool - user`, per currency), the manager kept the pool's delta plus
+  what it owes the hook as claims, and the router and the PositionManager ended every action as they began. The swap
+  action runs before `SETTLE_ALL` / `TAKE_ALL` (read in the pinned source), and `DeltaFeeHook`'s rebates were paid
+  through the router (a payment in flight - its P7 - would have skipped them). The single-swap actions pass the
+  extreme price limits (`V4Router._swap`, read in the pinned source): a partial fill through them happens only when the
+  pool runs out of liquidity. *(Tests: `test-periphery/PeripheryExamples.t.sol`,
+  `test-periphery/DeltaFeeHook.periphery.invariants.t.sol` and its census; red with a router that keeps the ETH change,
+  a plan that leaves the output in the router, and each hook's fee moved to the specified side.)*

@@ -10,13 +10,39 @@
 # What it does NOT exercise, because it needs the network: a SUCCESSFUL fetch-bytecode.sh against a real endpoint (its
 # block and metadata are exercised against a stub `cast`, K16), the fork suites (foundry-kit/v4, FOUNDRY_PROFILE=fork) and a
 # successful install-v4.sh (GitHub). Their refusals are here; their success is the CI's `battery` job, which runs
-# install-v4.sh on every push, and the fetch is run by hand (foundry-kit/v4/README.md).
+# install-v4.sh on every push, and the fetch is run by hand (foundry-kit/v4/README.md). The OFFLINE install is here,
+# success included, from fake local clones - with V4_WITH_PERIPHERY=1 too (K17b: the periphery's pin, its permit2,
+# v4-core's OpenZeppelin, one v4-core) - and so are the v4 module's remappings, read by forge over a fake periphery.
 #
 # Usage:   scripts/selftest.sh
-# Exit:    0 every case behaved as declared; 1 a case did not; 3 INCOMPLETE - a section was skipped (no forge, or no
+# Env:     none read. Every variable the scripts under test read as configuration is REMOVED at the start (the first
+#          line of the run names them, and which of them the calling shell had set); each case sets its own.
+# Exit:   0 every case behaved as declared; 1 a case did not; 3 INCOMPLETE - a section was skipped (no forge, or no
 #          foundry-kit/lib), so the scripts in it are NOT proven on this machine. A skipped section is not a pass.
 
 set -uo pipefail
+
+# ================================================================= the environment it runs in (K17c)
+# Every case below sets the configuration it needs, and only that. A variable the scripts under test read as
+# configuration, INHERITED from the shell that runs the selftest, changes what a case tests: measured by the verifier
+# V17b - with REACH exported, three cases that must see census.sh's CORE floor go red passed "ok" against a census.sh
+# whose floor was broken (a false green per case), and with CORE and REACH exported fifteen cases failed on a sound
+# kit. So every such variable is removed here, before the first case, and named. The list: every name in the scripts'
+# "Env:" headers (a case below fails if one is missing from it), the ones they read without listing them there, what
+# the kit's Solidity reads (vm.envOr), the endpoint, and every FOUNDRY_* / DAPP_* forge would read. Not removed: HOME,
+# PATH and TMPDIR (the machine's, not the kit's configuration).
+SELFTEST_CLEARED="ALLOW_SKIPS ALLOW_SMALL_BUDGET BASELINE BASELINE_MAY_BE_RED BENCH_ARTIFACTS BENCH_EXCLUDE BENCH_KEEP \
+BENCH_ROOT CACHE_FILE CENSUS_FORGE_LOG CENSUS_TABLE_ONLY COPY_ROOT CORE DEPTH EXPECT EXTRA_SRC FORGE_FLAGS GATE_WHY \
+GUARD_EXCLUDE HASH_PYTHON KEEP LABEL LINK_FROM LINK_LIB MATCH MIN_INIT_MARGIN MIN_MARGIN MIN_PCT OUT_DIR REACH RUNS SEED \
+SRC_DIRS TEST_FLAGS USE_BENCH V4_ALLOW_UNTRACKED V4_CORE_SUBMODULES V4_FORCE V4_LOCAL_SRC V4_WITH_PERIPHERY \
+V4_MANAGER V4_FIXTURE FORK_BLOCK GAUNTLET_CENSUS GAUNTLET_SIM SIM_SEED RPC_URL ETH_RPC_URL"
+selftest_forge_env="$(compgen -e | grep -iE '^(FOUNDRY|DAPP)_' | tr '\n' ' ')"
+selftest_was_set=""
+for v in $SELFTEST_CLEARED $selftest_forge_env; do
+  [ -n "${!v+x}" ] && selftest_was_set="$selftest_was_set $v"
+  unset "$v"
+done
+echo "selftest: environment cleared of: $SELFTEST_CLEARED FOUNDRY_* DAPP_*; of these, set in the calling shell:${selftest_was_set:- none}"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
@@ -87,6 +113,26 @@ if command -v shellcheck > /dev/null 2>&1; then
 else
   echo "  --    shellcheck is not installed here: NOT run on this machine (CI's shellcheck job runs it on every push)"
 fi
+# the environment cleared at the top (K17c): every name the scripts' "Env:" headers document is in the list, so a name
+# added to a header and not to the list is seen here; and none of the list is set any more
+env_names() { # env_names <a scripts/ directory>: the names in each script's "Env:" block - at column 12, then "=" or two spaces
+  local f
+  for f in "$1"/*.sh "$1"/lib/*.sh; do
+    [ -f "$f" ] && awk '/^[^#]/ && NR > 1 { exit } /^# Env:/ { on = 1 }
+      on && match($0, /^#( Env:     |          )[A-Z][A-Z0-9_]+(=|  )/) {
+        s = substr($0, RSTART, RLENGTH); sub(/^#( Env: +| +)/, "", s); sub(/(=|  )$/, "", s); print s }' "$f"
+  done | sort -u
+}
+env_missing=""; env_left=""; env_n=0
+for v in $(env_names "$HERE"); do
+  env_n=$((env_n + 1))
+  case "$v" in FOUNDRY_* | DAPP_*) continue ;; esac
+  case " $SELFTEST_CLEARED " in *" $v "*) ;; *) env_missing="$env_missing $v" ;; esac
+done
+for v in $SELFTEST_CLEARED; do [ -n "${!v+x}" ] && env_left="$env_left $v"; done
+if [ "$env_n" -ge 30 ] && [ -z "$env_missing" ] && [ -z "$env_left" ]; then
+  echo "  ok    the environment: all $env_n names of the scripts' Env: headers are cleared at the start, and none is set"; else
+  echo "  FAIL  the environment: $env_n Env: names read; not cleared:${env_missing:- -}; still set:${env_left:- -}"; fails=$((fails + 1)); fi
 
 # ================================================================= doctor.sh (it checks; it never installs, never uses the network)
 # doctor.sh runs here on a FAKE machine: a kit tree of its own (forge-std's package.json, and a v4-core that is a real git
@@ -474,6 +520,145 @@ if command -v git > /dev/null 2>&1; then
   fi
 else
   echo "  SKIPPED - no git here: the offline install refusals are NOT proven on this machine"; skipped=1
+fi
+
+# ================================================================= install-v4.sh V4_WITH_PERIPHERY=1 (K17b; offline, fake clones)
+# The periphery install, from fake local clones made here (nothing about Uniswap is needed): a v4-core with its three
+# submodules (OpenZeppelin is needed once the periphery is), a v4-periphery whose tree pins lib/permit2 (checked out) and
+# lib/v4-core (a gitlink to the fake core's HEAD), and a copy of install-v4.sh with BOTH pins planted. What is held: the
+# periphery's pin, its permit2 submodule installed at what its tree pins, OpenZeppelin in v4-core, and ONE v4-core - the
+# periphery's own lib/v4-core never copied (a --recursive clone as the source), never left checked out in a project,
+# and a periphery that pins another v4-core refused. Then the kit's remappings, read by forge, send nothing there.
+echo "== install-v4.sh V4_WITH_PERIPHERY=1 =="
+if command -v git > /dev/null 2>&1; then
+  gc() { git -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false -c advice.addEmbeddedRepo=false "$@"; }
+  mkrepo() { # mkrepo <dir> <file> <content>: a one-commit repository
+    mkdir -p "$1"; printf '%s\n' "$3" > "$1/$2"; (cd "$1" && git init -q && git add -A && gc commit -q -m init) > /dev/null 2>&1
+  }
+  PS="$TMP/persrc"; PC="$PS/v4-core"; PP="$PS/v4-periphery"
+  mkrepo "$PC/lib/forge-std" Test.sol 'contract Test {}'
+  mkrepo "$PC/lib/solmate" Owned.sol 'contract Owned {}'
+  mkrepo "$PC/lib/openzeppelin-contracts" IERC20.sol 'interface IERC20 {}'
+  mkdir -p "$PC/src"; printf 'contract PoolManager {}\n' > "$PC/src/PoolManager.sol"
+  printf '[submodule "lib/forge-std"]\n\tpath = lib/forge-std\n\turl = https://example.invalid/forge-std\n[submodule "lib/solmate"]\n\tpath = lib/solmate\n\turl = https://example.invalid/solmate\n[submodule "lib/openzeppelin-contracts"]\n\tpath = lib/openzeppelin-contracts\n\turl = https://example.invalid/oz\n' > "$PC/.gitmodules"
+  (cd "$PC" && git init -q && gc add .gitmodules src lib/forge-std lib/solmate lib/openzeppelin-contracts && gc commit -q -m fake-v4-core) > /dev/null 2>&1
+  CORE_SHA="$(git -C "$PC" rev-parse HEAD 2> /dev/null)"
+  # mkper <dir> <core sha>: a periphery whose lib/v4-core gitlink is <core sha>; permit2 checked out; lib/v4-core empty
+  mkper() {
+    mkrepo "$1/lib/permit2" IAllowanceTransfer.sol 'interface IAllowanceTransfer {}'
+    mkdir -p "$1/src" "$1/lib/v4-core"; printf 'contract PositionManager {}\n' > "$1/src/PositionManager.sol"
+    printf '@uniswap/v4-core/=lib/v4-core/\nopenzeppelin-contracts/=lib/v4-core/lib/openzeppelin-contracts/\n' > "$1/remappings.txt"
+    printf '[submodule "lib/v4-core"]\n\tpath = lib/v4-core\n\turl = https://example.invalid/v4-core\n[submodule "lib/permit2"]\n\tpath = lib/permit2\n\turl = https://example.invalid/permit2\n' > "$1/.gitmodules"
+    (cd "$1" && git init -q && gc add .gitmodules remappings.txt src lib/permit2 \
+      && git update-index --add --cacheinfo "160000,$2,lib/v4-core" && gc commit -q -m fake-v4-periphery) > /dev/null 2>&1
+  }
+  mkper "$PP" "$CORE_SHA"
+  PER_SHA="$(git -C "$PP" rev-parse HEAD 2> /dev/null)"
+  # plant <core pin> <periphery pin> <dir>: a copy of install-v4.sh (and its parse.sh) with both pins replaced
+  plant() {
+    mkdir -p "$3/lib"; cp "$HERE/lib/parse.sh" "$3/lib/"
+    sed -e "s/^V4_CORE_PIN=\"[0-9a-f]*\"/V4_CORE_PIN=\"$1\"/" -e "s/^V4_PERIPHERY_PIN=\"[0-9a-f]*\"/V4_PERIPHERY_PIN=\"$2\"/" \
+      "$HERE/install-v4.sh" > "$3/install-v4.sh"; chmod +x "$3/install-v4.sh"
+  }
+  PIN2="$TMP/ivper"; plant "$CORE_SHA" "$PER_SHA" "$PIN2"
+  pinst() { GIT_ALLOW_PROTOCOL="file" V4_WITH_PERIPHERY=1 "$PIN2/install-v4.sh" "$@"; }
+  if [ -n "$CORE_SHA" ] && [ -n "$PER_SHA" ] && [ "$(git -C "$PP" ls-tree HEAD lib/v4-core | awk '{print $3}')" = "$CORE_SHA" ] \
+    && grep -q "^V4_PERIPHERY_PIN=\"$PER_SHA\"" "$PIN2/install-v4.sh"; then
+    mkdir -p "$IV/q1" "$IV/q2" "$IV/q3" "$IV/q5" "$IV/q6"
+    V4_LOCAL_SRC="$PS" pinst "$IV/q1" > "$TMP/o401" 2>&1; check "control: periphery install from GOOD local clones" 0 $? "$TMP/o401"
+    if [ "$(git -C "$IV/q1/lib/v4-periphery" rev-parse HEAD 2> /dev/null)" = "$PER_SHA" ] \
+      && [ "$(git -C "$IV/q1/lib/v4-periphery/lib/permit2" rev-parse HEAD 2> /dev/null)" = "$(git -C "$PP" ls-tree HEAD lib/permit2 | awk '{print $3}')" ] \
+      && [ -f "$IV/q1/lib/v4-core/lib/openzeppelin-contracts/IERC20.sol" ]; then
+      echo "  ok    the periphery at its pin, its lib/permit2 at what its tree pins, OpenZeppelin in v4-core"; else
+      echo "  FAIL  the periphery, its permit2 or v4-core's OpenZeppelin is missing or at another commit"; fails=$((fails + 1)); fi
+    if [ -d "$IV/q1/lib/v4-periphery/lib/v4-core" ] && [ -z "$(ls -A "$IV/q1/lib/v4-periphery/lib/v4-core")" ] \
+      && grep -q "lib/v4-core is NOT initialised (one v4-core)" "$TMP/o401"; then
+      echo "  ok    and the periphery's own lib/v4-core is empty, and the install says so"; else
+      echo "  FAIL  the periphery's lib/v4-core is not an empty directory, or the install did not say so"; fails=$((fails + 1)); fi
+    # the pin is checked: a periphery clone at another commit is refused by name, and nothing of it is copied
+    PW="$TMP/perwrong"; mkdir -p "$PW"; cp -a "$PC" "$PW/v4-core"; cp -a "$PP" "$PW/v4-periphery"
+    (cd "$PW/v4-periphery" && printf 'x\n' > extra && git add extra && gc commit -q -m moved) > /dev/null 2>&1
+    V4_LOCAL_SRC="$PW" pinst "$IV/q2" > "$TMP/o402" 2>&1; check "a periphery clone at ANOTHER commit than its pin is refused" 1 $? "$TMP/o402"
+    if grep -q "the pin is $PER_SHA" "$TMP/o402" && [ ! -e "$IV/q2/lib/v4-periphery" ]; then
+      echo "  ok    and it names the pin, and nothing of the periphery was copied"; else
+      echo "  FAIL  the wrong periphery was not refused by its pin, or it was copied"; fails=$((fails + 1)); fi
+    # a --recursive clone as the source: its lib/v4-core is checked out, and it must NOT be copied
+    PR="$TMP/perrec"; mkdir -p "$PR"; cp -a "$PC" "$PR/v4-core"; cp -a "$PP" "$PR/v4-periphery"
+    rmdir "$PR/v4-periphery/lib/v4-core"; cp -a "$PC" "$PR/v4-periphery/lib/v4-core"
+    V4_LOCAL_SRC="$PR" pinst "$IV/q3" > "$TMP/o403" 2>&1; check "a source periphery with its lib/v4-core checked out installs" 0 $? "$TMP/o403"
+    if [ -z "$(ls -A "$IV/q3/lib/v4-periphery/lib/v4-core" 2> /dev/null)" ] && grep -q "NOT copied (one v4-core" "$TMP/o403"; then
+      echo "  ok    without its second v4-core, and it says so"; else
+      echo "  FAIL  the periphery's own v4-core was copied into the project: two v4-cores"; fails=$((fails + 1)); fi
+    # a project whose periphery has its lib/v4-core checked out (by hand, or by an older install): refused, V4_FORCE named
+    mkdir -p "$IV/q4"; cp -a "$IV/q1/lib" "$IV/q4/lib"; rmdir "$IV/q4/lib/v4-periphery/lib/v4-core"
+    cp -a "$PC" "$IV/q4/lib/v4-periphery/lib/v4-core"
+    V4_LOCAL_SRC="$PS" pinst "$IV/q4" > "$TMP/o404" 2>&1; check "an installed periphery with its lib/v4-core checked out is refused" 1 $? "$TMP/o404"
+    grep -q "V4_FORCE=1 V4_WITH_PERIPHERY=1" "$TMP/o404" || { echo "  FAIL  the refusal does not name the way out"; fails=$((fails + 1)); }
+    V4_FORCE=1 V4_LOCAL_SRC="$PS" pinst "$IV/q4" > "$TMP/o405" 2>&1; check "V4_FORCE=1 re-installs it with one v4-core" 0 $? "$TMP/o405"
+    [ -z "$(ls -A "$IV/q4/lib/v4-periphery/lib/v4-core" 2> /dev/null)" ] || { echo "  FAIL  V4_FORCE left the second v4-core"; fails=$((fails + 1)); }
+    # a periphery that pins ANOTHER v4-core than the script: refused (it would be built against a core it was not written for)
+    PX="$TMP/perother"; mkdir -p "$PX"; cp -a "$PC" "$PX/v4-core"; OTHER_SHA="$(git -C "$PC/lib/solmate" rev-parse HEAD)"
+    mkper "$PX/v4-periphery" "$OTHER_SHA"
+    PIN3="$TMP/ivper3"; plant "$CORE_SHA" "$(git -C "$PX/v4-periphery" rev-parse HEAD)" "$PIN3"
+    GIT_ALLOW_PROTOCOL="file" V4_WITH_PERIPHERY=1 V4_LOCAL_SRC="$PX" "$PIN3/install-v4.sh" "$IV/q5" > "$TMP/o406" 2>&1
+    check "a periphery that pins another v4-core than the script is refused" 1 $? "$TMP/o406"
+    grep -q "pins v4-core at $OTHER_SHA" "$TMP/o406" || { echo "  FAIL  the refusal does not name the periphery's v4-core pin"; fails=$((fails + 1)); }
+    # ...and nothing of the refused periphery stays in lib/ (K17c, from the verifier V17b: it used to stay, under
+    # INSTALL-V4 FAILED); v4-core, which passed, does
+    if [ ! -e "$IV/q5/lib/v4-periphery" ] && [ "$(git -C "$IV/q5/lib/v4-core" rev-parse HEAD 2> /dev/null)" = "$CORE_SHA" ] \
+      && grep -q "the periphery this run fetched is removed" "$TMP/o406"; then
+      echo "  ok    and the refused periphery is removed from lib/ (v4-core, which passed, stays), and it says so"; else
+      echo "  FAIL  the refused periphery stayed in lib/, or v4-core went with it, or the run did not say"; fails=$((fails + 1)); fi
+    # the same refusal over a project that HAD a good periphery installed: that one is back, as it was
+    mkdir -p "$IV/q8"; cp -a "$IV/q1/lib" "$IV/q8/lib"
+    GIT_ALLOW_PROTOCOL="file" V4_WITH_PERIPHERY=1 V4_LOCAL_SRC="$PX" "$PIN3/install-v4.sh" "$IV/q8" > "$TMP/o411" 2>&1
+    check "a periphery that pins another v4-core, over an installed periphery: refused" 1 $? "$TMP/o411"
+    q8_extra=""
+    for e in "$IV/q8/lib"/* "$IV/q8/lib"/.[!.]*; do
+      [ -e "$e" ] || continue
+      case "${e##*/}" in v4-core | v4-periphery) ;; *) q8_extra="$q8_extra ${e##*/}" ;; esac
+    done
+    if [ "$(git -C "$IV/q8/lib/v4-periphery" rev-parse HEAD 2> /dev/null)" = "$PER_SHA" ] \
+      && [ "$(git -C "$IV/q8/lib/v4-periphery/lib/permit2" rev-parse HEAD 2> /dev/null)" = "$(git -C "$IV/q1/lib/v4-periphery/lib/permit2" rev-parse HEAD 2> /dev/null)" ] \
+      && [ -z "$q8_extra" ]; then
+      echo "  ok    and the periphery installed before is back, at its commit, with its permit2, and nothing else is left in lib/"; else
+      echo "  FAIL  the periphery installed before is not back as it was, or lib/ holds more:${q8_extra:- -}"; fails=$((fails + 1)); fi
+    # a periphery clone without its permit2 checked out: refused, nothing of it copied
+    PN="$TMP/pernop2"; mkdir -p "$PN"; cp -a "$PC" "$PN/v4-core"; cp -a "$PP" "$PN/v4-periphery"
+    rm -rf "$PN/v4-periphery/lib/permit2"; mkdir "$PN/v4-periphery/lib/permit2"; rm -rf "$IV/q2/lib"
+    V4_LOCAL_SRC="$PN" pinst "$IV/q2" > "$TMP/o407" 2>&1; check "a periphery clone without lib/permit2 is refused" 1 $? "$TMP/o407"
+    [ ! -e "$IV/q2/lib/v4-periphery" ] || { echo "  FAIL  the periphery without permit2 was installed"; fails=$((fails + 1)); }
+    # without V4_WITH_PERIPHERY, OpenZeppelin is not asked for: the everyday install is what it was
+    CS="$TMP/coreonly"; mkdir -p "$CS"; cp -a "$PC" "$CS/v4-core"
+    rm -rf "$CS/v4-core/lib/openzeppelin-contracts"; mkdir "$CS/v4-core/lib/openzeppelin-contracts"
+    GIT_ALLOW_PROTOCOL="file" V4_LOCAL_SRC="$CS" "$PIN2/install-v4.sh" "$IV/q6" > "$TMP/o408" 2>&1
+    check "without V4_WITH_PERIPHERY a v4-core clone without OpenZeppelin still installs" 0 $? "$TMP/o408"
+    # ...and with it, the same clone is refused: the position manager imports OpenZeppelin's IERC20 through IWETH9
+    mkdir -p "$IV/q7"; cp -a "$PP" "$CS/v4-periphery"
+    V4_LOCAL_SRC="$CS" pinst "$IV/q7" > "$TMP/o410" 2>&1; check "with V4_WITH_PERIPHERY a v4-core clone without OpenZeppelin is refused" 1 $? "$TMP/o410"
+    grep -q "lib/openzeppelin-contracts is missing" "$TMP/o410" || { echo "  FAIL  the refusal does not name OpenZeppelin"; fails=$((fails + 1)); }
+  else
+    echo "  FAIL  could not build the fake periphery clones, or plant their pins (git or the pin lines changed shape?)"; fails=$((fails + 1))
+  fi
+else
+  echo "  SKIPPED - no git here: the periphery install is NOT proven on this machine"; skipped=1
+fi
+# the kit's remappings, read by forge, over a fake lib/ with the periphery installed: `@uniswap/v4-core/` and every other
+# name resolve into lib/v4-core, NOTHING into lib/v4-periphery/lib/v4-core (forge also reads the periphery's own
+# remappings.txt, and without the kit's `openzeppelin-contracts/` line it maps that name into the periphery's v4-core)
+if command -v forge > /dev/null 2>&1; then
+  RM="$TMP/remap"; mkdir -p "$RM/lib"; cp "$HERE/../foundry-kit/v4/remappings.txt" "$RM/"
+  printf '[profile.default]\nsrc = "src"\nlibs = ["lib"]\n' > "$RM/foundry.toml"
+  mkdir -p "$RM/src" "$RM/lib/v4-core/src" "$RM/lib/v4-core/lib/forge-std/src" "$RM/lib/v4-periphery/src" \
+    "$RM/lib/v4-periphery/lib/v4-core" "$RM/lib/v4-periphery/lib/permit2/src"
+  printf '@uniswap/v4-core/=lib/v4-core/\nopenzeppelin-contracts/=lib/v4-core/lib/openzeppelin-contracts/\nsolmate/=lib/v4-core/lib/solmate/\n' > "$RM/lib/v4-periphery/remappings.txt"
+  (cd "$RM" && forge remappings > "$TMP/o409" 2>&1); check "forge reads the kit's remappings over a periphery install" 0 $? "$TMP/o409"
+  if grep -q '^@uniswap/v4-core/=lib/v4-core/$' "$TMP/o409" && grep -q '^permit2/=lib/v4-periphery/lib/permit2/$' "$TMP/o409" \
+    && ! grep -q 'lib/v4-periphery/lib/v4-core' "$TMP/o409"; then
+    echo "  ok    @uniswap/v4-core/ and permit2/ resolve to the one v4-core and the periphery's permit2; nothing into its v4-core"; else
+    echo "  FAIL  a remapping resolves into lib/v4-periphery/lib/v4-core, or a periphery name is missing: $(grep 'v4-periphery/lib/v4-core\|^@uniswap\|^permit2' "$TMP/o409" | tr '\n' ' ')"; fails=$((fails + 1)); fi
+else
+  echo "  SKIPPED - no forge here: the kit's remappings over a periphery install are NOT proven on this machine"; skipped=1
 fi
 
 # ================================================================= parse.sh, on fixtures (real forge 1.8.1 output + near misses)

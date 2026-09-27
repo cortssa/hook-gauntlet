@@ -16,9 +16,13 @@
 #                 in foundry-kit/README.md. First seen green in run 35867090813 (2026-09-23), so that row says "supported";
 #                 if it goes red, the job is removed and the row goes back to "unsupported" - never a job left red, never
 #                 one marked allowed-to-fail. A third version is added the same way: a job first, then a row;
+#       periphery the three example hooks through Uniswap's real periphery (PositionManager, V4Router, Permit2) on the
+#                 source manager: the v4 install with V4_WITH_PERIPHERY=1 and FOUNDRY_PROFILE=periphery (K17b; written
+#                 and run locally, not yet seen on a runner);
 #       fork      the v4 module on a mainnet fork, ONLY if the repository has a secret named RPC_URL; without it the
 #                 job skips every step and says so in a notice (K16, see the job). It fetches the manager's code at the
-#                 pinned block first, for the fork suite that holds that fixture to the chain (K16b);
+#                 pinned block first, for the fork suite that holds that fixture to the chain (K16b), and runs the
+#                 periphery suites against the periphery deployed there too (K17b);
 #   - NOT here: the battery against the REAL pool manager's bytecode etched from a fixture (V4_MANAGER=fixture). It needs
 #     an RPC endpoint to fetch, and no endpoint or key goes into this repository. That leg is run locally
 #     (foundry-kit/v4/README.md) and reported in the dossier.
@@ -77,6 +81,31 @@ jobs:
           path: |
             foundry-kit/.gauntlet/reports/
             foundry-kit/v4/.gauntlet/reports/
+          if-no-files-found: ignore
+
+  # The example hooks through Uniswap's periphery (K17b): its suites live in foundry-kit/v4/test-periphery and compile
+  # only under the `periphery` profiles, so the install and the build of the battery job above are untouched.
+  periphery:
+    name: periphery (v4 example hooks through PositionManager / V4Router / Permit2, source manager)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+      - name: forge-std for the root kit, pinned
+        run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
+      - name: Uniswap v4 sources with the periphery, at the pinned commits
+        run: V4_WITH_PERIPHERY=1 scripts/install-v4.sh foundry-kit/v4
+      - name: battery, v4 module through the periphery, source manager
+        run: FOUNDRY_PROFILE=periphery scripts/battery.sh foundry-kit/v4
+      - name: keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: periphery-logs
+          path: foundry-kit/v4/.gauntlet/reports/
           if-no-files-found: ignore
 
   battery-forge-1-8-3:
@@ -139,9 +168,9 @@ jobs:
       - name: forge-std for the root kit, pinned
         if: steps.rpc.outputs.have == 'yes'
         run: git clone --quiet --depth 1 --branch "$FORGE_STD_TAG" https://github.com/foundry-rs/forge-std foundry-kit/lib/forge-std
-      - name: Uniswap v4 sources for the v4 module, at the pinned commits
+      - name: Uniswap v4 sources for the v4 module, with the periphery, at the pinned commits
         if: steps.rpc.outputs.have == 'yes'
-        run: scripts/install-v4.sh foundry-kit/v4
+        run: V4_WITH_PERIPHERY=1 scripts/install-v4.sh foundry-kit/v4
       # the fixture first: test/fork/FixtureBlock.t.sol skips without it, and the battery counts a skip as a failure (a
       # clean checkout's fork battery was red on exactly that, V16). The same two commands as foundry-kit/v4/README.md.
       - name: the manager's code at the pinned block, as the fixture the fork suite checks
@@ -150,6 +179,9 @@ jobs:
       - name: battery, v4 module, mainnet fork at the pinned block
         if: steps.rpc.outputs.have == 'yes'
         run: FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4
+      - name: battery, the example hooks through the periphery deployed on mainnet, at the pinned block
+        if: steps.rpc.outputs.have == 'yes'
+        run: FOUNDRY_PROFILE=periphery-fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4
 
   selftest:
     name: selftest (every guard that can be exercised offline, seen red)

@@ -13,8 +13,14 @@
 # run, and changing one is a decision somebody makes on purpose.
 #
 # Usage:   scripts/install-v4.sh [project-dir]        (default: foundry-kit/v4 relative to this script)
-# Env:     V4_WITH_PERIPHERY=1  also install v4-periphery (not needed by the harness; useful if YOUR hook
-#                               imports the position manager, the quoter or the routers)
+# Env:     V4_WITH_PERIPHERY=1  also install v4-periphery, the one submodule of it that its PositionManager and V4Router
+#                               import (lib/permit2), and v4-core's lib/openzeppelin-contracts, which the position manager
+#                               imports through IWETH9. Not needed by the harness; needed by the `periphery` profiles and
+#                               by a hook whose tests import the position manager, the quoter or the routers. The periphery's
+#                               OWN lib/v4-core submodule is never installed: the periphery must pin the same v4-core as
+#                               this script (checked, refused otherwise), the project remaps `@uniswap/v4-core/` to
+#                               lib/v4-core, and lib/v4-periphery/lib/v4-core must stay empty (checked; an offline source
+#                               that has it checked out is copied without it). One v4-core, not two.
 #          V4_FORCE=1           re-clone (or, with V4_LOCAL_SRC, re-copy) even if the pin already matches. It is also
 #                               the way out of a lib/v4-core that is at the pin but broken (a submodule missing).
 #          V4_LOCAL_SRC=<dir>   OFFLINE: copy from local clones instead of fetching - <dir>/v4-core (with its
@@ -48,12 +54,24 @@ V4_CORE_PIN="59d3ecf53afa9264a16bba0e38f4c5d2231f80bc"
 # v4-periphery main as of 2026-09-21. It has no release tags.
 V4_PERIPHERY_REPO="https://github.com/Uniswap/v4-periphery"
 V4_PERIPHERY_PIN="9969eec44cfdf07e24b41de47f40276a58401976"
+# v4-periphery's submodules: lib/permit2 is imported by PositionManager and the routers (IAllowanceTransfer,
+# SignatureVerification) and by the kit's periphery harness (Permit2's deployer); lib/v4-core is NOT installed (above).
+# Permit2's own submodules are not needed: nothing the kit compiles imports them.
+V4_PERIPHERY_SUBMODULES="lib/permit2"
 
 # v4-core's own submodules, needed because its sources import them:
 #   solmate      -> ProtocolFees imports Owned              (needed to compile PoolManager)
 #   forge-std    -> the harness and v4-core's test helpers  (needed)
-#   openzeppelin -> only v4-core's own src/test/MockContract (skipped unless you ask for it)
+#   openzeppelin -> v4-core's own src/test/MockContract, and - with V4_WITH_PERIPHERY=1 - the periphery: PositionManager
+#                   imports IWETH9, which imports OpenZeppelin's IERC20 (`@openzeppelin/contracts/...`, remapped to v4-core's
+#                   copy). Skipped unless the periphery is asked for (or you list it here yourself).
 V4_CORE_SUBMODULES="${V4_CORE_SUBMODULES:-lib/forge-std lib/solmate}"
+if [ "${V4_WITH_PERIPHERY:-0}" = "1" ]; then
+  case " $V4_CORE_SUBMODULES " in
+    *" lib/openzeppelin-contracts "*) ;;
+    *) V4_CORE_SUBMODULES="$V4_CORE_SUBMODULES lib/openzeppelin-contracts" ;;
+  esac
+fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
@@ -86,8 +104,14 @@ mkdir -p "$LIB" || exit 1
 # behind: a refused copy used to stay in lib/v4-core, "at the pin", and the next run - even with a good source - took it
 # for an install and refused again on its missing submodule.
 STAGE=""
+# The periphery is accepted only after the checks that follow its fetch (its v4-core pin, its empty lib/v4-core). Until
+# then the lib/v4-periphery that was there before this run (if any) waits aside in PERI_BEFORE; a refusal removes what
+# this run fetched and puts that one back (K17c, from the verifier V17b: a periphery refused for pinning another v4-core
+# used to stay in lib/, under an INSTALL-V4 FAILED).
+PERI_BEFORE=""
 cleanup() {
   [ -n "$STAGE" ] && rm -rf "$STAGE" "$STAGE.old"
+  if [ -n "$PERI_BEFORE" ]; then rm -rf "$LIB/v4-periphery"; mv "$PERI_BEFORE" "$LIB/v4-periphery"; fi
   # a project that had no lib/ is left without one when nothing was installed (rmdir: only an EMPTY lib/ goes)
   [ "$made_lib" -eq 1 ] && rmdir "$LIB" 2> /dev/null
   return 0
@@ -167,6 +191,12 @@ $(untracked_sol "$local_src/$sub" | sed "s|^|$sub/|")"
     got="$(git -C "$STAGE" rev-parse HEAD 2> /dev/null)"
     [ "$got" = "$pin" ] || { echo "install-v4: the copy of $name is at ${got:-unknown}, expected $pin. Refused."; return 1; }
     check_subs "$STAGE" "$@" || { echo "install-v4: nothing was installed: lib/ is as it was before this run."; return 1; }
+    # the periphery's own v4-core (a clone made with --recursive has it) is a second copy of the manager's sources: not
+    # copied. The directory stays, empty, as git leaves an uninitialised submodule.
+    if [ "$name" = v4-periphery ] && [ -n "$(ls -A "$STAGE/lib/v4-core" 2> /dev/null)" ]; then
+      find "$STAGE/lib/v4-core" -mindepth 1 -delete || return 1
+      echo "install-v4:   the local clone's lib/v4-core is checked out: NOT copied (one v4-core: the project's lib/v4-core)"
+    fi
     # only a copy that passed replaces what was there
     if [ -e "$dest" ]; then mv "$dest" "$STAGE.old" || return 1; fi
     if ! mv "$STAGE" "$dest"; then
@@ -239,10 +269,47 @@ fetch_pinned v4-core "$V4_CORE_REPO" "$V4_CORE_PIN" $V4_CORE_SUBMODULES || rc=1
 [ "$rc" -eq 0 ] && { fetch_submodules v4-core $V4_CORE_SUBMODULES || rc=1; }
 
 if [ "${V4_WITH_PERIPHERY:-0}" = "1" ] && [ "$rc" -eq 0 ]; then
-  fetch_pinned v4-periphery "$V4_PERIPHERY_REPO" "$V4_PERIPHERY_PIN" || rc=1
+  # a periphery this run will fetch (none there, another commit, or V4_FORCE): whatever was there waits aside
+  peri="$LIB/v4-periphery"; peri_fetched=1
+  if [ -e "$peri/.git" ] && [ "${V4_FORCE:-0}" != "1" ] && [ "$(git -C "$peri" rev-parse HEAD 2> /dev/null)" = "$V4_PERIPHERY_PIN" ]; then
+    peri_fetched=0
+  elif [ -e "$peri" ]; then
+    PERI_BEFORE="$(mktemp -d "$LIB/.install-v4-periphery-before.XXXXXX")" && rmdir "$PERI_BEFORE" && mv "$peri" "$PERI_BEFORE" \
+      || { echo "install-v4: cannot set the installed $peri aside"; PERI_BEFORE=""; rc=1; }
+  fi
+  # shellcheck disable=SC2086 # the submodule list is split into words on purpose
+  [ "$rc" -eq 0 ] && { fetch_pinned v4-periphery "$V4_PERIPHERY_REPO" "$V4_PERIPHERY_PIN" $V4_PERIPHERY_SUBMODULES || rc=1; }
+  # shellcheck disable=SC2086
+  [ "$rc" -eq 0 ] && { fetch_submodules v4-periphery $V4_PERIPHERY_SUBMODULES || rc=1; }
   # the periphery's own v4-core submodule is left uninitialised on purpose: the project remaps v4-core to
-  # lib/v4-core, and a second copy of the same sources is how you get two PoolManagers in one build.
-  [ "$rc" -eq 0 ] && echo "install-v4: v4-periphery installed; its lib/v4-core submodule is deliberately NOT initialised"
+  # lib/v4-core, and a second copy of the same sources is how you get two PoolManagers in one build. Both halves of that
+  # are checked, not assumed: the periphery pins OUR v4-core, and its lib/v4-core is empty.
+  if [ "$rc" -eq 0 ]; then
+    per_core="$(git -C "$LIB/v4-periphery" ls-tree HEAD lib/v4-core | awk '{print $3}')"
+    if [ "$per_core" != "$V4_CORE_PIN" ]; then
+      echo "install-v4: v4-periphery pins v4-core at ${per_core:-nothing}, this script at $V4_CORE_PIN: the periphery would be"
+      echo "            built against a v4-core it was not written for. Refused: move the two pins together."
+      rc=1
+    elif [ -n "$(ls -A "$LIB/v4-periphery/lib/v4-core" 2> /dev/null)" ]; then
+      echo "install-v4: $LIB/v4-periphery/lib/v4-core is checked out: a second v4-core in the project. Refused."
+      echo "            V4_FORCE=1 V4_WITH_PERIPHERY=1 re-installs the periphery without it."
+      rc=1
+    else
+      echo "install-v4: v4-periphery pins v4-core $per_core (= ours); its lib/v4-core is NOT initialised (one v4-core)"
+    fi
+  fi
+  if [ "$rc" -ne 0 ] && [ "$peri_fetched" -eq 1 ]; then
+    # refused, or not fetched whole: nothing this run fetched stays, and what was there before is back
+    rm -rf "$peri"
+    if [ -n "$PERI_BEFORE" ]; then
+      mv "$PERI_BEFORE" "$peri" && PERI_BEFORE=""
+      echo "install-v4: the periphery this run fetched is removed; the one installed before it is back: lib/ is as it was"
+    else
+      echo "install-v4: the periphery this run fetched is removed: lib/ has no v4-periphery, as before this run"
+    fi
+  elif [ -n "$PERI_BEFORE" ]; then
+    rm -rf "$PERI_BEFORE"; PERI_BEFORE=""
+  fi
 fi
 
 # ---------------------------------------------------------------------------- report
@@ -260,6 +327,14 @@ for sub in $V4_CORE_SUBMODULES; do
 done
 if [ "${V4_WITH_PERIPHERY:-0}" = "1" ]; then
   echo "v4-periphery   $V4_PERIPHERY_PIN"
+  for sub in $V4_PERIPHERY_SUBMODULES; do
+    if [ -e "$LIB/v4-periphery/$sub/.git" ]; then
+      echo "  $sub  $(git -C "$LIB/v4-periphery/$sub" rev-parse HEAD)"
+    else
+      echo "  $sub  MISSING"; rc=1
+    fi
+  done
+  echo "  lib/v4-core  not installed: the project's lib/v4-core is the one v4-core"
 fi
 echo
 echo "Uniswap's PoolManager is BUSL-1.1. It lives under lib/, which is git-ignored, and it is never committed"

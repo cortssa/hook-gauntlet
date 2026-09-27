@@ -135,7 +135,8 @@ exercise, and the dossier's section 10 then says so; a project going to a HANDOF
 `foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (drop its `libs = ["lib"]` and `allow_paths = ["../src"]`: with every dependency remapped by absolute path, `libs = []` and no `allow_paths` is what a reader measured to work; solc 0.8.26, evm cancun, the optimizer, the PoolManager's
 IR compilation restrictions - its `paths` entry made absolute too, `<kit>/foundry-kit/v4/lib/v4-core/src/PoolManager.sol` -
 and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `ds-test/`, `solmate/`, `@openzeppelin/`,
-`v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
+`v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, `permit2/`, `openzeppelin-contracts/` (the last two matter only with the
+periphery installed, `V4_WITH_PERIPHERY=1`), and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
 carry because the module reaches its own sources directly: `gauntlet-v4/=<kit>/foundry-kit/v4/src/` for `V4Harness` and
 `HookMiner`), and its scenarios from `foundry-kit/v4/test/`. In each test's `setUp`: `_setUpV4();` then
 `hook = MyHook(_deployHook(type(MyHook).creationCode, abi.encode(manager), <its flags>));` - the harness mines the address
