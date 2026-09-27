@@ -22,7 +22,8 @@ published guides; the dossier's author should cite the ones they checked against
 **Not deployed. No human security review yet.** Prepared with AI agents under the owner's direction; every claim below carries
 its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
 **Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{yes/no}} · skeleton: {{K}} findings open** -
-the status line: the one line every flag in `doctrine/NEXT.md` points at. A dossier can be complete and thin at the
+the status line: the one line every flag in `doctrine/NEXT.md` points at. `N_ROWS` is the number of rows section 6 has
+for this hook (`doctrine/JUDGES.md`'s rows, its row 1 counted as the two it becomes here; the sandbox row counts only when it was asked for). A dossier can be complete and thin at the
 same time; this line says which one it is. In `skeleton: {{K}} findings open`, K is the number of findings still open,
 high + medium + low (`open_findings` in `STATE.md`); informational findings are NOT counted in it - the same K that
 `STATE.md` writes as `dossier: skeleton (K open, ...)` and `NEXT.md` row 9b reads against `open_findings`. Three things

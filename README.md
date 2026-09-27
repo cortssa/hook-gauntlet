@@ -38,7 +38,7 @@ scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on 
 Done looks like this, on forge 1.8.1 (CI also runs 1.8.3):
 
 ```
-SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 636 cases, about 150 s
+SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 853 cases, about 200 s
 test      rc=0   (passed 107, failed 0, skipped 0; filter: none)  ...  BATTERY PASSED           # the root kit
 test      rc=0   (passed 271, failed 0, skipped 0; filter: no_match_path = "test/fork/**" (the project's foundry.toml))  suites test=11 test/examples=13 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
 ```
@@ -296,9 +296,13 @@ from all of these:
 
 ## Status
 
-**v0, 2026-09-24. Two blind runs on one small target; twelve fresh-reader walks of the route, the last seven with a
-real discovery round each; the v4 module's gap list closed, fork tests included (a mainnet fork at a pinned block, 2026-09-25,
-fixed after its verifier on 2026-09-26). One model family, one agent harness.**
+**v0.2, 2026-09-28. Two blind runs on one small target; thirteen fresh-reader walks of the route, the last eight with a
+real discovery round each (the thirteenth on the v0.2 kit: all four planted defects found before the round, the route
+ended where it says it ends with the owner absent, five guesses on the way - each now a line in the kit); the v4
+module on a mainnet fork at a pinned block, through Uniswap's real periphery, with a JIT-recipient actor and an
+invariant on WHO was paid; the gate scripts made to refuse what forge reads behind their back (environment, `.env`,
+a global config, artefacts from another path, a source forge's incremental build misses). One model family, one agent
+harness; every piece verified by an agent that did not write it.**
 
 | part | state |
 |---|---|

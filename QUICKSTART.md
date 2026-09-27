@@ -26,8 +26,10 @@ and installs only on the owner's yes.
 - Non-interactive shells (agents, CI, `wsl` from PowerShell) do not read your profile: put `~/.foundry/bin` on `PATH`
   yourself, or `export PATH="$HOME/.foundry/bin:$PATH"` at the top of your script.
 - Slither only for the static-analysis judge in full mode - an install your agent must ask you for.
-- Network only for three things: cloning forge-std (step 1; offline: `mkdir -p foundry-kit/lib` and copy any forge-std v1.16.2 checkout to
-  `foundry-kit/lib/forge-std`, the battery checks nothing about where it came from), fetching Uniswap's sources at pinned
+- Network only for three things: cloning forge-std (step 1; offline: `mkdir -p foundry-kit/lib` and copy a forge-std checkout to
+  `foundry-kit/lib/forge-std` - the pinned v1.16.2, or the v1.9.3 that v4-core carries as `lib/forge-std` once step 3
+  has run, which the root kit's 107 tests pass on and the doctor accepts as "nothing is claimed outside the pin"; the
+  battery checks nothing about where it came from), fetching Uniswap's sources at pinned
   commits (step 3, offline route there) and the real pool manager's bytecode (step 8). Everything else runs offline.
 
 ## 1. Clone, one dependency, and prove the scripts before trusting them
@@ -137,7 +139,7 @@ and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` a
 exercise, and the dossier's section 10 then says so; a project going to a HANDOFF vendors the kit inside itself
 (`lib/hook-gauntlet`, a submodule or a copy) and remaps relatively, so that section 10 runs on a clean machine. That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
 (the PoolManager stops at "stack too deep"): start its `foundry.toml` and `remappings.txt` from the kit's own
-`foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (drop its `libs = ["lib"]` and `allow_paths = ["../src"]`: with every dependency remapped by absolute path, `libs = []` and no `allow_paths` is what a reader measured to work; solc 0.8.26, evm cancun, the optimizer, the PoolManager's
+`foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (drop its `libs = ["lib"]` and `allow_paths = ["../src"]`: with every dependency remapped by absolute path, `libs = []` and no `allow_paths` is what a reader measured to work; solc 0.8.26, evm cancun, the optimizer - the owner's own `optimizer` and `optimizer_runs` stay in the default profile: the tests, the fuzz and the mutants deploy the `.manager` build (via IR, 44 444 444 runs), and that is the artefact the dossier cites - the PoolManager's
 IR compilation restrictions - its `paths` entry made absolute too, `<kit>/foundry-kit/v4/lib/v4-core/src/PoolManager.sol` -
 and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `ds-test/`, `solmate/`, `@openzeppelin/`,
 `v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, `permit2/`, `openzeppelin-contracts/` (the last two matter only with the
