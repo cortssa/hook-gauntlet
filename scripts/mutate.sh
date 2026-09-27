@@ -18,7 +18,11 @@
 # Usage:   scripts/mutate.sh <project-dir> <file-relative-to-project> <old-string> <new-string>
 # Env:     EXPECT      red | green                          (default: red)
 #          TEST_FLAGS  flags for forge test                  (e.g. --match-contract Invariants)
-#          FORGE_FLAGS extra flags for forge                 (e.g. --offline)
+#                      (the ONLY filter: nothing else of forge's is taken from the environment, scripts/lib/forge-env.sh -
+#                      every variable whose name, upper-cased, starts with FOUNDRY_, FORGE_ or DAPP_ is removed, a line
+#                      names each, but FOUNDRY_PROFILE and FORGE_FLAGS; a `.env` in the project that sets one is refused,
+#                      rc=2. The header of each mutant's log names the tests it ran)
+#          FORGE_FLAGS extra flags for forge                 (e.g. --offline; named in the log's header when set)
 #          LABEL       a name for the log                    (default: mutant)
 #          OUT_DIR     where the log goes                    (default: <project>/.gauntlet/reports/mutants)
 #          KEEP=1      keep the copy and print its path
@@ -30,6 +34,8 @@
 #                      A place the copy cannot be made is refused in one line naming the variable and the path (rc=2).
 # Exit:    0 the outcome matched EXPECT      (red: the mutant was KILLED;  green: the variant PASSED)
 #          1 the outcome did not match       (red: the mutant SURVIVED;   green: the variant FAILED)
+#          Judged from forge's test COUNTS, not its exit code alone: a failed test is a failed test when forge exits 0
+#          over it (`--allow-failure`), and a mutant whose summary cannot be read has not survived anything (rc=2).
 #          2 nothing was proven              (bad arguments, no unique match, the change does not compile, the UNCHANGED
 #                                             code is not green under the same TEST_FLAGS, or no test ran at all)
 # A limit, stated: the baseline is run ONCE. A test that is flaky without a fixed seed can be green there and red on a
@@ -51,6 +57,14 @@ OUT_DIR="${OUT_DIR:-$PROJECT/.gauntlet/reports/mutants}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
 . "$HERE/lib/parse.sh" || { echo "mutate: $HERE/lib/parse.sh is missing"; exit 2; }
+# shellcheck source=lib/forge-env.sh
+. "$HERE/lib/forge-env.sh" || { echo "mutate: $HERE/lib/forge-env.sh is missing"; exit 2; }
+# forge reads a test filter and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, foundry_match_contract,
+# FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only FOUNDRY_MATCH_CONTRACT): one exported
+# for another command would decide the verdict in silence (measured, 2026-09-27: FORGE_ALLOW_FAILURE made a broken variant
+# "VARIANT PASSED" and a killed mutant "SURVIVED"). By allowlist; this may re-run the script, once, without what it
+# removed. The filter is TEST_FLAGS alone.
+forge_env_clean mutate "FOUNDRY_PROFILE FORGE_FLAGS" "$0" "$@"
 
 case "$EXPECT" in red | green) ;; *) echo "mutate: EXPECT must be red or green"; exit 2 ;; esac
 [ -f "$PROJECT/$FILE" ] || { echo "mutate: no such file $PROJECT/$FILE"; exit 2; }
@@ -99,6 +113,7 @@ if ! cp -a "$COPY_SRC/." "$COPY/"; then
   echo "mutate: the copy of $COPY_SRC into $COPY failed (the cp errors are above). NOTHING PROVEN."; exit 2
 fi
 WORK="$COPY/$REL"
+forge_dotenv_check mutate "$WORK" || { echo "mutate: NOTHING PROVEN."; exit 2; }
 
 # The file must be a file OF THE COPY. `cp -a` keeps a symlink as a symlink, so `lib/X.sol` in the copy can be the
 # ORIGINAL `lib/X.sol` of whatever the link points at (a shared lib/, a monorepo's package): the mutation below would be
@@ -152,14 +167,21 @@ fi
 # The UNCHANGED copy must also pass the SAME tests, and some must actually run. Otherwise "the tests went red" means
 # nothing: a typo in TEST_FLAGS, a fork test with no RPC, a flaky test - each would make every mutant look KILLED, and a
 # filter that matches nothing would make every broken variant look PASSED. This costs one extra run of the suite.
-# the number of tests that passed, read by scripts/lib/parse.sh: empty when forge printed no summary or one it cannot read
+# the number of tests that passed / failed, read by scripts/lib/parse.sh: empty when forge printed no summary or one it
+# cannot read. The verdicts below are taken from these COUNTS and the FAIL lines, not from forge's exit code alone:
+# `--allow-failure` (FORGE_FLAGS) exits 0 over a failed test.
 passed_in() { local s; s="$(parse_test_summary "$1")" || return 0; printf '%s\n' "${s%% *}"; }
+failed_in() { local s f; s="$(parse_test_summary "$1")" || return 0; read -r _ f _ <<< "$s"; printf '%s\n' "$f"; }
 # shellcheck disable=SC2086
 (cd "$WORK" && forge test $FORGE_FLAGS $TEST_FLAGS > "$OUT_DIR/$LABEL.baseline-test.txt" 2>&1)
 rc_base=$?
 base_passed="$(passed_in "$OUT_DIR/$LABEL.baseline-test.txt")"
+base_failed="$(failed_in "$OUT_DIR/$LABEL.baseline-test.txt")"
+# red: forge said so, or a test failed while forge exited 0
+base_red=0
+if [ "$rc_base" -ne 0 ] || { [ -n "$base_failed" ] && [ "$base_failed" != "0" ]; } || grep -qE '^\[FAIL' "$OUT_DIR/$LABEL.baseline-test.txt"; then base_red=1; fi
 base_red_ok=0
-if [ "$EXPECT" = "green" ] && [ "${BASELINE_MAY_BE_RED:-0}" = "1" ] && [ "$rc_base" -ne 0 ] && [ -n "$base_passed" ] \
+if [ "$EXPECT" = "green" ] && [ "${BASELINE_MAY_BE_RED:-0}" = "1" ] && [ "$base_red" -eq 1 ] && [ -n "$base_passed" ] \
   && grep -qE '^\[FAIL' "$OUT_DIR/$LABEL.baseline-test.txt"; then
   # the one flow in which a red baseline is the POINT: the regression test was written first, it is red on the unchanged
   # code, and the variants are candidate fixes. The variant still has to come out fully green below.
@@ -167,8 +189,8 @@ if [ "$EXPECT" = "green" ] && [ "${BASELINE_MAY_BE_RED:-0}" = "1" ] && [ "$rc_ba
   echo "mutate: the baseline is red, and BASELINE_MAY_BE_RED=1 says that is expected. Red before the change:"
   grep -E '^\[FAIL' "$OUT_DIR/$LABEL.baseline-test.txt" | cut -c1-160 | sort -u | head -20
 fi
-if [ "$base_red_ok" -eq 0 ] && { [ "$rc_base" -ne 0 ] || [ -z "$base_passed" ] || [ "$base_passed" = "0" ]; }; then
-  echo "mutate: the UNCHANGED code does not pass these tests, or no test ran (rc=$rc_base, passed=${base_passed:-none})."
+if [ "$base_red_ok" -eq 0 ] && { [ "$base_red" -eq 1 ] || [ -z "$base_passed" ] || [ "$base_passed" = "0" ]; }; then
+  echo "mutate: the UNCHANGED code does not pass these tests, or no test ran (rc=$rc_base, passed=${base_passed:-none}, failed=${base_failed:-none})."
   echo "        A red or empty baseline makes every verdict meaningless. NOTHING PROVEN. The end of the log:"
   tail -n 8 "$OUT_DIR/$LABEL.baseline-test.txt" | sed "s/^/    | /"
   exit 2
@@ -190,6 +212,9 @@ mv "$WORK/$FILE.mutated" "$WORK/$FILE"
 
 {
   echo "== $LABEL (EXPECT=$EXPECT) =="
+  echo "tests: forge test ${TEST_FLAGS:-(no filter: TEST_FLAGS is empty)}"
+  [ -z "$FORGE_FLAGS" ] || echo "FORGE_FLAGS: $FORGE_FLAGS"
+  [ -z "${FOUNDRY_PROFILE:-}" ] || echo "profile: $FOUNDRY_PROFILE (FOUNDRY_PROFILE)"
   echo "file: $FILE"
   echo "-    $MUT_OLD"
   echo "+    $MUT_NEW"
@@ -225,6 +250,7 @@ forge test $FORGE_FLAGS $TEST_FLAGS > "$LOG.test" 2>&1
 rc_test=$?
 cat "$LOG.test" >> "$LOG"
 mut_passed="$(passed_in "$LOG.test")"
+mut_failed="$(failed_in "$LOG.test")"
 # forge prints every failing test twice (inside its suite, and again under "Failing tests:"): count DISTINCT lines
 mut_fails="$(grep -E '^\[FAIL' "$LOG.test" | cut -c1-160 | sort -u | wc -l | tr -d ' ')"
 # A mutant that breaks `setUp()` prints `[FAIL: setup failed: ...]` and would be counted as a kill, but NO TEST RAN
@@ -242,23 +268,32 @@ if [ "$setup_fails" -gt 0 ]; then
   rm -f "$LOG.test.keep"; exit 2
 fi
 
+# red, from the counts: forge said so, or a test failed while forge exited 0 (`--allow-failure`)
+mut_red=0
+if [ "$rc_test" -ne 0 ] || { [ -n "$mut_failed" ] && [ "$mut_failed" != "0" ]; } || [ "$mut_fails" -gt 0 ]; then mut_red=1; fi
+
 if [ "$EXPECT" = "red" ]; then
-  if [ "$rc_test" -ne 0 ] && [ "$mut_fails" -gt 0 ]; then
+  if [ "$mut_red" -eq 1 ] && [ "$mut_fails" -gt 0 ]; then
     echo "KILLED - $mut_fails test(s) went red on the mutant, and the same tests were green without it. Failing tests:" | tee -a "$LOG"
     grep -E '^\[FAIL' "$LOG.test.keep" | cut -c1-160 | sort -u | head -20
     echo "READ the message: a test that fails for a reason unrelated to the claim has not killed anything."
     rm -f "$LOG.test.keep"; exit 0
   fi
-  if [ "$rc_test" -ne 0 ]; then
+  if [ "$mut_red" -eq 1 ]; then
     echo "mutate: forge test failed on the mutant WITHOUT a single failing test (a crash? a bad flag?). NOTHING PROVEN (see $LOG)." | tee -a "$LOG"
     rm -f "$LOG.test.keep"; exit 2
   fi
-  echo "SURVIVED - the code was broken and every test stayed green. The rule you were checking does not bite." | tee -a "$LOG"
-  exit 1
+  if [ -z "$mut_passed" ] || [ "$mut_passed" = "0" ]; then
+    # no summary read, or no test ran: nothing stayed green, so nothing survived
+    echo "mutate: forge printed no test summary this kit can read for the mutant, or no test ran (passed=${mut_passed:-none}). NOTHING PROVEN (see $LOG)." | tee -a "$LOG"
+    rm -f "$LOG.test.keep"; exit 2
+  fi
+  echo "SURVIVED - the code was broken and every test stayed green ($mut_passed passed, 0 failed). The rule you were checking does not bite." | tee -a "$LOG"
+  rm -f "$LOG.test.keep"; exit 1
 fi
 
-# EXPECT=green: a variant. It must pass, and the bytes are part of the answer.
-if [ "$rc_test" -ne 0 ]; then
+# EXPECT=green: a variant. It must pass - no failed test, whatever forge exited with - and the bytes are part of the answer.
+if [ "$mut_red" -eq 1 ]; then
   echo "VARIANT FAILED the tests (see $LOG)." | tee -a "$LOG"
   grep -E '^\[FAIL' "$LOG.test.keep" | cut -c1-160 | sort -u | head -20
   rm -f "$LOG.test.keep"; exit 1

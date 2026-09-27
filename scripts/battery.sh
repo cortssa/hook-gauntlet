@@ -10,10 +10,21 @@
 #
 # Usage:   scripts/battery.sh [project-dir]
 # Env:     OUT_DIR      where to write the logs   (default: <project>/.gauntlet/reports)
-#          FORGE_FLAGS  extra flags for forge     (e.g. --offline)
-#          TEST_FLAGS   extra flags for forge test (e.g. -vvv, --match-contract X)
+#          FORGE_FLAGS  extra flags for forge     (e.g. --offline). The kit's own variable (forge does not read it):
+#                       allowed, and when set the test line names it next to the filter - a path or a --match-* in it
+#                       narrows the run like any filter
+#          FOUNDRY_PROFILE  the profile forge runs (allowed; the summary's `profile` line names it)
 #          ALLOW_SKIPS  1 to accept skipped tests (default: a skipped test fails the battery - it tested nothing)
-# Exit:    0 all steps passed, 1 something failed. The summary names which.
+#          NOT read: TEST_FLAGS, nor anything else of forge's from the environment. The battery is the WHOLE suite: a
+#          filter exported for scripts/mutate.sh (QUICKSTART's `TEST_FLAGS="--match-contract ..."`) made it run 5 tests
+#          of 107 and say BATTERY PASSED (measured, 2026-09-27), and forge reads many more (scripts/lib/forge-env.sh):
+#          every variable whose name, upper-cased, starts with FOUNDRY_, FORGE_ or DAPP_ is removed but the two above
+#          (V4_MANAGER's corpus directory is set by the battery itself, after), and a line names each one removed. A
+#          `.env` in the project that sets one is refused (forge loads it; the battery cannot remove it): BATTERY FAILED.
+#          A filter in the project's own foundry.toml (`match_contract = ...`) is forge's configuration, not the
+#          environment: it is not removed, and the summary names it (and says so when ~/.foundry/foundry.toml sets one).
+# Exit:    0 all steps passed, 1 something failed - a failed test fails it whatever forge's exit code (`--allow-failure`
+#          in FORGE_FLAGS exits 0 over one). The summary names which, and the test line names the filter in force.
 
 set -uo pipefail
 
@@ -22,13 +33,19 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
 . "$HERE/lib/parse.sh" || { echo "battery: $HERE/lib/parse.sh is missing"; exit 1; }
+# shellcheck source=lib/forge-env.sh
+. "$HERE/lib/forge-env.sh" || { echo "battery: $HERE/lib/forge-env.sh is missing"; exit 1; }
+# forge's environment by allowlist (see the header): may re-run this script, once, without what it removed
+forge_env_clean battery "FOUNDRY_PROFILE FORGE_FLAGS" "$0" "$@"
+# never a filter inherited from the environment (see the header): the battery runs every test the project has
+if [ -n "${TEST_FLAGS+x}" ]; then echo "battery: ignoring TEST_FLAGS from the environment"; unset TEST_FLAGS; fi
 
 PROJECT="${1:-.}"
 cd "$PROJECT" || { echo "battery: cannot enter $PROJECT"; exit 1; }
+if ! forge_dotenv_check battery "$(pwd -P)"; then echo "BATTERY FAILED"; exit 1; fi
 
 OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
-TEST_FLAGS="${TEST_FLAGS:--vv}"
 mkdir -p "$OUT_DIR"
 
 # A fuzz corpus belongs to ONE deployment layout. The v4 module runs the same suite against two managers (V4_MANAGER =
@@ -36,7 +53,7 @@ mkdir -p "$OUT_DIR"
 # counterexample that is not one - measured: "the hook thinks it is in the future", red 4 times in 4. One corpus per manager.
 # That PREVENTS the cross-over; it does not cure one. After a single bare `forge test` against the wrong manager the
 # invented failure is persisted in cache/invariant and replays first, whatever the corpus: delete cache/invariant.
-if [ -n "${V4_MANAGER:-}" ] && [ -z "${FOUNDRY_INVARIANT_CORPUS_DIR:-}" ]; then
+if [ -n "${V4_MANAGER:-}" ]; then
   export FOUNDRY_INVARIANT_CORPUS_DIR="corpus/invariant-$V4_MANAGER"
   echo "battery: V4_MANAGER=$V4_MANAGER, so the invariant corpus is $FOUNDRY_INVARIANT_CORPUS_DIR"
 fi
@@ -49,8 +66,26 @@ forge build $FORGE_FLAGS 2>&1 | tee "$OUT_DIR/01-build.txt"
 rc_build=${PIPESTATUS[0]}
 
 echo "== test =="
+# the filter in force, for the summary: none, unless the project's own configuration (the profile the battery runs under)
+# sets one - forge prints a match_* / no_match_* key only when it is set
+cfg_filter="$(forge config 2> /dev/null | awk '/^\[/ { if (seen) exit; if ($0 ~ /^\[profile\./) seen = 1; next }
+  seen && $1 ~ /^(no_)?match_(test|contract|path)$/ { printf "%s%s", (n++ ? ", " : ""), $0 }')"
+# where it came from: `forge config` merges the machine's ~/.foundry/foundry.toml with the project's, and a filter set
+# there narrows every project on the machine (measured, forge 1.8.1: 5 tests of 107) - said, never labelled the project's
+cfg_where="the project's foundry.toml"
+if [ -n "$cfg_filter" ] && [ -f "${HOME:-/nonexistent}/.foundry/foundry.toml" ] \
+  && grep -Eq '^[[:space:]]*(no_)?match_(test|contract|path)[[:space:]]*=' "$HOME/.foundry/foundry.toml"; then
+  cfg_where="the project's foundry.toml, or $HOME/.foundry/foundry.toml, which sets one"
+fi
+# the profile in force, for the summary: forge falls back to the default one, with a warning, on a name it does not have
+profile_shown="${FOUNDRY_PROFILE:-default}"; [ -z "${FOUNDRY_PROFILE:-}" ] || profile_shown="$profile_shown (FOUNDRY_PROFILE)"
+# (captured, then matched: `| grep -q` under pipefail can kill forge with SIGPIPE and make the check false - fuzz-long.sh)
+if [ -n "${FOUNDRY_PROFILE:-}" ]; then
+  profile_warn="$(forge config 2>&1 > /dev/null)"
+  case "$profile_warn" in *"does not exist"*) profile_shown="$FOUNDRY_PROFILE (FOUNDRY_PROFILE) - NOT a profile of this project: forge ran the default one" ;; esac
+fi
 # shellcheck disable=SC2086
-forge test $FORGE_FLAGS $TEST_FLAGS 2>&1 | tee "$OUT_DIR/02-test.txt"
+forge test $FORGE_FLAGS -vv 2>&1 | tee "$OUT_DIR/02-test.txt"
 rc_test=${PIPESTATUS[0]}
 
 # forge exits 0 when a filter matches nothing, and when every suite skipped itself. Neither is a pass: read the numbers.
@@ -67,6 +102,11 @@ elif [ "$rc_parse" -ne 0 ]; then
   rc_test=1
 else
   read -r tests_passed tests_failed tests_skipped _ <<< "$summary"
+  # a failed test is never a pass, whatever forge exited with: `--allow-failure` (FORGE_FLAGS) makes it exit 0 over one
+  if [ "$tests_failed" != "0" ] && [ "$rc_test" -eq 0 ]; then
+    echo "battery: forge exited 0, and $tests_failed test(s) FAILED (--allow-failure?). A failed test is never a pass."
+    rc_test=1
+  fi
   if [ "$tests_passed" = "0" ]; then echo "battery: 0 tests passed - NO TESTS RAN"; rc_test=1; fi
   if [ "$tests_skipped" != "0" ] && [ "${ALLOW_SKIPS:-0}" != "1" ]; then
     echo "battery: $tests_skipped test(s) SKIPPED. A skipped suite has tested nothing (a missing fixture?). ALLOW_SKIPS=1 to accept."
@@ -96,7 +136,10 @@ fi
 echo
 echo "== battery summary =="
 echo "build     rc=$rc_build"
-echo "test      rc=$rc_test   (passed $tests_passed, failed $tests_failed, skipped $tests_skipped)"
+filter_shown="none"; [ -z "$cfg_filter" ] || filter_shown="$cfg_filter ($cfg_where)"
+[ -z "$FORGE_FLAGS" ] || filter_shown="$filter_shown; FORGE_FLAGS: $FORGE_FLAGS"
+echo "test      rc=$rc_test   (passed $tests_passed, failed $tests_failed, skipped $tests_skipped; filter: $filter_shown)"
+echo "profile   $profile_shown"
 # by NAME, per test directory, so a log shows which parts of the suite ran (e.g. the v4 sandbox's test/sim)
 echo "suites    $(parse_suites_by_dir "$OUT_DIR/02-test.txt")"
 echo "sizes     rc=$rc_sizes"

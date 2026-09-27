@@ -359,7 +359,9 @@ The runners live in `../scripts`. `battery.sh` is the phase gate, `fuzz-long.sh`
 `selftest.sh` proves the guards go red when they should (every guard that can be exercised offline). The text
 they read from forge - the test summary, the invariant `(runs, calls, reverts)` line, the `--sizes` table, the
 sandbox ledger - is parsed in one place, `scripts/lib/parse.sh`, against real and near-miss samples in
-`scripts/test/fixtures/`: a shape it does not recognise is refused, never read as 0.
+`scripts/test/fixtures/`: a shape it does not recognise is refused, never read as 0. The environment forge runs under in
+the four judging scripts (battery, long fuzz, census, mutate) is set in one place too, `scripts/lib/forge-env.sh`: by an
+allowlist, because forge reads its whole configuration from `FOUNDRY_*`, `DAPP_*` and some `FORGE_*` variables as well.
 
 ## Not covered yet
 

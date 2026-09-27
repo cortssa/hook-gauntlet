@@ -32,8 +32,10 @@
 #   - at the ceiling the black-box is a model round like any other, so it does not run: with row 2 in force, rows 16 and
 #     18b also take `blackbox: never_run` or `stale` (the dossier then says "black-box: not run - ceiling reached");
 #   - rehearsal (row 17) is the `rehearsal:` flag: promoted and `not yet` is 17; promoted and `n/a` or `done` is 18;
-#   - row 7b is off while `waiting_on_owner` names `RPC_URL` or `chain` (an item that contains `RPC_URL`, or the word
-#     `chain`, anywhere in it): its action waits on the owner, so row 3 skips it;
+#   - row 7b is off while `waiting_on_owner` asks the owner for the endpoint or the chain: an item that contains `RPC_URL`,
+#     or that IS the chain question (`chain`, or starting with the WORD `chain`, `target chain` or `which chain`, any case;
+#     `chain-id`, `chain_id`, `chains` are other words) - `off-chain`, `cross-chain` or the word inside another question
+#     do not count: its action waits on the owner, so row 3 skips it;
 #   - rows 12 and 16 are off while 7b is owed (`real_manager_battery` `never` or `stale` - the chain is known - and no
 #     `real manager:` note); when 7b is silenced by the wait and no other row stands, row 3 is given, as NEXT.md's row 3
 #     says: it stops and says what is waiting (an answer 3=false does not make the rows the wait turned off stand);
@@ -43,7 +45,10 @@
 #   - `blackbox: stopped (<round id>)` (a black-box round stopped twice, row 11b): rows 12 and 15 do not fire on it, rows
 #     16 and 18b take it;
 #   - a note is read by its name only at the START of a note item (a note line, or a part of one after the middle dot
-#     or ";"): `pending: <id>` for row 1, `real manager:` for row 7b;
+#     or ";", a Markdown list marker `- ` / `* ` / `+ ` before it allowed): `pending: <id>` for row 1, `real manager:`
+#     for row 7b;
+#   - the ceiling the OPERATOR set in full mode with the owner absent (`<N> model rounds, set by the operator (owner
+#     absent); <M> used`) is a ceiling like the owner's: row 2 fires on it; "operator" in any other shape or case is refused;
 #   - rows 13b and 14 count a finding against "closed with 0 high and 0 medium" only while it is OPEN in `open_findings`
 #     (one accepted by the owner, refused in writing or handed to the human audit by name does not): the terms are
 #     `open_findings.high=0 open_findings.medium=0`, not the round's own counts;
@@ -93,7 +98,7 @@ ROWS='
 6   | cebb3ad7 | act  | -                   | bytecode_changed_since.last_battery=yes ; battery=never | -
 6b  | 021321a6 | act  | -                   | battery=red | -
 7   | c644f4bc | act  | -                   | bytecode_changed_since.last_long_fuzz=yes battery=green ; bytecode_changed_since.last_other_free_judges=yes battery=green | -
-7b  | cd03dc26 | act  | -                   | real_manager.owed=yes waiting_on_owner.real_manager=no | -
+7b  | 49e41051 | act  | -                   | real_manager.owed=yes waiting_on_owner.real_manager=no | -
 8   | c328f377 | act  | -                   | any_round=yes | is there an ACCEPTED or FIXED finding (triaged in row 9) from outside the fuzzer with no rule for it yet (an invariant or action, or a unit test and a not fuzzable: note)?
 9   | 5608652c | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | is a finding from any round still open (not fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name - one triaged fix at the cause whose fix is not written yet is still open; a phase-3 pending: finding is one too, now that round 1 has run or the ceiling is reached), and is the owner there to answer, or is it already triaged fix at the cause?
 9b  | 9ccc797e | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | do open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached) wait on the owner'"'"'s triage while the owner is not available?
@@ -297,28 +302,39 @@ parse_state() {
   if [ "${V[last_audit_round]}" != none ] || [ "${V[last_other_round]}" != none ]; then V[any_round]=yes; fi
 
   local re_ceil='^([0-9]+)[^;]*;[[:space:]]*([0-9]+)[[:space:]]+used'
+  # the ceiling the OPERATOR set, the owner absent in full mode (NEXT.md row 3, COST.md 1): one fixed form, read strictly -
+  # a line that says "operator" in any other shape, or in any other case, is refused, never read as the owner's
+  local re_op='^([0-9]+) model rounds?, set by the operator \(owner absent\);[[:space:]]*([0-9]+)[[:space:]]+used([[:space:]]+[(][^()]*[)])?$'
   val="${RAW[ceiling]}"
   if [[ $val =~ ^not\ agreed ]]; then V[ceiling]=not_agreed
   elif [[ $val =~ ^undecided ]]; then V[ceiling]=undecided
+  elif [[ ${val,,} == *operator* ]]; then   # in ANY case: `set by the Operator` passed as the owner's ceiling (V24)
+    [[ $val =~ $re_op ]] || refuse "flag 'ceiling': '$val' is not the operator's form, '<N> model rounds, set by the operator (owner absent); <M> used'."
+    if [ "${BASH_REMATCH[2]}" -ge "${BASH_REMATCH[1]}" ]; then V[ceiling]=reached; else V[ceiling]=open; fi
+    CEIL_SHOW="${BASH_REMATCH[2]} of ${BASH_REMATCH[1]} used, set by the operator (owner absent)"
   elif [[ $val =~ $re_ceil ]]; then
     if [ "${BASH_REMATCH[2]}" -ge "${BASH_REMATCH[1]}" ]; then V[ceiling]=reached; else V[ceiling]=open; fi
     CEIL_SHOW="${BASH_REMATCH[2]} of ${BASH_REMATCH[1]} used"
   else
-    refuse "flag 'ceiling': '$val' is none of 'not agreed ...', 'undecided ...', '<N> model rounds ...; <M> used'."
+    refuse "flag 'ceiling': '$val' is none of 'not agreed ...', 'undecided ...', '<N> model rounds ...; <M> used', '<N> model rounds, set by the operator (owner absent); <M> used'."
   fi
 
   enum real_manager_battery n/a never stale current
   val="${RAW[waiting_on_owner]}"
   if [[ $val =~ ^none([[:space:]]+\(.*)?$ ]]; then V[waiting_on_owner]=none; else V[waiting_on_owner]="$val"; fi
   # row 7b's own question waits on the owner when an item of waiting_on_owner (items: separated by ";" or the middle dot
-  # NEXT.md uses) names RPC_URL or chain: contains RPC_URL, or the word chain (any case), anywhere in the item
+  # NEXT.md uses) contains RPC_URL, or IS the chain question: the item is `chain`, or starts with `chain`, `target chain`
+  # or `which chain` (any case) as a word. The word anywhere else - `off-chain keeper address`, `triage of F-2
+  # (cross-chain replay)`, `severity of F-7 (it depends on the chain)` - asks the owner something else, and 7b, a
+  # local judge, does not wait on it (a verifier's G03 and G12)
   local item; local -a items=()
   V[waiting_on_owner.real_manager]=no
   if [ "${V[waiting_on_owner]}" != none ]; then
     IFS=';' read -ra items <<< "${val//$'\302\267'/;}"
     for item in "${items[@]}"; do
       case "$item" in *RPC_URL*) V[waiting_on_owner.real_manager]=yes ;; esac
-      [[ ${item,,} =~ (^|[^a-z0-9_])chain([^a-z0-9_]|$) ]] && V[waiting_on_owner.real_manager]=yes
+      item="$(trim "$item")"
+      [[ ${item,,} =~ ^(target[[:space:]]+|which[[:space:]]+)?chain([^a-z0-9_-]|$) ]] && V[waiting_on_owner.real_manager]=yes
     done
   fi
   enum location .gauntlet/ root
@@ -337,6 +353,8 @@ parse_state() {
     IFS=';' read -ra items <<< "${line//$'\302\267'/;}"
     for item in "${items[@]}"; do
       item="$(trim "$item")"
+      # a note written as a Markdown list item (`- real manager: ...`, `* pending: ...`) is read like a plain one
+      if [[ $item =~ ^[-*+][[:space:]]+(.*)$ ]]; then item="${BASH_REMATCH[1]}"; fi
       [[ $item =~ ^pending:[[:space:]]+[A-Za-z0-9][A-Za-z0-9._-]*([[:space:]]|$) ]] && V[notes.pending]=yes   # row 1
       [[ $item =~ ^real\ manager: ]] && V[notes.real_manager]=yes                                            # row 7b
     done
@@ -464,7 +482,7 @@ done
 if [ -z "$pending" ] && [ -z "${OFF[3]+x}" ] && [ "${V[waiting_on_owner]}" != none ] \
   && [ "${V[waiting_on_owner.real_manager]}" = yes ] && [ "${V[real_manager.owed]}" = yes ]; then
   echo "next: row 3 - ${ACTION[3]}"
-  echo "because: waiting_on_owner=${V[waiting_on_owner]}: row 7b waits on that answer (it names RPC_URL or chain), rows 12 and 16 wait on 7b (real_manager_battery=${V[real_manager_battery]}), and no other row below stands - stop and say what is waiting"
+  echo "because: waiting_on_owner=${V[waiting_on_owner]}: row 7b waits on that answer (an item names RPC_URL or is the chain question), rows 12 and 16 wait on 7b (real_manager_battery=${V[real_manager_battery]}), and no other row below stands - stop and say what is waiting"
   [ -z "$JUDGED" ] || echo "judged: $JUDGED"
   exit 0
 fi

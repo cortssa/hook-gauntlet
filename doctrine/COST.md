@@ -23,6 +23,14 @@ willing to spend before stopping to reconsider. **When the ceiling is reached**,
 report, the route continues** (`NEXT.md` row 2: a gate, not a stop - no more model rounds; every open finding is
 triaged or handed to the human audit by name, then the dossier). The owner may raise the ceiling in writing instead.
 
+**The owner absent, in full mode.** Light mode's ceiling comes with the mode (3 adversarial rounds + 1 black-box = 4).
+Full mode has none until somebody sets one, and without one row 2 never fires and the route never reaches the dossier.
+So the OPERATOR - the person running the kit; in a run with no human, the harness prompt that set the number, quoted in
+`DECISIONS.md` - may set it in writing: `ceiling: N model rounds, set by the operator (owner absent); M used` in
+`STATE.md` (the one form `scripts/next.sh` reads for it), and the decision in `DECISIONS.md` with
+`source: operator (owner absent)` and the reason for N. It is a ceiling like the owner's - row 2 fires on it - but
+it is not the owner's: the dossier's status line and section 8 say whose it was, and the owner may replace it in writing.
+
 **On a large surface, the denominator does not shrink because you stopped early.** When depth is capped by the
 budget above - three of nine adapters read line by line, the rest scanned only for the shape of the other six -
 report the number actually reviewed against the number IN SCOPE, not against the number attempted: "3 of 9 reviewed,

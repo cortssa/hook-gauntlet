@@ -86,4 +86,5 @@ for at least twice the tokens. So:
 ## 6. Cost is part of the record
 
 Every agent's cost goes in its ROUND line (`state/README.md`). The harness does not always return a subagent's usage;
-then the field says `not reported`, never an estimate written as a measure.
+then the field says `cost not measured` (what `scripts/round.sh` writes when it is given no cost), never an estimate
+written as a measure.

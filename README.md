@@ -10,7 +10,7 @@ is a **dossier for human auditors**.
 
 | you bring | the agent does, with this kit | you end up with |
 |---|---|---|
-| an idea, or a hook, and the decisions only an owner can make | interviews you, writes a spec that can be proved wrong, builds the tests, runs the local judges (fuzzing, coverage, mutation, the real pool manager of your chain), then adversarial rounds by fresh agents until one finds nothing serious | code that stopped moving, a record of every finding and every trade-off you accepted, and a dossier that tells a human auditor what was tested, how, and **what was not** |
+| an idea, or a hook, and the decisions only an owner can make | interviews you, writes a spec that can be proved wrong, builds the tests, runs the local judges (fuzzing, coverage, mutation, the real pool manager of your chain), then adversarial rounds by fresh agents until a discovery round leaves no high or medium finding still open | code that stopped moving, a record of every finding and every trade-off you accepted, and a dossier that tells a human auditor what was tested, how, and **what was not** |
 
 It never deploys anything, never touches a key, and never calls a hook "safe".
 
@@ -38,9 +38,9 @@ scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on 
 Done looks like this, on forge 1.8.1 (CI also runs 1.8.3):
 
 ```
-SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 376 cases, about 90 s
-test      rc=0   (passed 107, failed 0, skipped 0)  ...  BATTERY PASSED           # the root kit
-test      rc=0   (passed 228, failed 0, skipped 0)  suites test=10 test/examples=11 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
+SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 596 cases, about 135 s
+test      rc=0   (passed 107, failed 0, skipped 0; filter: none)  ...  BATTERY PASSED           # the root kit
+test      rc=0   (passed 245, failed 0, skipped 0; filter: no_match_path = "test/fork/**" (the project's foundry.toml))  suites test=11 test/examples=11 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
 ```
 
 The v4 module on a mainnet fork is two commands more and needs your own endpoint: `FOUNDRY_PROFILE=fork V4_MANAGER=fork

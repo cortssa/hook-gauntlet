@@ -53,7 +53,9 @@ On a finished project the cheapest useful thing is `JUDGES.md` from top to botto
 4. New tests are PROPOSALS: proven in your bench (they pass on the code, and they kill the mutant they exist for),
    handed over in a scratch directory. The owner's process promotes them.
 5. A draft of the dossier from what exists, "not done" where it does not.
-6. If something looks like a real bug: stop, write the deterministic test, tell the owner. Do not fix it.
+6. If something looks like a real bug: stop, write the deterministic test, tell the owner. Do not fix it: the owner
+   decides. While they are absent the red test goes to `pending/` as a finding with a provisional severity, and the
+   battery stays honestly green (`NEXT.md` row 6b).
 
 Tell the owner before the long steps. Calibrate mutation on the smallest file first (`JUDGES.md`).
 

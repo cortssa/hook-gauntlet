@@ -10,7 +10,9 @@ Phase 4 of the route. This is the part that decides whether the effort converges
    drops the measurements, and the measurements are where the decisions are.
 2. **Decide as the architect.** The auditor recommends. The owner of the product decides. Refusing a
    recommendation is a legitimate outcome and will happen often - but the refusal must be **written into the spec
-   with its reason**, or the next round re-reports it and you have burned a round.
+   with its reason**, or the next round re-reports it and you have burned a round. The same holds before the loop: a
+   bug phase 3's own tests find is the owner's to decide too - with the owner absent it is not fixed, its test goes to
+   `pending/` and rides into round 1 (`NEXT.md` row 6b).
 3. **Fix the cause, not the symptom.** See `TRIAGE.md`.
 4. **Write a regression test per accepted finding**, citing the auditor's own test name in yours, so the mapping
    survives. `test_B01` in their report becomes `test_r07_B01_<what_it_asserts>` in yours.

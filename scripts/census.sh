@@ -21,8 +21,12 @@
 #                                                   "census gate: FAILED - <what>". OUT_DIR is resolved as in run mode, against
 #                                                   the project given - or, with none, the directory it runs from (which is not
 #                                                   the bench the file is in: the line that says where it wrote says so too)
-# Env:     MATCH        forge filter                 (default: --match-contract Invariant)
-#          FORGE_FLAGS  extra flags for forge test   (e.g. --offline)
+# Env:     MATCH        forge filter                 (default: --match-contract Invariant), the ONLY filter in run
+#                       mode: nothing else of forge's is taken from the environment (scripts/lib/forge-env.sh) - every
+#                       variable whose name, upper-cased, starts with FOUNDRY_, FORGE_ or DAPP_ is removed, a line names
+#                       each, but FOUNDRY_PROFILE and FORGE_FLAGS; a `.env` in the project that sets one is refused (exit 2).
+#                       --aggregate runs no test, and reads the environment as it is.
+#          FORGE_FLAGS  extra flags for forge test   (e.g. --offline, --fuzz-seed <n>)
 #          CORE         action names, space separated, that MUST have succeeded in at least MIN_PCT per cent of the runs
 #          REACH        boundary names, SEMICOLON separated (they contain spaces), that MUST have been reached in at least
 #                       MIN_PCT per cent of the runs - e.g. REACH="fee at the cap". The boundary a hook's main promise is
@@ -50,7 +54,8 @@
 # Exit:    0 printed (and every CORE / REACH name met the floor); 1 a name is below the floor or in no suite at all, or a
 #          run met an unexplained revert; 2 NOTHING MEASURED - no census line was written (the suite does not call
 #          writeCensus from afterInvariant, or foundry.toml lacks fs_permissions for ./census), or MIN_PCT is not a
-#          number from 1 to 100; otherwise forge's exit code when the campaign itself failed.
+#          number from 1 to 100; otherwise forge's exit code when the campaign itself failed - 1 when forge exited 0 over a
+#          FAILED test (`--allow-failure`): a failed campaign is never judged, whatever forge exited with.
 #          The gate (--aggregate) exits the same way (0, 1 or 2); its last line says which, and why.
 
 set -uo pipefail
@@ -255,27 +260,58 @@ if [ "${1:-}" = "--aggregate" ]; then
 fi
 
 [ -z "$floor_error" ] || { echo "census: $floor_error NOTHING MEASURED."; exit 2; }
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "census: $HERE/lib/parse.sh is missing"; exit 2; }
+# shellcheck source=lib/forge-env.sh
+. "$HERE/lib/forge-env.sh" || { echo "census: $HERE/lib/forge-env.sh is missing"; exit 2; }
+# forge reads a test filter, a budget and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, FOUNDRY_TEST,
+# FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only FOUNDRY_MATCH_CONTRACT): one exported
+# for another command would narrow this run, or table a failed campaign, in silence (measured, 2026-09-27: with
+# FORGE_ALLOW_FAILURE a red campaign was tabled, rc 0). By allowlist; this may re-run the script, once, without what it
+# removed. The filter is MATCH alone.
+forge_env_clean census "FOUNDRY_PROFILE FORGE_FLAGS" "$0" "$@"
 PROJECT="${1:-.}"
 MATCH="${MATCH:---match-contract Invariant}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 cd "$PROJECT" || { echo "census: cannot enter $PROJECT"; exit 2; }
+forge_dotenv_check census "$(pwd -P)" || { echo "census: NOTHING MEASURED."; exit 2; }
 OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 mkdir -p "$OUT_DIR" census
 # one corpus per manager, for the reason given in battery.sh: this script runs the same campaigns, and a corpus recorded
 # against one deployment layout, replayed against another, invents a counterexample - and PERSISTS it in cache/invariant,
 # from where it goes on to poison the battery that did everything right
-if [ -n "${V4_MANAGER:-}" ] && [ -z "${FOUNDRY_INVARIANT_CORPUS_DIR:-}" ]; then
+if [ -n "${V4_MANAGER:-}" ]; then
   export FOUNDRY_INVARIANT_CORPUS_DIR="corpus/invariant-$V4_MANAGER"
 fi
 export GAUNTLET_CENSUS="census/runs.tsv"
 rm -f "$GAUNTLET_CENSUS"
 
-# the moment the campaign started: forge's records of the failures THIS run persisted are the ones newer than it
+# forge's records of failures (<failure_persist_dir>/failures, a file per failed test) as they are BEFORE the campaign:
+# the ones THIS run persisted are those that are new or changed after it, by name and content (cksum) - and, for a record
+# rewritten with the same content, those newer than the marker. Not by the clock alone: `find -newer` on the marker missed
+# the record once in 40 campaigns next to a CPU load (2026-09-27, WSL: the clock stepped back 2.3 s during the campaign,
+# and the record forge wrote came out OLDER than the marker written before it), and the hint below named nothing.
+persist="$(forge config 2> /dev/null | awk '/^\[invariant\]/ {f = 1; next} /^\[/ {f = 0} f && $1 == "failure_persist_dir" {v = $3} END {gsub(/"/, "", v); print v}')"
+persist="${persist:-cache/invariant}"; case "$persist" in /*) ;; *) persist="$(pwd -P)/$persist" ;; esac
+failure_records() { find "$persist/failures" -type f -exec cksum {} + 2> /dev/null | LC_ALL=C sort; }
+records_before="$(failure_records)"
 started_at="$OUT_DIR/.census-started"; : > "$started_at"
 
 # shellcheck disable=SC2086
 forge test $FORGE_FLAGS $MATCH > "$OUT_DIR/06-census-run.txt" 2>&1
 rc_forge=$?
+# a failed campaign is never judged, whatever forge exited with: `--allow-failure` (FORGE_FLAGS) exits 0 over a failed
+# test, and its census is a line per shrink replay like any red campaign's. A FAIL line or a failed count is rc 1 here.
+if [ "$rc_forge" -eq 0 ]; then
+  ce_failed=0
+  if ce_summary="$(parse_test_summary "$OUT_DIR/06-census-run.txt")"; then read -r _ ce_failed _ _ <<< "$ce_summary"; fi
+  ce_fail_lines="$(_parse_clean "$OUT_DIR/06-census-run.txt" | grep -c '^\[FAIL')"
+  if [ "$ce_failed" != "0" ] || [ "$ce_fail_lines" != "0" ]; then
+    echo "census: forge exited 0, and a test FAILED ($ce_failed in the summary, $ce_fail_lines FAIL line(s); --allow-failure?). Read as rc 1: a failed campaign is not judged."
+    rc_forge=1
+  fi
+fi
 if [ "$rc_forge" -ne 0 ]; then
   echo "census: the campaign itself FAILED (rc=$rc_forge). The end of its log:"; tail -n 12 "$OUT_DIR/06-census-run.txt" | sed "s/^/    | /"
   # a red campaign has no census: its file holds a line per shrink replay (see failed_census). Renamed, never tabled.
@@ -303,10 +339,9 @@ if [ "$rc" -eq 2 ]; then
   # forge's record carries no reason (measured: `call_sequence`, `settings`, `assertion_failure` and nothing else), so
   # nothing in it proves the sequence is the environment error and not a counterexample replayed from an earlier run.
   if [ "$rc_forge" -ne 0 ] && grep -aq '^\[FAIL: vm\.writeLine' "$OUT_DIR/06-census-run.txt"; then
-    persist="$(forge config 2> /dev/null | awk '/^\[invariant\]/ {f = 1; next} /^\[/ {f = 0} f && $1 == "failure_persist_dir" {v = $3} END {gsub(/"/, "", v); print v}')"
-    persist="${persist:-cache/invariant}"; case "$persist" in /*) ;; *) persist="$(pwd -P)/$persist" ;; esac
     # the FILES this run wrote (a suite's directory keeps its old time when a record inside it is rewritten), by suite
-    recorded="$(find "$persist/failures" -type f -newer "$started_at" 2> /dev/null | sed "s#^\($persist/failures/[^/]*\)/.*#\1#" | sort -u)"
+    recorded="$( { LC_ALL=C comm -13 <(printf '%s\n' "$records_before") <(failure_records) | cut -d' ' -f3-
+      find "$persist/failures" -type f -newer "$started_at" 2> /dev/null; } | sed "s#^\($persist/failures/[^/]*\)/.*#\1#" | sort -u)"
     if [ -n "$recorded" ]; then
       echo "        forge PERSISTED that environment failure and will replay it first on the next run, silently. After fixing"
       echo "        the config, delete its record:"

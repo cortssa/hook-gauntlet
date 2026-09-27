@@ -3,9 +3,12 @@
 *Example file. The project is fictional. Delete this and start yours.*
 
 Append only. One entry per decision the **owner** made. An agent never DECIDES here on the owner's behalf; it writes
-the question in `STATE.md` and waits. Two kinds of entry an agent does write: an answer read from the owner's own
-files when the interview is played from them, marked `source: <file>`, and an assumption the route makes when the
-owner is absent (light mode and its ceiling), marked `source: assumed, owner absent` - both are the owner's to overturn.
+the question in `STATE.md` and waits. Three kinds of entry that are not the owner's are written here too: an answer
+read from the owner's own files when the interview is played from them, marked `source: <file>`; an assumption the
+route makes when the owner is absent (light mode and its ceiling), marked `source: assumed, owner absent`; and a
+ceiling the operator set in full mode with the owner absent, marked `source: operator (owner absent)`, with the reason
+for its number (`doctrine/COST.md` 1). The operator is the person running the kit - in a run with no human, the
+harness prompt that set the number, quoted in the entry. All three are the owner's to overturn.
 
 ---
 

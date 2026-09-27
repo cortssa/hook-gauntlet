@@ -796,7 +796,7 @@ refused "a date in the short form (not ISO in full)" "both in full" --dates 2026
 refused "a day that is not in the calendar" "a real day (got '2026-02-30')" --dates 2026-02-30
 refused "dates that end before they start" "ends before it starts" --dates 2026-03-12..2026-03-09
 refused "a phase outside 0-8" "--phase is a whole number from 0 to 8" --phase 9
-refused "a gate that is neither pass nor fail" "--gate is pass or fail" --gate green
+refused "a gate that is neither pass nor fail" "--gate is pass, fail" --gate green
 refused "a confidence above 1" "--conf is a number from 0 to 1" --conf 1.5
 refused "tokens that are not a number" "--tokens is a whole number" --tokens lots
 refused "a text field with the separator in it" "--model contains '|'" --model "a | b"
@@ -804,6 +804,19 @@ refused "a text field with a newline in it" "--report contains a newline" --repo
 refused "an id already in LOG.md" "already has a ROUND line for 'r05'" --id r05
 refused "a required field left empty" "--model is required" --model ""
 refused "an argument it does not know" "unknown argument '--frobnicate'" -- --frobnicate 1
+# `gate pass (read-back pending)` (state/README.md): an interview played from an absent owner's files, the scope not yet
+# read back - a real state, written for an interview only, in those words only
+rn=760
+refused "the read-back gate on a round that is not an interview" "is an interview's only" --gate "pass (read-back pending)"
+refused "the read-back gate in other words" "--gate is pass, fail" --type interview --phase 0 --gate "pass (read back pending)"
+rround --id i01 --type interview --phase 0 --gate "pass (read-back pending)" -- --dry-run > "$TMP/o736" 2>&1
+check "round.sh: an interview with the read-back pending, gate 'pass (read-back pending)' (--dry-run)" 0 $? "$TMP/o736"
+RB="$TMP/round-LOG-readback.md"; printf '# LOG\n' > "$RB"; grep '^ROUND ' "$TMP/o736" >> "$RB"
+printf 'ROUND x09 | phase 4 | regression | m | bench b | 2026-03-09 | 0H 0M 0L 0I reasoned 0 | gate pass (read-back pending) | cost not measured | r.md\n' >> "$RB"
+"$HERE/round.sh" --json "$RB" > "$TMP/o737" 2> "$TMP/o737e"; check "round.sh --json: the read-back gate read on an interview, refused on a regression round" 1 $? "$TMP/o737e"
+if grep -q '"id":"i01",.*"gate":"pass (read-back pending)"' "$TMP/o737" && [ "$(wc -l < "$TMP/o737" | tr -d ' ')" = "1" ] && grep -q "line 3 is not a ROUND line of the fixed shape (gate" "$TMP/o737e"; then
+  echo "  ok    and the interview's gate reads back as written; the regression round's is named"; else
+  echo "  FAIL  --json did not read the read-back gate back, or did not refuse it on a regression round:"; cat "$TMP/o737" "$TMP/o737e" | sed "s/^/        | /"; fails=$((fails + 1)); fi
 "$HERE/round.sh" "$RL" --id r06 --phase 4 --type regression --model m --bench b --dates 2026-03-09 --gate pass --report r.md > "$TMP/o143" 2>&1
 check "round.sh refuses a round with the findings left out" 2 $? "$TMP/o143"
 grep -qF -- "--high is a whole number of findings, required" "$TMP/o143" || { echo "  FAIL  and not for the missing findings: $(head -1 "$TMP/o143")"; fails=$((fails + 1)); }
@@ -901,17 +914,26 @@ for f in "$FIX"/state-case-*.md "$FIX"/state-hole*.md; do
   if [ "$wrc" = "1" ] && ! grep -qx 'no row is true: the table has a hole or a flag is stale' "$TMP/o$nn"; then
     echo "  FAIL  and not with NEXT.md's STOP line"; fails=$((fails + 1)); fi
 done
-[ "$nn" -ge 523 ] || { echo "  FAIL  fewer case fixtures than written (state-case-*.md, state-hole*.md): $((nn - 500)) of 23"; fails=$((fails + 1)); }
+[ "$nn" -ge 527 ] || { echo "  FAIL  fewer case fixtures than written (state-case-*.md, state-hole*.md): $((nn - 500)) of 27"; fails=$((fails + 1)); }
 nx_variant 449 "full mode at the ceiling, the black-box STALE, the owner wants to freeze: row 16" \
   state-case-ceiling-full-blackbox-never.md 's/^blackbox: .*/blackbox: stale (an event changed since it ran)/' \
   5=false,8=false,10=false,16=true 0 "2,14,16"
 nx_variant 488 "promoted, the rehearsal not yet done, at the ceiling: still row 17" state-row-17.md \
   's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 5=false,8=false,10=false 0 "2,14,17"
-# row 7b waits on the owner while waiting_on_owner NAMES RPC_URL or chain: an item that contains either, anywhere in it
+# row 7b waits on the owner while waiting_on_owner asks for the endpoint or the chain: an item that contains RPC_URL, or that
+# IS the chain question (`chain`, or starting with `chain`, `target chain`, `which chain`) - not the word inside another question
 nx_variant 601 "waiting_on_owner names chain as its second item: row 7b is off, round 1 goes on" state-case-waiting-rpc-url.md \
   's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7; chain - which one?/' 3=false,5=false,11b=false 0 11
-nx_variant 602 "waiting_on_owner names the chain inside an item (severity of F-7, it depends on the chain): row 7b is off" \
-  state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (it depends on the chain)/' 3=false,5=false,11b=false 0 11
+nx_variant 602 "the word chain inside another question (severity of F-7, it depends on the chain) is not the chain question: 7b stands" \
+  state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (it depends on the chain)/' 3=false,5=false 0 7b
+nx_variant 738 "an item that starts with target chain is the chain question: row 7b is off" state-case-waiting-rpc-url.md \
+  "s/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 $(printf '\302\267') target chain (the owner has not said)/" 3=false,5=false,11b=false 0 11
+nx_variant 739 "an item that starts with which chain is the chain question: row 7b is off" state-case-waiting-rpc-url.md \
+  's/^waiting_on_owner: .*/waiting_on_owner: which chain does it deploy on?/' 3=false,5=false,11b=false 0 11
+nx_variant 740 "an item that is chain alone is the chain question: row 7b is off" state-case-waiting-rpc-url.md \
+  's/^waiting_on_owner: .*/waiting_on_owner: triage of F-2; chain/' 3=false,5=false,11b=false 0 11
+nx_variant 741 "a pending: note written as a Markdown list item (* pending: ...) on an indented line is row 1's" state-row-5.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet\n  * pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "1,5,8,10,11b,13b"
 nx_variant 620 "waiting_on_owner names neither (a blockchain explorer, the RPC endpoint in words): row 7b stands" \
   state-case-waiting-rpc-url.md 's/^waiting_on_owner: .*/waiting_on_owner: severity of F-7 (a blockchain explorer link; the RPC endpoint is set)/' \
   3=false,5=false,11b=false 0 7b
@@ -1039,6 +1061,21 @@ nx_refused "blackbox: stopped without the round id" "blackbox: 'stopped' is not"
 nx_refused "blackbox: stopped (b1) with words after it" "blackbox: 'stopped (b1) twice' is not" 's/^blackbox: .*/blackbox: stopped (b1) twice/'
 nx_refused "a line that is not 'name: value' in a CRLF STATE.md" "is not 'name: value': 'battery never'" 's/^battery: .*/battery never/; s/$/\r/'
 if grep -q "$(printf '\r')" "$TMP/o$nn"; then echo "  FAIL  and the refusal carries the file's CR"; fails=$((fails + 1)); fi
+# the ceiling the OPERATOR set, the owner absent in full mode (COST.md 1): one form, read strictly - never as the owner's
+nn=750
+nx_refused "an operator's ceiling without (owner absent)" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the operator; 6 used/'
+nx_refused "an operator's ceiling without its '; M used'" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the operator (owner absent)/'
+nx_refused "an operator's ceiling with words after 'used'" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the operator (owner absent); 2 used by the agent/'
+nx_refused "an operator's ceiling in words, not a number" "is not the operator's form" 's/^ceiling: .*/ceiling: six model rounds, set by the operator (owner absent); 2 used/'
+"$NX" "$FIX/state-case-ceiling-operator.md" --judge 5=false,8=false,9=false,9b=true > "$TMP/o755" 2>&1
+if grep -qx '  because: ceiling=reached (6 of 6 used, set by the operator (owner absent))' "$TMP/o755"; then
+  echo "  ok    row 2 in force on the operator's ceiling says whose ceiling it was"; else
+  echo "  FAIL  row 2's reason does not say the ceiling was the operator's:"; sed "s/^/        | /" "$TMP/o755"; fails=$((fails + 1)); fi
+# ... and "operator" in ANOTHER CASE is refused too: it passed as the owner's ceiling, with a `because` that named no
+# operator (a verifier, V24: `set by the Operator`, `set by the OPERATOR`)
+nn=755
+nx_refused "an operator's ceiling with 'Operator' capitalised (never read as the owner's)" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the Operator (owner absent); 6 used/'
+nx_refused "an operator's ceiling with 'OPERATOR' (never read as the owner's)" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the OPERATOR (owner absent); 6 used/'
 # drift guard: next.sh's rows and NEXT.md's table must name the same rows, in the same order, and each row's condition
 # must be the text next.sh's entry was written from (a hash of the cell, whitespace normalised)
 "$NX" --check-table > "$TMP/o470" 2>&1; check "next.sh --check-table: its rows and doctrine/NEXT.md's table agree" 0 $? "$TMP/o470"
@@ -1239,6 +1276,29 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   check "a mutant that bricks setUp() proves nothing, and is never KILLED" 2 $? "$TMP/o35"
   if grep -q "setUp()" "$TMP/o35"; then echo "  ok    the refusal names setUp()"; else echo "  FAIL  the refusal does not name setUp()"; fails=$((fails + 1)); fi
   rm -f "$M/test/SetUpDep.t.sol"
+  # its filter is TEST_FLAGS alone: forge's own FOUNDRY_MATCH_TEST from the environment (a --match-contract on the command
+  # line overrides FOUNDRY_MATCH_CONTRACT, but not the others) made its baseline empty; ignored now, and said
+  LABEL=m20 OUT_DIR="$TMP/mut" EXPECT=green TEST_FLAGS="--match-contract AUnit" FOUNDRY_MATCH_TEST=no_test_is_named_this \
+    "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x += 1;" > "$TMP/o733" 2>&1
+  check "mutate.sh with FOUNDRY_MATCH_TEST in the environment runs on TEST_FLAGS alone" 0 $? "$TMP/o733"
+  if grep -qx 'mutate: ignoring FOUNDRY_MATCH_TEST from the environment' "$TMP/o733" && grep -qx 'tests: forge test --match-contract AUnit' "$TMP/o733"; then
+    echo "  ok    and it says it ignored it, and the mutant's log names the tests it ran"; else
+    echo "  FAIL  mutate.sh did not name the ignored variable or its own filter:"; grep -a -e '^mutate:' -e '^tests:' "$TMP/o733" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # a failed test is never a pass: the verdict comes from forge's COUNTS, not its exit code alone. A forge that exits 0 on
+  # `forge test` whatever happened (what `--allow-failure` does) made a killed mutant SURVIVED and a broken variant PASSED
+  # (a verifier, V24, with FORGE_ALLOW_FAILURE=true); and FORGE_ALLOW_FAILURE itself is removed from the environment
+  FW0="$TMP/fw0"; mkdir -p "$FW0"
+  # shellcheck disable=SC2016   # the wrapper's own $@ and $?, written literally
+  printf '#!/usr/bin/env bash\n"%s" "$@"; rc=$?\n[ "$1" = test ] && exit 0\nexit $rc\n' "$(command -v forge)" > "$FW0/forge"; chmod +x "$FW0/forge"
+  PATH="$FW0:$PATH" LABEL=m21 OUT_DIR="$TMP/mut" TEST_FLAGS="--match-contract AUnit" "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x += 2;" > "$TMP/o765" 2>&1
+  check "mutate.sh, a forge that exits 0 over a failed test: the mutant is KILLED, from the counts" 0 $? "$TMP/o765"
+  PATH="$FW0:$PATH" LABEL=m22 OUT_DIR="$TMP/mut" EXPECT=green TEST_FLAGS="--match-contract AUnit" "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x += 2;" > "$TMP/o766" 2>&1
+  check "mutate.sh, a forge that exits 0 over a failed test: the broken variant FAILED, from the counts" 1 $? "$TMP/o766"
+  FORGE_ALLOW_FAILURE=true LABEL=m23 OUT_DIR="$TMP/mut" TEST_FLAGS="--match-contract AUnit" "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x += 2;" > "$TMP/o767" 2>&1
+  check "mutate.sh with FORGE_ALLOW_FAILURE=true in the environment: the mutant is KILLED" 0 $? "$TMP/o767"
+  if grep -qx 'mutate: ignoring FORGE_ALLOW_FAILURE from the environment' "$TMP/o767" && grep -q '^KILLED - ' "$TMP/o767"; then
+    echo "  ok    and it says it removed FORGE_ALLOW_FAILURE"; else
+    echo "  FAIL  mutate.sh kept FORGE_ALLOW_FAILURE, or did not say so:"; grep -a -e '^mutate:' -e 'KILLED' -e 'SURVIVED' "$TMP/o767" | sed "s/^/        | /"; fails=$((fails + 1)); fi
 
   # ---- a FILE reached through a symlinked lib/ is the ORIGINAL, not the copy's: mutate.sh must refuse it, and the
   # original must be byte-for-byte what it was. (`cp -a` keeps the link; the mutation used to be written through it.)
@@ -1295,8 +1355,58 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   (cd "$M" && forge build > "$TMP/o174.build" 2>&1)
   "$HERE/assert-fresh-build.sh" "$M" > "$TMP/o174" 2>&1; check "a fresh build of sources with CRLF line ends (forge's own cache): FRESH" 0 $? "$TMP/o174"
   cp "$TMP/A.sol.keep" "$M/src/A.sol"; cp "$TMP/At.sol.keep" "$M/test/A.t.sol"
-  TEST_FLAGS="--match-contract NoSuchContractAnywhere" "$HERE/battery.sh" "$M" > "$TMP/o27" 2>&1
-  check "battery with a filter that matches NOTHING is not a pass" 1 $? "$TMP/o27"
+  # a filter exported for mutate.sh (QUICKSTART: TEST_FLAGS="--match-contract ...") or forge's own FOUNDRY_MATCH_* must not
+  # narrow the battery: it made the root kit's battery run 5 tests of 107 and say BATTERY PASSED (2026-09-27)
+  n26="$(sed -nE 's/^test +rc=0 +\(passed ([0-9]+), failed 0, skipped 0; filter: none\)$/\1/p' "$TMP/o26")"
+  TEST_FLAGS="--match-contract AUnit" "$HERE/battery.sh" "$M" > "$TMP/o730" 2>&1; check "battery with TEST_FLAGS in the environment (a filter meant for mutate.sh)" 0 $? "$TMP/o730"
+  if [ -n "$n26" ] && grep -qx 'battery: ignoring TEST_FLAGS from the environment' "$TMP/o730" \
+    && grep -Eq "^test +rc=0 +\(passed $n26, failed 0, skipped 0; filter: none\)$" "$TMP/o730"; then
+    echo "  ok    and it says it ignored it, ran every test ($n26, as without it), and the summary says filter: none"; else
+    echo "  FAIL  the battery took TEST_FLAGS from the environment, or did not say so (${n26:-no} tests without it):"; grep -a -e '^battery:' -e '^test ' "$TMP/o730" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  FOUNDRY_MATCH_CONTRACT=AUnit FOUNDRY_NO_MATCH_TEST=test_inc "$HERE/battery.sh" "$M" > "$TMP/o731" 2>&1; check "battery with forge's own FOUNDRY_MATCH_CONTRACT / FOUNDRY_NO_MATCH_TEST in the environment" 0 $? "$TMP/o731"
+  if [ -n "$n26" ] && grep -qx 'battery: ignoring FOUNDRY_MATCH_CONTRACT from the environment' "$TMP/o731" && grep -qx 'battery: ignoring FOUNDRY_NO_MATCH_TEST from the environment' "$TMP/o731" \
+    && grep -Eq "^test +rc=0 +\(passed $n26, failed 0, skipped 0; filter: none\)$" "$TMP/o731"; then
+    echo "  ok    and it names each one it ignored, and ran every test ($n26)"; else
+    echo "  FAIL  forge's environment filters narrowed the battery, or were not named:"; grep -a -e '^battery:' -e '^test ' "$TMP/o731" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # ... and every OTHER way forge reads the environment (K24b, from a verifier's V24): the prefix in any case, dapptools'
+  # DAPP_, a name that is not a shell identifier, and FORGE_ALLOW_FAILURE - each ran a narrower or weaker battery that
+  # said BATTERY PASSED. By allowlist now: all removed, each named; the whole suite runs
+  env 'FOUNDRY_FUZZ.RUNS=1' foundry_match_contract=AUnit DAPP_MATCH_CONTRACT=AUnit FORGE_ALLOW_FAILURE=true "$HERE/battery.sh" "$M" > "$TMP/o760" 2>&1
+  check "battery with foundry_match_contract, DAPP_MATCH_CONTRACT, FOUNDRY_FUZZ.RUNS and FORGE_ALLOW_FAILURE in the environment" 0 $? "$TMP/o760"
+  if [ -n "$n26" ] && grep -qx 'battery: ignoring foundry_match_contract from the environment' "$TMP/o760" \
+    && grep -qx 'battery: ignoring DAPP_MATCH_CONTRACT from the environment' "$TMP/o760" && grep -qx 'battery: ignoring FOUNDRY_FUZZ.RUNS from the environment' "$TMP/o760" \
+    && grep -qx 'battery: ignoring FORGE_ALLOW_FAILURE from the environment' "$TMP/o760" && grep -Eq "^test +rc=0 +\(passed $n26, failed 0, skipped 0; filter: none\)$" "$TMP/o760"; then
+    echo "  ok    and it names each one it removed, and ran every test ($n26)"; else
+    echo "  FAIL  the battery kept one, or did not name it:"; grep -a -e '^battery:' -e '^test ' "$TMP/o760" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  FOUNDRY_PROFILE=long "$HERE/battery.sh" "$M" > "$TMP/o761" 2>&1; check "battery with FOUNDRY_PROFILE=long (allowed)" 0 $? "$TMP/o761"
+  if grep -qx 'battery: FOUNDRY_PROFILE=long from the environment (allowed)' "$TMP/o761" && grep -Eq '^profile +long \(FOUNDRY_PROFILE\)$' "$TMP/o761"; then
+    echo "  ok    and the profile is named, at the top and in the summary"; else
+    echo "  FAIL  the allowed profile is not named:"; grep -a -e '^battery:' -e '^profile' "$TMP/o761" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # a .env in the project: forge loads it (the same effect, measured), the battery cannot remove it - refused, by name
+  printf 'export FOUNDRY_MATCH_CONTRACT = AUnit\n' > "$M/.env"
+  "$HERE/battery.sh" "$M" > "$TMP/o762" 2>&1; check "battery with a .env that sets FOUNDRY_MATCH_CONTRACT is refused" 1 $? "$TMP/o762"
+  if grep -q '^battery: .*/\.env sets FOUNDRY_MATCH_CONTRACT, which forge loads' "$TMP/o762" && ! grep -q '^== build' "$TMP/o762"; then
+    echo "  ok    and it names the variable and the file, before building anything"; else
+    echo "  FAIL  the .env refusal:"; grep -a -e '^battery:' -e '^BATTERY' "$TMP/o762" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -f "$M/.env"
+  # a failed test is never a pass, whatever forge exits with: a forge that exits 0 on `forge test` (what --allow-failure does)
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract AFails is Test { function test_fails_on_purpose() public pure { assertEq(uint256(1), 2, "red on purpose"); } }\n' > "$M/test/Fails.t.sol"
+  PATH="$FW0:$PATH" "$HERE/battery.sh" "$M" > "$TMP/o763" 2>&1; check "battery, a forge that exits 0 over a failed test: BATTERY FAILED" 1 $? "$TMP/o763"
+  if grep -q '^battery: forge exited 0, and 1 test(s) FAILED' "$TMP/o763" && grep -Eq '^test +rc=1 +\(passed [0-9]+, failed 1,' "$TMP/o763"; then
+    echo "  ok    and it says forge exited 0 over a failed test"; else
+    echo "  FAIL  the battery read forge's exit code, not the count:"; grep -a -e '^battery:' -e '^test ' "$TMP/o763" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  FORGE_ALLOW_FAILURE=true "$HERE/battery.sh" "$M" > "$TMP/o764" 2>&1; check "battery with FORGE_ALLOW_FAILURE=true over a failed test: BATTERY FAILED" 1 $? "$TMP/o764"
+  grep -qx 'battery: ignoring FORGE_ALLOW_FAILURE from the environment' "$TMP/o764" || { echo "  FAIL  and FORGE_ALLOW_FAILURE is not named"; fails=$((fails + 1)); }
+  rm -f "$M/test/Fails.t.sol"
+  # a filter in the project's OWN foundry.toml is its configuration: not removed, but named - and one that matches nothing
+  # is not a pass
+  cp "$M/foundry.toml" "$TMP/mini.toml.filter"; sed -i 's/^libs = \["lib"\]$/&\nmatch_contract = "NoSuchContractAnywhere"/' "$M/foundry.toml"
+  "$HERE/battery.sh" "$M" > "$TMP/o27" 2>&1
+  check "battery with a filter that matches NOTHING (in the project's foundry.toml) is not a pass" 1 $? "$TMP/o27"
+  if grep -Eq '^test +rc=1 .*filter: match_contract = "NoSuchContractAnywhere" \(the project.s foundry\.toml\)\)$' "$TMP/o27"; then
+    echo "  ok    and the summary names that filter and where it came from"; else
+    echo "  FAIL  the summary does not name the foundry.toml filter:"; grep -a '^test ' "$TMP/o27" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  cp "$TMP/mini.toml.filter" "$M/foundry.toml"
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract Skipper is Test { function test_skipped() public { vm.skip(true); } }\n' > "$M/test/Skip.t.sol"
   "$HERE/battery.sh" "$M" > "$TMP/o28" 2>&1; check "battery with a SKIPPED test is not a pass" 1 $? "$TMP/o28"
   ALLOW_SKIPS=1 "$HERE/battery.sh" "$M" > "$TMP/o29" 2>&1; check "unless the skip is accepted on purpose" 0 $? "$TMP/o29"
@@ -1307,6 +1417,13 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   check "a profile that does not exist proves nothing" 2 $? "$TMP/o31"
   USE_BENCH=0 MATCH="--match-contract NoSuchContractAnywhere" "$HERE/fuzz-long.sh" "$M" > "$TMP/o32" 2>&1
   check "a long fuzz in which no campaign ran proves nothing" 2 $? "$TMP/o32"
+  # its filter is MATCH alone: forge's own FOUNDRY_MATCH_TEST from the environment narrowed it to nothing ("MATCH matched
+  # nothing?", measured on HEAD 26966e8); ignored now, and said
+  USE_BENCH=0 FOUNDRY_MATCH_TEST=no_test_is_named_this "$HERE/fuzz-long.sh" "$M" > "$TMP/o732" 2>&1
+  check "a long fuzz with FOUNDRY_MATCH_TEST in the environment runs on MATCH alone" 0 $? "$TMP/o732"
+  if grep -qx 'fuzz-long: ignoring FOUNDRY_MATCH_TEST from the environment' "$TMP/o732" && grep -q '^long fuzz passed (filter: MATCH=--match-contract Invariant)' "$TMP/o732"; then
+    echo "  ok    and it says it ignored it, and its verdict line names the filter it ran with"; else
+    echo "  FAIL  fuzz-long.sh did not name the ignored variable or its own filter:"; grep -a -e '^fuzz-long:' -e 'long fuzz passed' "$TMP/o732" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   # forge FAILS and no campaign ran: a build error is not a counterexample
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../nowhere/Missing.sol";\ncontract Broken is Test { function test_b() public {} }\n' > "$M/test/Broken.t.sol"
   USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o135" 2>&1
@@ -1660,7 +1777,7 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   # floor sits far below the measured range (withdraw succeeded in 35 % of runs on 2026-09-23 with forge 1.8.1; a floor
   # of 25 failed on the CI runner by luck - the very gate census.sh's own header warns against). On failure the table is
   # pasted, so the next red is readable without the file.
-  MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=10 FOUNDRY_FUZZ_SEED=0x6b6974 "$HERE/census.sh" "$K" > "$TMP/o62" 2>&1; rc62=$?
+  MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=10 FORGE_FLAGS="--fuzz-seed 0x6b6974" "$HERE/census.sh" "$K" > "$TMP/o62" 2>&1; rc62=$?
   check "end to end: the kit's own vault campaign writes a census, and its core actions are above the floor" 0 $rc62 "$TMP/o62"
   if [ "$rc62" -ne 0 ]; then grep -E "^==|^deposit|^withdraw|floor|FAILED|measured" "$TMP/o62" | head -12 | sed "s/^/        | /"; fi
   if grep -Eq '^== campaign census: ToyVault - [0-9]+ runs ==$' "$TMP/o62"; then echo "  ok    one line per run reached the file"; else
@@ -1672,7 +1789,7 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   # ... and a SECOND draw, with a different pinned seed, over the same floor: one seed that clears the floor could be the
   # lucky one; two different draws that both clear it are the guard against that. The two tables must differ, or the
   # seed was not what chose the draw.
-  MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=10 FOUNDRY_FUZZ_SEED=0x4b33 "$HERE/census.sh" "$K" > "$TMP/o133" 2>&1; rc133=$?
+  MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=10 FORGE_FLAGS="--fuzz-seed 0x4b33" "$HERE/census.sh" "$K" > "$TMP/o133" 2>&1; rc133=$?
   check "end to end, a second draw (another pinned seed): the core actions are above the floor too" 0 $rc133 "$TMP/o133"
   if [ "$rc133" -ne 0 ]; then grep -E "^==|^deposit|^withdraw|floor|FAILED|measured" "$TMP/o133" | head -12 | sed "s/^/        | /"; fi
   w62="$(grep -E '^withdraw ' "$TMP/o62")"; w133="$(grep -E '^withdraw ' "$TMP/o133")"
@@ -1720,12 +1837,29 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   if [ "$(wc -l < "$TMP/o192" | tr -d ' ')" = "1" ] && grep -aq '^census gate: FAILED - .*FAILED campaign' "$TMP/o192" && [ ! -e "$TMP/g191/06-census-gate.txt" ]; then
     echo "  ok    in one line, the verdict, and no record"; else
     echo "  FAIL  the refusal of a FAILED census: $(wc -l < "$TMP/o192" | tr -d ' ') line(s), record $([ -e "$TMP/g191/06-census-gate.txt" ] && echo WRITTEN || echo absent)"; sed "s/^/        | /" "$TMP/o192" | head -4; fails=$((fails + 1)); fi
+  # the same red campaign with forge told to exit 0 over it (--allow-failure, which FORGE_FLAGS may carry; and
+  # FORGE_ALLOW_FAILURE, which is removed): census.sh tabled it and fuzz-long.sh said "long fuzz passed" (V24)
+  rm -f "$K/census/runs.FAILED.tsv"
+  MATCH="--match-contract (ToyVaultInvariants|RedOnPurposeInvariants)" FORGE_FLAGS="--allow-failure" "$HERE/census.sh" "$K" > "$TMP/o768" 2>&1
+  check "census.sh over a red campaign that forge exited 0 on (--allow-failure): not judged" 1 $? "$TMP/o768"
+  if grep -q '^census: forge exited 0, and a test FAILED' "$TMP/o768" && ! grep -aq '^== campaign census:' "$TMP/o768" && [ -s "$K/census/runs.FAILED.tsv" ]; then
+    echo "  ok    and it says so, prints no table, and renames the census runs.FAILED.tsv"; else
+    echo "  FAIL  census.sh judged a failed campaign:"; grep -a -e '^census' -e '^== campaign' "$TMP/o768" | head -5 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  MATCH="--match-contract (ToyVaultInvariants|RedOnPurposeInvariants)" FORGE_ALLOW_FAILURE=true "$HERE/census.sh" "$K" > "$TMP/o769" 2>&1
+  check "census.sh over a red campaign with FORGE_ALLOW_FAILURE=true: removed, the campaign FAILED" 1 $? "$TMP/o769"
+  grep -qx 'census: ignoring FORGE_ALLOW_FAILURE from the environment' "$TMP/o769" || { echo "  FAIL  and FORGE_ALLOW_FAILURE is not named"; fails=$((fails + 1)); }
+  USE_BENCH=0 RUNS=65 DEPTH=64 MATCH="--match-contract (ToyVaultInvariants|RedOnPurposeInvariants)" FORGE_FLAGS="--allow-failure" "$HERE/fuzz-long.sh" "$K" > "$TMP/o770" 2>&1
+  check "fuzz-long.sh over a red campaign that forge exited 0 on (--allow-failure): LONG FUZZ FAILED" 1 $? "$TMP/o770"
+  if grep -q '^fuzz-long: forge exited 0, and a test FAILED' "$TMP/o770" && grep -q '^LONG FUZZ FAILED' "$TMP/o770" && ! grep -q '^long fuzz passed' "$TMP/o770"; then
+    echo "  ok    and it says forge exited 0 over a failed test"; else
+    echo "  FAIL  fuzz-long.sh passed a failed campaign:"; grep -a -e '^fuzz-long:' -e 'LONG FUZZ' -e 'long fuzz passed' "$TMP/o770" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -f "$K/census/long.FAILED.tsv" "$K/census/long.tsv"
   # a handler with NO targetSelector: the fuzzer calls every non-view function it has, HandlerBase's `writeCensus(string)`
   # included, with labels of its own making. The fuzzer's calls arrive as their own transactions (msg.sender == tx.origin)
   # and `writeCensus` ignores those, so the census holds one line per run, all under the suite's own label - it used to
   # hold the fuzzer's labels too (bytes nobody can read) and extra lines under the real one.
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/InvariantBase.sol";\ncontract NSHandler is HandlerBase { uint256 public n; constructor() { _addActor(address(0xA1)); } function poke(uint256) external countedSetter("poke") { n++; } }\ncontract NoSelectorInvariants is Test { NSHandler h; function setUp() public { h = new NSHandler(); targetContract(address(h)); }\nfunction invariant_n() public view { assertGe(h.n(), 0); }\nfunction afterInvariant() public { h.writeCensus("NoSelector"); } }\n' > "$K/test/NoSelector.t.sol"
-  MATCH="--match-contract NoSelectorInvariants" CORE="poke" FOUNDRY_FUZZ_SEED=0x6b37 "$HERE/census.sh" "$K" > "$TMP/o175" 2>&1
+  MATCH="--match-contract NoSelectorInvariants" CORE="poke" FORGE_FLAGS="--fuzz-seed 0x6b37" "$HERE/census.sh" "$K" > "$TMP/o175" 2>&1
   check "a handler without targetSelector: the census is still the suite's own" 0 $? "$TMP/o175"
   # 65, not 64: forge 1.8.1 calls afterInvariant once more than `runs` (measured on a toy, 64 runs: 65 lines with a
   # targetSelector and 65 without, two seeds each); the fuzzer's own writes used to add dozens more, under every label
@@ -1740,6 +1874,12 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   if ! grep -aq "handler unrestricted\|the fuzzer reached HandlerBase" "$TMP/o62" "$TMP/o133"; then
     echo "  ok    and the kit's own vault suite (restricted with targetSelector) is not flagged"; else
     echo "  FAIL  a restricted handler was flagged as unrestricted:"; grep -a "handler unrestricted\|the fuzzer reached" "$TMP/o62" "$TMP/o133" | head -3 | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # its filter is MATCH alone: forge's own FOUNDRY_MATCH_TEST from the environment is ignored, and said
+  FOUNDRY_MATCH_TEST=no_test_is_named_this MATCH="--match-contract NoSelectorInvariants" CORE="poke" FORGE_FLAGS="--fuzz-seed 0x6b37" "$HERE/census.sh" "$K" > "$TMP/o734" 2>&1
+  check "census.sh with FOUNDRY_MATCH_TEST in the environment runs on MATCH alone" 0 $? "$TMP/o734"
+  if grep -qx 'census: ignoring FOUNDRY_MATCH_TEST from the environment' "$TMP/o734" && grep -aEq '^== campaign census: NoSelector - 6[45] runs ==$' "$TMP/o734"; then
+    echo "  ok    and it says it ignored it, and the campaign MATCH names ran"; else
+    echo "  FAIL  census.sh took forge's environment filter, or did not say so:"; grep -a -e '^census' -e '^== campaign' "$TMP/o734" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   # an ENVIRONMENT failure (no fs_permissions for ./census) is persisted by forge under cache/invariant/failures/<suite>/
   # and replayed first on the next run, silently (measured: one extra census line per run for as long as it stays).
   # The fix hint has to name that directory, exactly, and it has to be one that exists.
@@ -1753,6 +1893,16 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   if [ -d "$persisted" ] && grep -aqF "rm -rf $persisted" "$TMP/o178"; then
     echo "  ok    and the hint names forge's record of the failure, the exact directory, which exists"; else
     echo "  FAIL  the hint does not name the persisted failure ($([ -d "$persisted" ] && echo exists || echo 'not there')):"; grep -a -A4 "no census line" "$TMP/o178" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # ... and it names it whatever the clock says. This case was flaky (K23c 2 of 6): measured 2026-09-27, WSL's clock stepped
+  # back 2.3 s during a campaign next to a CPU load, forge's record came out OLDER than census.sh's start marker, and
+  # `find -newer` found nothing. Forced here: a wrapper sets the record's mtime to 2023 after `forge test`.
+  FW="$TMP/fwrap"; mkdir -p "$FW"
+  printf '#!/usr/bin/env bash\n"%s" "$@"; rc=$?\n[ "$1" = test ] && find cache/invariant/failures -type f -exec touch -d @1700000000 {} + 2> /dev/null\nexit $rc\n' "$(command -v forge)" > "$FW/forge"; chmod +x "$FW/forge"
+  rm -rf "$persisted"
+  PATH="$FW:$PATH" MATCH="--match-contract EnvFailInvariants" "$HERE/census.sh" "$K" > "$TMP/o735" 2>&1
+  if [ -d "$persisted" ] && grep -aqF "rm -rf $persisted" "$TMP/o735" && [ -z "$(find "$persisted" -type f -newer "$TMP/o178" 2> /dev/null)" ]; then
+    echo "  ok    and it names the record even when the record is OLDER than the start of the campaign (the clock stepped back)"; else
+    echo "  FAIL  a record older than the start marker is not named ($([ -d "$persisted" ] && echo exists || echo 'not there')):"; grep -a -A4 "no census line" "$TMP/o735" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   cp "$TMP/kit-toml.keep" "$K/foundry.toml"; rm -rf "$persisted"
   MATCH="--match-contract EnvFailInvariants" "$HERE/census.sh" "$K" > "$TMP/o179" 2>&1
   check "the config fixed and the directory deleted as the hint says: the census passes" 0 $? "$TMP/o179"
@@ -1774,7 +1924,7 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
     echo "  FAIL  a 'runs:' line with no persisted failure:"; grep -a '^runs: ' "$TMP/o189" "$TMP/o62" | head -2 | sed "s/^/        | /"; fails=$((fails + 1)); fi
   # a persisted failure of ANOTHER suite is not replayed by this campaign, and it must not be told it was
   mkdir -p "$K/cache/invariant/failures/OtherInvariants/invariants"; printf 'seq\n' > "$K/cache/invariant/failures/OtherInvariants/invariants/invariant_x"
-  MATCH="--match-contract NoSelectorInvariants" FOUNDRY_FUZZ_SEED=0x6b37 "$HERE/census.sh" "$K" > "$TMP/o194" 2>&1
+  MATCH="--match-contract NoSelectorInvariants" FORGE_FLAGS="--fuzz-seed 0x6b37" "$HERE/census.sh" "$K" > "$TMP/o194" 2>&1
   if grep -aq '^== campaign census: NoSelector' "$TMP/o194" && ! grep -aq '^runs: ' "$TMP/o194"; then
     echo "  ok    and a suite's persisted failures are not counted against another suite's campaign"; else
     echo "  FAIL  persisted failures of a suite that did not run:"; grep -a -e '^runs:' -e '^== campaign' "$TMP/o194" | head -3 | sed "s/^/        | /"; fails=$((fails + 1)); fi

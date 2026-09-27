@@ -168,8 +168,10 @@ Everything else, you do.
 3. **Every claim carries its evidence** (`doctrine/EVIDENCE.md`). What can be tested is a test that has been SEEN RED
    on broken code and now passes - no red tests in reports: a test that proves a bug asserts the wrong behaviour,
    and is named so that it is obvious. When the fix lands, that test is inverted into the regression test - it now
-   asserts the promise, and it must be seen RED on the old code before it counts. What cannot be compiled is written
-   as an argument, labelled REASONED, and is
+   asserts the promise, and it must be seen RED on the old code before it counts. Whether the fix lands is the owner's
+   call: a bug that phase 3's own tests find before any round is not fixed while the owner is absent - its test goes to
+   `pending/` as a finding with a provisional severity and rides into round 1 (`doctrine/NEXT.md` row 6b); the owner
+   present may decide to fix it. What cannot be compiled is written as an argument, labelled REASONED, and is
    not dropped.
 4. **Measure, do not infer.** A probe that falsifies a proposed fix does not validate your diagnosis of the cause.
    When a fix can be written more than one way, build each variant and read the bytes and the gas before you
@@ -232,8 +234,8 @@ Five ways, each seen or predicted by an outside reviewer. Know them before you s
 4. **Not being able to read the whole report**: a round is a quarter of a million tokens. If it does not fit next to
    the spec and the source, read it in sections and write the ledger as you go - never summarise it internally and
    report that you read it. Say in the log how you read it.
-5. **Ending on a lazy round**: the exit is a discovery round that finds nothing, so the cheapest way to finish is an
-   auditor that did not look. Against it: the ROUND line carries the round's EFFORT (tokens, files opened, tests
+5. **Ending on a lazy round**: the exit is a discovery round after which zero high and zero medium findings are still
+   open (`doctrine/NEXT.md` row 14), so the cheapest way to finish is an auditor that did not look and found nothing. Against it: the ROUND line carries the round's EFFORT (tokens, files opened, tests
    written); a closing round with a thin ROUND line is not a closing round.
 
 And one that is yours to avoid: spending the budget on the three state files instead of on the code (`NEXT.md`,

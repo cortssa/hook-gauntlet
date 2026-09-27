@@ -14,9 +14,13 @@
 # When it fails, WRITE DOWN THE SEED it prints. A counterexample you cannot reproduce is a rumour.
 #
 # Usage:   scripts/fuzz-long.sh [project-dir]
-# Env:     MATCH      forge filter (default: --match-contract Invariant)
-#          RUNS       override FOUNDRY_INVARIANT_RUNS
-#          DEPTH      override FOUNDRY_INVARIANT_DEPTH
+# Env:     MATCH      forge filter (default: --match-contract Invariant), the ONLY filter, and the verdict line names it.
+#                     Nothing else of forge's is taken from the environment (scripts/lib/forge-env.sh): every variable
+#                     whose name, upper-cased, starts with FOUNDRY_, FORGE_ or DAPP_ is removed - a line names each - but
+#                     FOUNDRY_PROFILE and FORGE_FLAGS; a `.env` in the project that sets one is refused (NOTHING PROVEN)
+#          FOUNDRY_PROFILE  the profile of the long budget (default: long)
+#          RUNS       override the profile's invariant runs (this script sets FOUNDRY_INVARIANT_RUNS from it)
+#          DEPTH      override the profile's invariant depth (FOUNDRY_INVARIANT_DEPTH, likewise)
 #          SEED       replay a specific seed
 #          USE_BENCH  1 to run in a bench copy (default: 1). A project whose foundry.toml or remappings.txt reach
 #                     outside it (`../src`, as the v4 module does) is benched from the parent they reach - one or two
@@ -29,21 +33,31 @@
 #                     no census (forge writes a line per shrink replay): the file is renamed <name>.FAILED.tsv, named, and
 #                     the gate refuses it.
 #          OUT_DIR    where to write the log (default: <project>/.gauntlet/reports)
-#          FORGE_FLAGS  extra flags for forge test (e.g. --offline)
+#          FORGE_FLAGS  extra flags for forge test (e.g. --offline); named in the verdict line when set
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
-# Exit:    forge's exit code; 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
+# Exit:    forge's exit code - 1, never 0, when a test FAILED whatever forge exited with (`--allow-failure` exits 0
+#          over one: a FAIL line or a failed count is a failed campaign); 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
 #          than the everyday one, no invariant campaign ran - including a build or a setUp that failed before any could,
 #          which is never reported as a counterexample - or one skipped itself, or the bench cannot hold the project).
 
 set -uo pipefail
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || { echo "fuzz-long: $HERE/lib/parse.sh is missing"; exit 2; }
+# shellcheck source=lib/forge-env.sh
+. "$HERE/lib/forge-env.sh" || { echo "fuzz-long: $HERE/lib/forge-env.sh is missing"; exit 2; }
+# forge reads a test filter, a budget and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, FOUNDRY_TEST,
+# FOUNDRY_INVARIANT_RUNS, FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only
+# FOUNDRY_MATCH_CONTRACT): one exported for another command would narrow or weaken this run in silence (measured,
+# 2026-09-27: FOUNDRY_MATCH_TEST emptied it; FORGE_ALLOW_FAILURE made 3 FAILs "long fuzz passed"). By allowlist, and
+# this may re-run the script, once, without what it removed. The filter is MATCH alone.
+forge_env_clean fuzz-long "FOUNDRY_PROFILE FORGE_FLAGS" "$0" "$@"
+
 PROJECT="${1:-.}"
 MATCH="${MATCH:---match-contract Invariant}"
 USE_BENCH="${USE_BENCH:-1}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
-HERE="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=lib/parse.sh
-. "$HERE/lib/parse.sh" || { echo "fuzz-long: $HERE/lib/parse.sh is missing"; exit 2; }
 
 SRC="$(cd "$PROJECT" && pwd)" || { echo "fuzz-long: cannot enter $PROJECT"; exit 1; }
 OUT_DIR="${OUT_DIR:-$SRC/.gauntlet/reports}"
@@ -68,9 +82,8 @@ if [ "$USE_BENCH" = "1" ]; then
   # the campaign's corpus/ and census/ live in the BENCH and must survive its refresh: without BENCH_KEEP the refresh's
   # `rsync --delete` removed both (the project has neither), and every long run with a bench started from an empty corpus.
   # A corpus the project has of its own is merged in, never replacing the bench's.
+  # (a corpus directory from the environment is not taken - forge-env.sh - and the one this script sets is under corpus/)
   keep="${REL_IN:+$REL_IN/}corpus ${REL_IN:+$REL_IN/}census"
-  cdir="${FOUNDRY_INVARIANT_CORPUS_DIR:-}"; cdir="${cdir#./}"   # a corpus directory set elsewhere, relative, is kept too
-  case "/$cdir/" in //* | */../* | */./* | /corpus/*) ;; *) keep="$keep ${REL_IN:+$REL_IN/}$cdir" ;; esac
   bench_out="$(BENCH_KEEP="${BENCH_KEEP:+$BENCH_KEEP }$keep" "$HERE/bench.sh" "$bench_name" "$BENCH_FROM")" || { printf '%s\n' "$bench_out" | tail -3; echo "fuzz-long: the bench could not be made. NOTHING PROVEN."; exit 2; }
   RUN_IN="$(printf '%s\n' "$bench_out" | tail -1)${REL_IN:+/$REL_IN}"
   [ -n "$REL_IN" ] && echo "fuzz-long: the project reaches $ups level(s) up, so the bench is of $BENCH_FROM and the campaign runs in <bench>/$REL_IN"
@@ -82,7 +95,7 @@ export FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-long}"
 
 # one corpus per manager, for the reason given in battery.sh: a corpus recorded against one deployment layout, replayed
 # against another, invents counterexamples
-if [ -n "${V4_MANAGER:-}" ] && [ -z "${FOUNDRY_INVARIANT_CORPUS_DIR:-}" ]; then
+if [ -n "${V4_MANAGER:-}" ]; then
   export FOUNDRY_INVARIANT_CORPUS_DIR="corpus/invariant-$V4_MANAGER"
 fi
 
@@ -91,6 +104,7 @@ seed_flag=""
 
 echo "profile=$FOUNDRY_PROFILE runs=${RUNS:-from profile} depth=${DEPTH:-from profile} in $RUN_IN"
 cd "$RUN_IN" || exit 1
+forge_dotenv_check fuzz-long "$(pwd -P)" || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
 
 # forge falls back to the DEFAULT profile, with a warning, when the named one does not exist - and the default budget
 # under the label "long" is worse than no run. Check before spending the time.
@@ -149,6 +163,18 @@ rm -f "$GAUNTLET_CENSUS"
 # shellcheck disable=SC2086
 forge test $FORGE_FLAGS $MATCH $seed_flag -vv 2>&1 | tee "$OUT_DIR/05-fuzz-long.txt"
 rc=${PIPESTATUS[0]}
+# A failed test is never a pass, whatever forge exited with (`--allow-failure` in FORGE_FLAGS exits 0 over one): a FAIL
+# line or a failed count makes this a failed campaign, rc 1, before anything below reads rc - the census of a red
+# campaign is renamed, never tabled (measured, 2026-09-27: with FORGE_ALLOW_FAILURE, 3 FAILs and "long fuzz passed")
+if [ "$rc" -eq 0 ]; then
+  fl_failed=0
+  if fl_summary="$(parse_test_summary "$OUT_DIR/05-fuzz-long.txt")"; then read -r _ fl_failed _ _ <<< "$fl_summary"; fi
+  fl_fail_lines="$(_parse_clean "$OUT_DIR/05-fuzz-long.txt" | grep -c '^\[FAIL')"
+  if [ "$fl_failed" != "0" ] || [ "$fl_fail_lines" != "0" ]; then
+    echo "fuzz-long: forge exited 0, and a test FAILED ($fl_failed in the summary, $fl_fail_lines FAIL line(s); --allow-failure?). A failed test is never a pass: read as rc 1."
+    rc=1
+  fi
+fi
 
 # a campaign that ran prints "(runs: N, calls: M, reverts: R)" per campaign (scripts/lib/parse.sh names the three shapes
 # forge 1.8.1 prints it in). No such line, or zero calls, means the filter matched nothing: forge exits 0 on that too.
@@ -223,9 +249,9 @@ if [ "$rc" -ne 0 ]; then
   echo "Record the seed in the run log before you change anything, then replay it with SEED=<seed>."
 else
   if [ "${ALLOW_SMALL_BUDGET:-0}" = "1" ] && { [ "$long_budget" -le "$default_budget" ] || [ "$smallest" -lt "$long_budget" ]; }; then
-    echo "passed ON A BUDGET NO LARGER THAN THE EVERYDAY ONE (ALLOW_SMALL_BUDGET=1): a replay, not a long fuzz. Log: $OUT_DIR/05-fuzz-long.txt"
+    echo "passed ON A BUDGET NO LARGER THAN THE EVERYDAY ONE (ALLOW_SMALL_BUDGET=1): a replay, not a long fuzz (filter: MATCH=$MATCH${FORGE_FLAGS:+; FORGE_FLAGS: $FORGE_FLAGS}). Log: $OUT_DIR/05-fuzz-long.txt"
   else
-    echo "long fuzz passed. Log: $OUT_DIR/05-fuzz-long.txt"
+    echo "long fuzz passed (filter: MATCH=$MATCH${FORGE_FLAGS:+; FORGE_FLAGS: $FORGE_FLAGS}). Log: $OUT_DIR/05-fuzz-long.txt"
   fi
 fi
 exit "$rc"

@@ -21,9 +21,10 @@ published guides; the dossier's author should cite the ones they checked against
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
 **Not deployed. Not audited by humans.** Prepared with AI agents under the owner's direction; every claim below carries
 its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
-**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{no / yes / yes, black-box: not run - ceiling reached}}{{ · black-box: stopped at <step> - only when `STATE.md` says `blackbox: stopped (<round id>)`}} · skeleton: {{K}} findings open** -
+**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{no / yes / yes, black-box: not run - ceiling reached}}{{ · ceiling set by the operator, owner absent - only when `STATE.md` says `ceiling: N model rounds, set by the operator (owner absent); M used`}}{{ · black-box: stopped at <step> - only when `STATE.md` says `blackbox: stopped (<round id>)`}} · skeleton: {{K}} findings open** -
 the status line: the one line every flag in `doctrine/NEXT.md` points at. A dossier can be complete and thin at the
-same time; this line says which one it is.
+same time; this line says which one it is. A ceiling the operator set with the owner absent (`doctrine/COST.md` 1,
+`doctrine/NEXT.md` row 3) is said here and in section 8 as the operator's, never as one the owner agreed.
 
 ## Start here
 
@@ -178,7 +179,12 @@ that a blind spot shared by that family is invisible in everything above.
 Every divergence recorded under `AGENTS.md` section 6b: which question, what was done instead, why. Here too: a black-box
 round the ceiling left unrun (`black-box: not run - ceiling reached`) or the environment stopped twice (`black-box: stopped at
 <step>`, `doctrine/NEXT.md` row 11b), and promotion and rehearsal when they were skipped
-(`not done: light mode` or `not done: the owner's decision in writing`, `doctrine/NEXT.md` row 18b).
+(`not done: light mode` or `not done: the owner's decision in writing`, `doctrine/NEXT.md` row 18b). A ceiling the
+OPERATOR set, the owner absent in full mode: `ceiling: N model rounds, set by the operator (owner absent), not agreed by
+the owner` with the reason for N from `DECISIONS.md` - every round it cut short was cut by the operator's number. An
+interview whose ROUND line says `gate pass (read-back pending)`: the owner was absent, the interview was played from their
+files, and nobody has yet read the scope and the non-goals back to them - say so here, with the item still in
+`waiting_on_owner`.
 
 ## 9. What was NOT checked (must - the auditor reads this first)
 

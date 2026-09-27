@@ -50,10 +50,15 @@ need something `STATE.md` does not carry, and are printed `needs judgement: row 
 them is printed as the answer only if they are all false (exit 3). Answer with `--judge <row>=true|false`: the answers
 are printed back, so the judgement is on the record. Row 3: answer `false` each row below that depends on the owner's
 answer, and 3 itself `false` once none left does (row 7b, decided by the flags, is off by itself while
-`waiting_on_owner` names `RPC_URL` or `chain` - an item that contains either, anywhere in it; rows 12 and 16 are off
+`waiting_on_owner` asks for the endpoint or the chain - an item that contains `RPC_URL`, or that IS the chain question:
+`chain`, or an item starting with the word `chain`, `target chain` or `which chain`, in any case - `chain-id`, `chain_id`
+and `chains` are other words; `off-chain`, `cross-chain` or the word inside
+a triage or a severity question do not count; rows 12 and 16 are off
 while 7b is owed, so when the wait silences 7b and no other row stands, row 3 is given: stop and say what is waiting).
-A note is read by its name only at the start of a note item (a note line, or a part of one after `·` or `;`):
-`pending: <id>` for row 1, `real manager:` for row 7b. Two rows are gates, not destinations (`NEXT.md`): when true they are
+A note is read by its name only at the start of a note item (a note line, or a part of one after `·` or `;`, a Markdown
+list marker `- `, `* ` or `+ ` before it allowed): `pending: <id>` for row 1, `real manager:` for row 7b. A ceiling the
+operator set with the owner absent is read in one form only, `<N> model rounds, set by the operator (owner absent); <M>
+used` (`doctrine/COST.md` 1); "operator" in any other shape or case is refused, never read as the owner's. Two rows are gates, not destinations (`NEXT.md`): when true they are
 printed `in force`, the rows they name are off wherever they stand, and the reading goes on - row 2 (ceiling reached)
 turns off every model row (11, 11b, 12, 13, 13b, 15), row 14 (the loop is over) turns off 11, 12, 13 and 13b (not 11b:
 a stopped round still gets its one retry).
@@ -79,13 +84,14 @@ ROUND r05 | phase 4 | regression | vendor-a/large | bench $HOME/.gauntlet/bench/
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
 `executor`, `promotion`, `rehearsal`, `handoff`, `simulation`) · model, as specific as you can be · bench · dates · findings AS THE ROUND
-CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open; black-box: no divergence left; verifier: every claim held; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - the pending item is in `waiting_on_owner`) · cost AND effort (tokens, wall-clock,
+CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open; black-box: no divergence left; verifier: every claim held; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - a real state, not a pass with a footnote: the owner was absent, every question has an answer or an explicit "undecided" from their files, and nobody has yet read the scope and the non-goals back to them; the route continues, the pending item is in `waiting_on_owner` (`read-back of scope`), nothing in phases 6-8 closes without it (`briefs/owner-interview.md`), and the dossier says so in section 8. `scripts/round.sh` writes it for `--type interview` only, and refuses any other wording) · cost AND effort (tokens, wall-clock,
 files read, tests written; leave out what you cannot measure, never guess - an orchestration harness does not always
-return a subagent's usage, and then the field says `not reported`) · the report · and, optionally,
+return a subagent's usage, and then the field says `cost not measured`, what `scripts/round.sh` writes when no cost
+field is given) · the report · and, optionally,
 `conf` - the raw_confidence, 0 to 1: what the round's author would bet on its own verdict. Unused by any policy today;
 it is there so that one day a verdict can be weighed against how often its author was right. The effort fields exist for one
-reason: the route ends on a discovery round that finds nothing, and a round that found nothing because it did not look
-has the same findings line as one that looked hard. The effort line is how the two are told apart. What the OWNER decided about the findings goes in `DECISIONS.md`, not here.
+reason: the loop ends on a discovery round after which zero high and zero medium findings are still open (`NEXT.md` row
+14), and a round that found nothing because it did not look has the same findings line as one that looked hard. The effort line is how the two are told apart. What the OWNER decided about the findings goes in `DECISIONS.md`, not here.
 
 It costs nothing to write, and after a few rounds it is what lets you choose the next one from history instead of by
 feel: which kind of round finds the most per token, at which phase, on which model.
