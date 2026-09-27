@@ -30,7 +30,10 @@
 #          take from it), is refused: BATTERY FAILED, naming the file and the key, never the value. Any other key it
 #          changes here (a fuzz budget the project does not set, say) is named at the top and in the summary.
 #          A build cache written at another path (the project copied with its out/ and cache/) is rebuilt from nothing,
-#          and a line says so: forge's incremental build there left tests running the OLD code. (scripts/lib/forge-env.sh)
+#          and a line says so: forge's incremental build there left tests running the OLD code. So is one whose sources
+#          changed where forge's incremental build does not follow them (a file outside src/ - the root kit under the v4
+#          module, a remapped or linked directory, lib/ - or src/ reached through a symlink or a remapping), and one with
+#          no record of what its last build read: the kit records that after each build it trusts. (scripts/lib/forge-env.sh)
 # Exit:    0 all steps passed, 1 something failed - a failed test fails it whatever forge's exit code (`--allow-failure`
 #          in FORGE_FLAGS exits 0 over one). The summary names which, and the test line names the filter in force.
 #          2 nothing run: a line break in FORGE_FLAGS, or a variable the re-run could not remove, or OUT_DIR refused (above).
@@ -82,12 +85,16 @@ fi
 rc_build=0; rc_test=0; rc_sizes=0; rc_fresh=0
 
 echo "== build =="
-# a cache written at another path is not trusted (scripts/lib/forge-env.sh, forge_cache_rehome): built from nothing
+# a cache written at another path, or a source changed that forge's incremental build does not follow, or no record of
+# what the last build read: not trusted (scripts/lib/forge-env.sh, forge_cache_rehome) - built from nothing
 forge_cache_rehome battery; rc_rehome=$?
 if [ "$rc_rehome" -eq 2 ]; then echo "BATTERY FAILED"; exit 1; fi
+# what the build is about to read, as it is now: recorded after a build that succeeds (forge_sources_record)
+sources_pre="$(forge_sources_snapshot)"
 # shellcheck disable=SC2086
 forge build $FORGE_FLAGS 2>&1 | tee "$OUT_DIR/01-build.txt"
 rc_build=${PIPESTATUS[0]}
+[ "$rc_build" -ne 0 ] || forge_sources_record "" "$sources_pre"
 
 echo "== test =="
 # the filter in force, for the summary: none, unless the project's own configuration (the profile the battery runs under)
@@ -160,7 +167,7 @@ filter_shown="none"; [ -z "$cfg_filter" ] || filter_shown="$cfg_filter ($cfg_whe
 [ -z "$FORGE_FLAGS" ] || filter_shown="$filter_shown; FORGE_FLAGS: $(forge_flags_shown "$FORGE_FLAGS")"
 echo "test      rc=$rc_test   (passed $tests_passed, failed $tests_failed, skipped $tests_skipped; filter: $filter_shown)"
 echo "profile   $profile_shown${FORGE_GLOBAL_KEYS:+; and from $FORGE_GLOBAL_FILE: $FORGE_GLOBAL_KEYS}"
-[ "$rc_rehome" -ne 0 ] || echo "cache     written at another path: its record removed, built from nothing"
+[ "$rc_rehome" -ne 0 ] || echo "cache     $FORGE_REHOME_WHY: its record removed, built from nothing"
 # by NAME, per test directory, so a log shows which parts of the suite ran (e.g. the v4 sandbox's test/sim)
 echo "suites    $(parse_suites_by_dir "$OUT_DIR/02-test.txt")"
 echo "sizes     rc=$rc_sizes"

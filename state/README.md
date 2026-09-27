@@ -45,7 +45,8 @@ block that is not `name: value`, a `ceiling` of no known shape (`not agreed ...`
 id (`stopped (<round id>)`), more `reasoned_high_or_medium` than high + medium open, a `dossier: skeleton` that does
 not say how many open findings it names (`skeleton (<K> open, <N> judges not done)`), an item of `waiting_on_owner`
 that says "to tell" in any shape but `high <id>[, <id>...] - to tell` or names a placeholder there (`none`, `TBD`,
-`nobody`, `n/a`, `?`), and more ids recorded to tell than highs open ("a recorded high is no longer open: remove it").
+`nobody`, `n/a`, `?`), an id recorded to tell that is not an open high ("a recorded high is no longer open: remove it"), and an `open_findings` whose
+high count does not match the ids in its parentheses (`high=N (<ids>)`; no parentheses when N is 0).
 Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
 the flags that made it true (exit 0). With the owner absent, nothing below row 3 standing AND no row left to judge -
 typically once row 9b's skeleton names the open findings, `waiting_on_owner` asks for their triage, and rows 5, 8, 9, 10
@@ -56,12 +57,12 @@ questions, and one line, `if every answer is false: STOP - paused, waiting on th
 it again. No row true and nothing waiting on the owner: `no row is true: the table has a hole or a flag is stale`
 (exit 1, NEXT.md's STOP rule: say which in `STATE.md` and ask - do not change a flag to get moving).
 
-Row 1 is quiet by the flags in one case only: the owner absent, and the ids of the items `high <id>[, <id>...] - to
-tell` of `waiting_on_owner` (between commas or spaces, case aside, each once) are exactly as many as `open_findings`
-high - then the `because:` line of whatever is given names those ids. Otherwise, with a high open, it is a question
+Row 1 is quiet by the flags in one case only: the owner absent, and every id of the open highs - `open_findings:
+high=N (<ids>)` - is in an item `high <id>[, <id>...] - to tell` of `waiting_on_owner` (commas or spaces, case aside,
+each once; an id there that is not an open high is refused) - then the `because:` line of whatever is given names those ids. Otherwise, with a high open, it is a question
 (the owner present: answer `--judge 1=false` once they have been told; a `told:` note is not read). Row 9b is quiet once
 the dossier names the open findings: `skeleton (<K> open, ...)` with K the number open (high + medium + low;
-informational findings are not counted), or `complete`. What the flags cannot decide is not guessed. Rows 1 (a high
+informational findings are not counted); `complete` next to an open finding is refused. What the flags cannot decide is not guessed. Rows 1 (a high
 open, not every one recorded to tell), 5, 8, 9 and 9b (a finding open, from any round, once round 1 has run or the ceiling is reached), 10 (after a round, with no bytecode change since),
 11b, 12 (did the spec's promises change?), 16 and 18b
 need something `STATE.md` does not carry, and are printed `needs judgement: row <id> - <the question>`; the row after

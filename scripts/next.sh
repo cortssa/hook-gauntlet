@@ -46,16 +46,21 @@
 #     (row 2: round 1 will not run, every open finding goes to 9 or 9b);
 #   - `blackbox: stopped (<round id>)` (a black-box round stopped twice, row 11b): rows 12 and 15 do not fire on it, rows
 #     16 and 18b take it;
-#   - row 1 goes quiet only by the flags' record of the owner absent: the items `high <id>[, <id>...] - to tell` of
-#     waiting_on_owner (ids between commas or spaces, compared case-insensitively, each once; a placeholder - none, TBD,
-#     nobody, n/a, ? - refused) naming EXACTLY as many ids as open_findings high (more is refused: a recorded high is no
-#     longer open, remove it). Then the row is false, and the because: line of whatever is given names those ids - a
-#     quiet row 1 always leaves a trace. Otherwise, with a high open, it is a question (the owner present: answered
-#     1=false once told); a `told:` note is not read. A provisional high from phase 3 counts in open_findings high like
-#     any other (NEXT.md row 6b);
+#   - row 1 goes quiet only by the flags' record of the owner absent, BY ID (K28): open_findings names the open highs,
+#     `high=N (<ids>)` - the parentheses exactly when N > 0, one id per high, each once (case aside), ids between commas
+#     or spaces; a count without its ids, ids with N = 0, a count that is not the number of ids, a placeholder (none, TBD,
+#     nobody, n/a, ?) or a word between the ids is refused. The row is quiet when EVERY one of those ids is among the ids
+#     of the items `high <id>[, <id>...] - to tell` of waiting_on_owner (compared case-insensitively, the same rules for
+#     the ids there); an id recorded there that is not an open high is refused (a recorded high is no longer open: remove
+#     it - V26b: `high all`, `high 1`, a medium's id, one high spelled twice quieted the row by their number alone). Then
+#     the row is false, and the because: line of whatever is given names those ids - a quiet row 1 always leaves a trace.
+#     Otherwise, with a high open, it is a question naming the highs not recorded (the owner present: answered 1=false
+#     once told); a `told:` note is not read. A provisional high from phase 3 counts in open_findings high like any
+#     other (NEXT.md row 6b);
 #   - row 9b is quiet once the dossier names the open findings: `dossier: skeleton (<K> open, ...)` with K the number
-#     open (high + medium + low; informational findings are not counted), or `complete`; `none`, or a skeleton naming
-#     another number (stale), keeps it standing;
+#     open (high + medium + low; informational findings are not counted); `none`, or a skeleton naming another number
+#     (stale), keeps it standing. `dossier: complete` with a finding open is refused: a dossier with an open finding is a
+#     skeleton (K28, NEXT.md's `dossier:` flag);
 #   - row 3 ends the route with the owner absent: when waiting_on_owner is not `none` and no row below stands on the flags
 #     and none is left to judge, the answer is `next: STOP - paused, waiting on the owner: <items>` (exit 0) - decided
 #     by the flags, never asked, and never answered: `--judge 3=...` is REFUSED (V26b: `3=true` gave that STOP over row
@@ -112,8 +117,8 @@ refuse() { echo "next: REFUSED - $*" >&2; exit 2; }
 #   <name>=<v>[,<v>...] (one of) | <name>!=<v> | <name>><n> (a number above n) | row:<id> (that row's condition) | -
 #   (always). Names: the flags of STATE.md, and the parts parse_state below derives from them.
 ROWS='
-0   | 9764dc92 | act  | -                   | phase=sketch | -
-1   | d2febaae | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high) that the owner has not been told of? The owner present: false once they have been told (a told: note is not read); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
+0   | 8d05b8e0 | act  | -                   | phase=sketch | -
+1   | 7b9700dd | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high: {highs_not_recorded} not recorded to tell) that the owner has not been told of? The owner present: false once they have been told (a told: note is not read); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
 2   | 64c00456 | gate | 11,11b,12,13,13b,15 | ceiling=reached | -
 3   | 8949c656 | act  | -                   | waiting_on_owner!=none | -
 4   | a019d2cf | act  | -                   | phase=0,1 | -
@@ -122,22 +127,22 @@ ROWS='
 6   | cebb3ad7 | act  | -                   | bytecode_changed_since.last_battery=yes ; battery=never | -
 6b  | 021321a6 | act  | -                   | battery=red | -
 7   | c644f4bc | act  | -                   | bytecode_changed_since.last_long_fuzz=yes battery=green ; bytecode_changed_since.last_other_free_judges=yes battery=green | -
-7b  | 49e41051 | act  | -                   | real_manager.owed=yes waiting_on_owner.real_manager=no | -
+7b  | 4135edaa | act  | -                   | real_manager.owed=yes waiting_on_owner.real_manager=no | -
 8   | c328f377 | act  | -                   | any_round=yes | is there an ACCEPTED or FIXED finding (triaged in row 9) from outside the fuzzer with no rule for it yet (an invariant or action, or a unit test and a not fuzzable: note)?
-9   | 5608652c | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | is a finding from any round still open (not fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name - one triaged fix at the cause whose fix is not written yet is still open; a phase-3 pending: finding is one too, now that round 1 has run or the ceiling is reached), and is the owner there to answer, or is it already triaged fix at the cause?
-9b  | ca42a9ba | act  | -                   | last_audit_round!=none open_findings.total>0 dossier.lists_open=no ; ceiling=reached open_findings.total>0 dossier.lists_open=no | do open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached), which the dossier does not name yet, wait on the owner'"'"'s triage while the owner is not available?
+9   | 6d5b5f55 | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | is a finding from any round still open (not fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name - one triaged fix at the cause whose fix is not written yet is still open; a phase-3 pending: finding is one too, now that round 1 has run or the ceiling is reached), and is the owner there to answer, or is it already triaged fix at the cause?
+9b  | d97c97e8 | act  | -                   | last_audit_round!=none open_findings.total>0 dossier.lists_open=no ; ceiling=reached open_findings.total>0 dossier.lists_open=no | do open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached), which the dossier does not name yet, wait on the owner'"'"'s triage while the owner is not available?
 10  | 75485129 | act  | -                   | any_round=yes bytecode_changed_since.last_audit_round=no | did only documents, comments, scripts or tests change since the last round, making claims about the code?
 11b | 39b95289 | act  | -                   | - | was a model round STOPPED by the environment (the harness, the provider'"'"'s classifier) before delivering, and not yet retried - or stopped again, and not yet recorded (notes: round <id> stopped; a black-box round also blackbox: stopped (<id>))?
 11  | 29326122 | act  | -                   | last_audit_round=none battery=green | -
-12  | dd66e624 | act  | -                   | last_audit_round!=none battery=green blackbox=never_run real_manager.owed=no | did the spec'"'"'s promises stay unchanged in the last triage (no triage yet counts as unchanged)?
+12  | 9f085660 | act  | -                   | last_audit_round!=none battery=green blackbox=never_run real_manager.owed=no | did the spec'"'"'s promises stay unchanged in the last triage (no triage yet counts as unchanged)?
 13  | 78bc1c8a | act  | -                   | last_audit_round!=none bytecode_changed_since.last_audit_round=yes battery=green | -
-13b | 76200526 | act  | -                   | last_audit_round.type=regression open_findings.high=0 open_findings.medium=0 ; last_audit_round!=none open_findings.reasoned_high_or_medium>0 | -
-14  | b21af050 | gate | 11,12,13,13b        | last_audit_round.type=discovery open_findings.high=0 open_findings.medium=0 open_findings.reasoned_high_or_medium=0 bytecode_changed_since.last_audit_round=no ; ceiling=reached open_findings.total=0 | -
+13b | 4e8baa1f | act  | -                   | last_audit_round.type=regression open_findings.high=0 open_findings.medium=0 ; last_audit_round!=none open_findings.reasoned_high_or_medium>0 | -
+14  | 89e14495 | gate | 11,12,13,13b        | last_audit_round.type=discovery open_findings.high=0 open_findings.medium=0 open_findings.reasoned_high_or_medium=0 bytecode_changed_since.last_audit_round=no ; ceiling=reached open_findings.total=0 | -
 15  | d7de1684 | act  | -                   | row:14 blackbox=stale,never_run | -
-16  | 3d8c630f | act  | -                   | row:14 blackbox=current,skipped_by_owner,stopped bytecode_changed_since.last_promotion=n/a,yes real_manager.owed=no ; row:2 row:14 blackbox=never_run,stale bytecode_changed_since.last_promotion=n/a,yes real_manager.owed=no | does the owner want to freeze a release candidate?
+16  | f4763e2e | act  | -                   | row:14 blackbox=current,skipped_by_owner,stopped bytecode_changed_since.last_promotion=n/a,yes real_manager.owed=no ; row:2 row:14 blackbox=never_run,stale bytecode_changed_since.last_promotion=n/a,yes real_manager.owed=no | does the owner want to freeze a release candidate?
 17  | 496e473f | act  | -                   | bytecode_changed_since.last_promotion=no rehearsal=not_yet | -
 18  | da261889 | act  | -                   | bytecode_changed_since.last_promotion=no rehearsal=n/a,done | -
-18b | c2bb2b6a | act  | -                   | row:14 blackbox=current,skipped_by_owner,stopped ; row:2 row:14 blackbox=never_run,stale | did the owner decline promotion in writing (light mode by default, COST.md; full mode by the owner'"'"'s own written decision)?
+18b | 41757769 | act  | -                   | row:14 blackbox=current,skipped_by_owner,stopped ; row:2 row:14 blackbox=never_run,stale | did the owner decline promotion in writing (light mode by default, COST.md; full mode by the owner'"'"'s own written decision)?
 '
 
 declare -a IDS=()
@@ -217,10 +222,21 @@ load_table() { # load_table <NEXT.md>: fills ACTION, and refuses when its rows a
 
 # ------------------------------------------------------------------------------------------------ STATE.md's flags
 FLAGS="phase bytecode_changed_since battery blackbox open_findings last_audit_round last_other_round ceiling real_manager_battery waiting_on_owner location dossier rehearsal notes"
-declare -A RAW=() V=() RECORDED=() SHOW_NOTE=()
-declare -a RECORDED_ORDER=()
-ROW1_QUIET=""
+declare -A RAW=() V=() RECORDED=() SHOW_NOTE=() OPEN_HIGH=()
+declare -a RECORDED_ORDER=() OPEN_HIGH_ORDER=()
+ROW1_QUIET="" HIGHS_NOT_RECORDED=""
 declare -a NOTE_LINES=()
+
+# finding_id <where> <id> <the form expected>: one finding id, or refused - a placeholder, a word between ids, anything
+# that is not one id (open_findings' high=N (<ids>) and waiting_on_owner's high <id>[, <id>...] - to tell alike)
+finding_id() {
+  local where="$1" id="$2" form="$3"
+  case "${id,,}" in
+    none | tbd | nobody | n/a | '?') refuse "$where, '$id' is a placeholder, not a finding id ($form: the ids of the open highs)." ;;
+    and | or | '&' | plus) refuse "$where, '$id' is a word, not a finding id (ids between commas or spaces: $form)." ;;
+  esac
+  [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || refuse "$where, '$id' is not one finding id ($form)."
+}
 
 # enum <flag> <allowed...>: the value's first word is one of them, and anything after it is a comment in parentheses
 enum() {
@@ -294,9 +310,39 @@ parse_state() {
   else
     enum blackbox never_run current stale skipped_by_owner stopped
   fi
+  # open_findings names the open highs (NEXT.md, K28): `high=N (<ids>)`, the parentheses right after high=N - the first
+  # high= key, before any "(" (a comment after the keys may say anything) - exactly when N > 0. They are taken out here,
+  # checked, and the rest is read as key=value pairs like any other
+  local id key hid_given=0 hid_raw="" hid_show
+  local -a ids=()
+  local re_hid='^([^(]*[[:space:]]|)high=([0-9]+)[[:space:]]*[(]([^()]*)[)]'
+  val="${RAW[open_findings]}"
+  if [[ $val =~ $re_hid ]]; then
+    hid_given=1; hid_raw="$(trim "${BASH_REMATCH[3]}")"
+    RAW[open_findings]="${BASH_REMATCH[1]}high=${BASH_REMATCH[2]}${val:${#BASH_REMATCH[0]}}"
+  fi
   pairs open_findings '^[0-9]+$' "a whole number" high medium low reasoned_high_or_medium
   local h="${V[open_findings.high]}" m="${V[open_findings.medium]}" l="${V[open_findings.low]}" r="${V[open_findings.reasoned_high_or_medium]}"
   V[open_findings.total]=$((10#$h + 10#$m + 10#$l))
+  hid_show="high=$((10#$h))"
+  if [ "$hid_given" = 1 ]; then
+    hid_show="high=$((10#$h)) ($hid_raw)"
+    [ $((10#$h)) -gt 0 ] \
+      || refuse "open_findings: high=0 with ids in parentheses ($hid_raw): the parentheses name the open highs, none when high is 0 (high=N (<ids>), NEXT.md)."
+    read -ra ids <<< "${hid_raw//,/ }"
+    for id in ${ids[@]+"${ids[@]}"}; do
+      finding_id "open_findings: in '$hid_show'" "$id" "high=N (<ids>)"
+      key="${id,,}"
+      [ -z "${OPEN_HIGH[$key]+x}" ] \
+        || refuse "open_findings: in '$hid_show', '$id' is named twice ('${OPEN_HIGH[$key]}' and '$id', case aside): each open high once."
+      OPEN_HIGH[$key]="$id"; OPEN_HIGH_ORDER+=("$id")
+    done
+    key="ids"; [ "${#ids[@]}" != 1 ] || key="id"
+    [ "${#ids[@]}" -eq $((10#$h)) ] \
+      || refuse "open_findings: high=$((10#$h)) names ${#ids[@]} $key ($hid_raw): one id per open high (high=N (<ids>), NEXT.md)."
+  elif [ $((10#$h)) -gt 0 ]; then
+    refuse "open_findings: high=$((10#$h)) names no ids: the ids of the open highs go in parentheses right after it, high=$((10#$h)) (<ids>) (NEXT.md)."
+  fi
   [ $((10#$r)) -le $((10#$h + 10#$m)) ] \
     || refuse "open_findings: reasoned_high_or_medium=$r is more than high+medium open ($((10#$h + 10#$m))): a REASONED finding is one of them."
 
@@ -361,7 +407,6 @@ parse_state() {
   # never ignored
   local re_tell='^high[[:space:]]+(.*[^[:space:]])[[:space:]]+-[[:space:]]+to[[:space:]]+tell([[:space:]]|$)'
   local re_tell_empty='^high[[:space:]]+-[[:space:]]+to[[:space:]]+tell([[:space:]]|$)'
-  local id key; local -a ids=()
   if [ "${V[waiting_on_owner]}" != none ]; then
     IFS=';' read -ra items <<< "${val//$'\302\267'/;}"
     for item in "${items[@]}"; do
@@ -374,12 +419,7 @@ parse_state() {
         read -ra ids <<< "${BASH_REMATCH[1]//,/ }"
         [ "${#ids[@]}" -gt 0 ] || refuse "waiting_on_owner: '$item' names no finding id (high <id>[, <id>...] - to tell)."
         for id in "${ids[@]}"; do
-          case "${id,,}" in
-            none | tbd | nobody | n/a | '?') refuse "waiting_on_owner: in '$item', '$id' is a placeholder, not a finding id (high <id>[, <id>...] - to tell: the ids of the open highs)." ;;
-            and | or | '&' | plus) refuse "waiting_on_owner: in '$item', '$id' is a word, not a finding id (ids between commas or spaces: high F-1, F-2 - to tell)." ;;
-          esac
-          [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] \
-            || refuse "waiting_on_owner: in '$item', '$id' is not one finding id (high <id>[, <id>...] - to tell)."
+          finding_id "waiting_on_owner: in '$item'" "$id" "high <id>[, <id>...] - to tell"
           key="${id,,}"
           [ -n "${RECORDED[$key]+x}" ] && continue
           RECORDED[$key]="$id"; RECORDED_ORDER+=("$id")
@@ -400,7 +440,12 @@ parse_state() {
   else
     enum dossier none skeleton complete
   fi
-  # row 9b is done once the dossier names what is open: a skeleton naming exactly the number open, or a complete dossier
+  # a complete dossier has no finding open (NEXT.md's dossier: flag): one next to an open finding is a skeleton, refused
+  # (K28: it quieted row 9b, and the route paused on a "complete" dossier with findings still open)
+  [ "${V[dossier]}" != complete ] || [ "${V[open_findings.total]}" -eq 0 ] \
+    || refuse "dossier: complete, and open_findings has ${V[open_findings.total]} open (high + medium + low): a dossier with an open finding is a skeleton - dossier: skeleton (<K> open, <N> judges not done)."
+  # row 9b is done once the dossier names what is open: a skeleton naming exactly the number open (a complete dossier has
+  # none open)
   V[dossier.lists_open]=no
   case "${V[dossier]}" in
     complete) V[dossier.lists_open]=yes ;;
@@ -427,17 +472,23 @@ parse_state() {
       [[ $item =~ ^real\ manager: ]] && V[notes.real_manager]=yes                                            # row 7b
     done
   done
-  # row 1: quiet by the flags only when the ids recorded to tell are EXACTLY the number of highs open. More ids than
-  # highs open is a stale entry (a high fixed or re-triaged since): refused, so that it is read and removed - never a
-  # silent pass. Fewer (or none): the row is a question. A told: note is not read (V26: a told: of a closed high, or
-  # told: none, quieted it with nothing on the record).
-  local rec_n="${#RECORDED_ORDER[@]}" rec_ids=""
-  [ "$rec_n" -eq 0 ] || rec_ids="$(printf '%s, ' "${RECORDED_ORDER[@]}")"; rec_ids="${rec_ids%, }"
-  [ "$rec_n" -le $((10#$h)) ] \
-    || refuse "waiting_on_owner: $rec_n high(s) recorded to tell ($rec_ids), open_findings has high=$((10#$h)): a recorded high is no longer open: remove it."
-  V[open_findings.high_not_recorded]=$(( 10#$h - rec_n ))
-  SHOW_NOTE[open_findings.high_not_recorded]="high=$((10#$h)), recorded to tell in waiting_on_owner: $rec_n${rec_ids:+ ($rec_ids)}"
-  if [ $((10#$h)) -gt 0 ] && [ "$rec_n" -eq $((10#$h)) ]; then
+  # row 1, by id (K28): quiet by the flags only when EVERY open high named in open_findings is recorded to tell. An id
+  # recorded to tell that is not an open high is a stale entry (a high fixed or re-triaged since) or not a high at all
+  # (V26b: `high all`, `high 1`, a medium's id, one high spelled twice quieted the row by their number): refused, so that
+  # it is read and removed - never counted. One open high not recorded: the row is a question naming it. A told: note
+  # is not read (V26: a told: of a closed high, or told: none, quieted it with nothing on the record).
+  for id in ${RECORDED_ORDER[@]+"${RECORDED_ORDER[@]}"}; do
+    [ -n "${OPEN_HIGH[${id,,}]+x}" ] \
+      || refuse "waiting_on_owner: '$id' is recorded to tell (high <id>[, <id>...] - to tell), and it is not an open high in open_findings ($hid_show): a recorded high is no longer open: remove it."
+  done
+  local rec_n=0 rec_ids="" nrec_n=0
+  for id in ${OPEN_HIGH_ORDER[@]+"${OPEN_HIGH_ORDER[@]}"}; do
+    if [ -n "${RECORDED[${id,,}]+x}" ]; then rec_n=$((rec_n + 1)); rec_ids="${rec_ids:+$rec_ids, }$id"
+    else nrec_n=$((nrec_n + 1)); HIGHS_NOT_RECORDED="${HIGHS_NOT_RECORDED:+$HIGHS_NOT_RECORDED, }$id"; fi
+  done
+  V[open_findings.high_not_recorded]=$nrec_n
+  SHOW_NOTE[open_findings.high_not_recorded]="$hid_show, recorded to tell in waiting_on_owner: ${rec_ids:-none}; not recorded: ${HIGHS_NOT_RECORDED:-none}"
+  if [ $((10#$h)) -gt 0 ] && [ "$nrec_n" -eq 0 ]; then
     if [ "$rec_n" -eq 1 ]; then ROW1_QUIET="row 1 is quiet: the 1 high open is recorded to tell in waiting_on_owner ($rec_ids)"
     else ROW1_QUIET="row 1 is quiet: the $rec_n highs open are recorded to tell in waiting_on_owner ($rec_ids)"; fi
   fi
@@ -567,7 +618,7 @@ for id in "${IDS[@]}"; do
   cond_true "${COND[$id]}" || continue
   why="$COND_WHY"
   if [ "${ASK[$id]}" != "-" ]; then
-    q="${ASK[$id]//\{waiting_on_owner\}/${V[waiting_on_owner]}}"
+    q="${ASK[$id]//\{waiting_on_owner\}/${V[waiting_on_owner]}}"; q="${q//\{highs_not_recorded\}/$HIGHS_NOT_RECORDED}"
     case "${JUDGE[$id]:-}" in
       false) continue ;;
       true) why="${why:+$why; }judged true: $q" ;;

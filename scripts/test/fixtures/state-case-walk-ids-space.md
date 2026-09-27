@@ -1,5 +1,5 @@
 <!-- selftest: judge=none rows=2,5,8,9,9b,10,STOP? rc=3 -->
-# STATE - next.sh fixture: the other real walk's last STATE.md (an A/B run, owner absent, ceiling 1 of 1): six highs recorded to tell in ONE item, ids between spaces - row 1 is quiet (6 ids, 6 highs); K counted informational findings (14, not the 12 open), so row 9b still asks; rows still to judge: the conditional STOP line
+# STATE - next.sh fixture: the other real walk's last STATE.md (an A/B run, owner absent, ceiling 1 of 1): six highs recorded to tell in ONE item, ids between spaces - row 1 is quiet (each of the 6 open highs named in open_findings is recorded; the walk wrote open_findings without ids - K28 added the ones it recorded to tell); K counted informational findings (14, not the 12 open), so row 9b still asks; rows still to judge: the conditional STOP line
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give.*
 
@@ -8,7 +8,7 @@ phase:                     4
 bytecode_changed_since:    last_battery=no  last_long_fuzz=no  last_other_free_judges=no  last_audit_round=no  last_promotion=n/a
 battery:                   green
 blackbox:                  never_run
-open_findings:             high=6 medium=3 low=3 reasoned_high_or_medium=0
+open_findings:             high=6 (F1 F3 F4 R01-1 R01-2 R01-5) medium=3 low=3 reasoned_high_or_medium=0
 last_audit_round:          r01 discovery 3H 1M 2L
 last_other_round:          none
 ceiling:                   1 model rounds (one discovery round) set by the requester 2026-09-27 (D-20); 1 used

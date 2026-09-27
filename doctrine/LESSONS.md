@@ -210,6 +210,11 @@ then changed, compiled "1 files", and its invariant suites ran the old contract 
 check agreed. forge keeps the test files that derive from a source by absolute path. The kit's scripts now look for
 that and build from nothing when they find it; they remove forge's build record rather than run `--force`, which also
 deletes the failures forge persisted and the corpus.
+And with no copy at all (K27): forge 1.8.1 links tests to sources dynamically, and after a change that keeps a source's
+interface it recompiles the source, not the tests - right for a file under `src/` that a test imports by path, wrong
+for a file outside `src/` (a remapped or linked directory, `lib/`) and for `src/` through a symlink. The root kit with
+`src/` a symlink passed its battery over a mutant that fails three suites. forge's own cache cannot tell, so the kit
+keeps its own record of what the build read, and builds from nothing when one of those files changed.
 
 ## 13. A bare `expectRevert` proves that something reverted, not that your thing did
 

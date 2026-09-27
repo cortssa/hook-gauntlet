@@ -21,12 +21,16 @@ published guides; the dossier's author should cite the ones they checked against
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
 **Not deployed. No human security review yet.** Prepared with AI agents under the owner's direction; every claim below carries
 its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
-**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{no / yes / yes, black-box: not run - ceiling reached}}{{ · ceiling set by the operator, owner absent - only when `STATE.md` says `ceiling: N model rounds, set by the operator (owner absent); M used`}}{{ · black-box: stopped at <step> - only when `STATE.md` says `blackbox: stopped (<round id>)`}} · skeleton: {{K}} findings open** -
+**Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{yes/no}} · skeleton: {{K}} findings open** -
 the status line: the one line every flag in `doctrine/NEXT.md` points at. A dossier can be complete and thin at the
 same time; this line says which one it is. In `skeleton: {{K}} findings open`, K is the number of findings still open,
 high + medium + low (`open_findings` in `STATE.md`); informational findings are NOT counted in it - the same K that
-`STATE.md` writes as `dossier: skeleton (K open, ...)` and `NEXT.md` row 9b reads against `open_findings`. A ceiling the operator set with the owner absent (`doctrine/COST.md` 1,
-`doctrine/NEXT.md` row 3) is said here and in section 8 as the operator's, never as one the owner agreed.
+`STATE.md` writes as `dossier: skeleton (K open, ...)` and `NEXT.md` row 9b reads against `open_findings`. Three things
+are added to the line when `STATE.md` says them, in these words: `black-box: not run - ceiling reached` (`ceiling_reached:
+yes` and `blackbox` still `never_run` or `stale`); `black-box: stopped at <step>` (`blackbox: stopped (<round id>)`);
+`ceiling set by the operator, owner absent` (`ceiling: ... set by the operator ...`, `doctrine/COST.md` 1 - never written
+as one the owner agreed). Each is also in section 8; a high still to be told to the owner is on this line too
+(`high <ids> - to tell`, `NEXT.md` row 1).
 
 ## Start here
 

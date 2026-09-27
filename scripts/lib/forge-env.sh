@@ -21,7 +21,8 @@
 # on it - FOUNDRY_ETH_RPC_URL does, and is removed), ETH_FROM, ETHERSCAN_API_KEY, ETH_RPC_TIMEOUT, NO_COLOR, RUST_LOG (more
 # lines in the log, not other results). Not the environment, and not removable from here - so named, below: a `.env`
 # where forge runs (forge loads it: forge_dotenv_check), ~/.foundry/foundry.toml, forge's global configuration, which
-# forge merges with the project's (forge_global_config), and a build cache written at another path (forge_cache_elsewhere).
+# forge merges with the project's (forge_global_config), a build cache written at another path (forge_cache_elsewhere),
+# and a source changed where forge's incremental build does not follow it (forge_sources_stale: the kit's own record).
 
 # forge_env_clean <tag> "<allowed names, space separated>" <script> [the script's arguments...]
 #   removes the variables above and RE-RUNS the script without them (exec: the same process, the same id). A re-run,
@@ -217,21 +218,200 @@ _forge_cache_file() { # forge's build record in the directory forge runs in: <ca
   printf '%s\n' "${dir:-cache}/solidity-files-cache.json"
 }
 
+# ---- what the build READ: the kit's own record (K27)
+#
+# The problem it solves: forge 1.8.1 links tests to the project's sources dynamically (`dynamic_test_linking`, on by
+# default): after a change to a source that leaves its interface alone, it recompiles that source and NOT the tests that
+# use it, trusting that a test deploys the source's new artifact. That holds for a file under the project's `src`
+# directory that a test imports by its path. It does not hold for the rest, and there the tests run the OLD code, forge
+# says nothing, and its next build says "No files changed". Measured (2026-09-27, toys, raw forge, a pure-function
+# change that the test asserts): stale for a file in a directory reached through a remapping - outside the project
+# (the v4 module's `gauntlet-kit/=../src/`), inside it (`vendor/`), even `src/` itself imported as `app/B.sol` - for a
+# file under a `lib/` that is a symlink, for `src/` reached through a symlink (V25b), and for a file in `src/` new'd by
+# a contract outside it; honest for a file in `src/` imported by path from a test, from a helper under `test/`, or
+# through another file in `src/`, and for any change to a file under `test/` or `script/` (forge recompiles the file that
+# changed), and for a contract a test DERIVES from (forge recompiles the deriving test - its "mocks"). That last one is
+# why the v4 module itself was judged right (K27): its suites derive from V4Harness and HandlerBase, and two root-kit
+# mutants (HostileERC20, HandlerBase) failed the same tests incrementally as from nothing. The root kit with `src/` a
+# symlink was not: BATTERY PASSED 107 over a mutant that fails 3 suites.
+# forge's own cache cannot tell: it records the new content of the file it recompiled. So the kit keeps its own record,
+# next to forge's (<cache_path>/gauntlet-sources.tsv, as git-ignored as forge's cache): the content (cksum) of every
+# source the build read that is not under the test or script directory - src, lib, remapped and linked files alike -
+# written after a build the kit trusts, from the contents as they were when that build started. Before judging, the
+# battery, fuzz-long.sh, census.sh and assert-fresh-build.sh compare it with the files as they are: a file that changed
+# is left to forge's incremental build only when forge is measured right for it (a plain file under `src`, in a project
+# where no remapping reaches into `src` and no source outside it imports one); any other change, or no record at all,
+# makes the build one from nothing (forge_cache_rehome), and one line says which file and why.
+# lib/ is NOT left out: a pinned dependency does not change between two runs, and hashing it costs milliseconds; one that
+# does change (an install at another pin, a lib that is a symlink) goes stale like any other file outside `src`
+# (measured: a lib behind a symlink, raw forge, the old code ran).
+# Cost (v4 module, 102 recorded files: 74 under lib/, 26 under src/, 2 of the root kit): the check 60 ms, a battery with
+# nothing changed 12 s, a hook edited under src/ incremental as before (103 s); a root-kit edit is a build from nothing
+# (243 s, where forge's incremental build took 71 s and was right, above) - and so is the first run with no record.
+
+# _forge_layout: FORGE_SRC_DIR, FORGE_TEST_DIR, FORGE_SCRIPT_DIR as forge config gives them here (relative, no ./ or /)
+_forge_layout() {
+  local cfg
+  cfg="$(forge config 2> /dev/null)"
+  FORGE_SRC_DIR="$(_forge_rel "$(awk '$1 == "src" && $2 == "=" { gsub(/"/, "", $3); print $3; exit }' <<< "$cfg")" src)"
+  FORGE_TEST_DIR="$(_forge_rel "$(awk '$1 == "test" && $2 == "=" { gsub(/"/, "", $3); print $3; exit }' <<< "$cfg")" test)"
+  FORGE_SCRIPT_DIR="$(_forge_rel "$(awk '$1 == "script" && $2 == "=" { gsub(/"/, "", $3); print $3; exit }' <<< "$cfg")" script)"
+}
+_forge_rel() { # _forge_rel <dir> <default>: relative to here, without ./ and a trailing /
+  local d="${1:-$2}" root
+  root="$(pwd -P)"
+  case "$d" in "$root"/*) d="${d#"$root"/}" ;; esac
+  d="${d#./}"; d="${d%/}"
+  printf '%s\n' "${d:-$2}"
+}
+
+# _forge_sources_keys <cache>: every source forge's cache records ("files", as the keys are written: relative to here,
+#   or absolute), but those under the test and script directories - one per line. Reads this forge's shape only.
+_forge_sources_keys() {
+  grep -oE '"([^"\\]|\\.)*":\{"lastModificationDate"' "$1" 2> /dev/null | sed 's/":{"lastModificationDate"$//; s/^"//' \
+    | awk -v t="$FORGE_TEST_DIR/" -v p="$FORGE_SCRIPT_DIR/" 'index($0, t) != 1 && index($0, p) != 1' | LC_ALL=C sort -u
+}
+# _forge_sources_sums: keys on stdin -> "<cksum> <size><TAB><key>" for each one that is a file here (missing: no line)
+_forge_sources_sums() {
+  tr '\n' '\0' | xargs -0 cksum 2> /dev/null | awk '{ f = substr($0, length($1) + length($2) + 3); if (f != "") print $1 " " $2 "\t" f }'
+}
+_forge_sources_record_file() { printf '%s\n' "$(dirname "$1")/gauntlet-sources.tsv"; }
+
+# forge_sources_snapshot [<cache file>]: the sources as they are NOW (before a build), for forge_sources_record
+forge_sources_snapshot() {
+  local cache="${1:-}"
+  [ -n "$cache" ] || cache="$(_forge_cache_file)"
+  [ -f "$cache" ] || return 0
+  _forge_layout
+  _forge_sources_keys "$cache" | _forge_sources_sums
+}
+
+# forge_sources_record [<cache file>] [<snapshot>]: after a build the kit trusts, the record of what it read: the sources
+#   forge's cache lists now, each with its content as the snapshot taken before the build saw it (a file edited while
+#   forge built is then different next time - never recorded as read), or as it is now when the snapshot did not have it.
+forge_sources_record() {
+  local cache="${1:-}" pre="${2:-}" rec now
+  [ -n "$cache" ] || cache="$(_forge_cache_file)"
+  [ -f "$cache" ] || return 0
+  rec="$(_forge_sources_record_file "$cache")"
+  _forge_layout
+  now="$(_forge_sources_keys "$cache" | _forge_sources_sums)"
+  # nothing readable (another forge's cache shape): no record, and forge_sources_stale says so on every run
+  [ -n "$now" ] || { rm -f -- "$rec"; return 0; }
+  {
+    echo "# hook-gauntlet: the sources forge's build here read (not test/ or script/), and their content (cksum) when it started."
+    echo "# Written by the kit after a build it trusts (scripts/lib/forge-env.sh, forge_sources_record); compared before the next."
+    if [ -n "$pre" ]; then
+      awk -F '\t' 'NR == FNR { pre[$2] = $1; next } { print (($2 in pre) ? pre[$2] : $1) "\t" $2 }' <(printf '%s\n' "$pre") <(printf '%s\n' "$now")
+    else
+      printf '%s\n' "$now"
+    fi
+  } > "$rec.tmp" 2> /dev/null && mv -f "$rec.tmp" "$rec" 2> /dev/null
+}
+
+# forge_sources_stale [<cache file>] [--no-record-ok]: in the directory forge runs in. Returns 0 - and sets
+#   FORGE_SOURCES_WHY, one phrase, and FORGE_SOURCES_SHORT - when the next build must be from nothing: a source changed
+#   since the record was written that forge's incremental build is not measured right for (above), or forge's cache
+#   exists and there is no record of what its build read (a build forge made alone, or one from before this record
+#   existed). With --no-record-ok (assert-fresh-build.sh standalone: forge's answer decides, as it always has) no record
+#   returns 1 and sets FORGE_SOURCES_NOTE instead. Returns 1 otherwise: no cache (nothing to distrust), nothing changed,
+#   only plain files under `src` in a project where forge follows them - or a cache in a shape this forge (1.8.1) does not
+#   write (FORGE_SOURCES_NOTE says so: nothing is recorded, nothing is seen). Cost: one `forge config`, one grep over the
+#   cache and one cksum over the recorded files (plus one `forge remappings` when only `src` changed).
+# shellcheck disable=SC2034   # FORGE_SOURCES_NOTE is read by the scripts that call this
+forge_sources_stale() {
+  local cache="${1:-}" rec changed k first="" n=0 why="" root d tgt canon srcc m
+  FORGE_SOURCES_WHY=""; FORGE_SOURCES_SHORT=""; FORGE_SOURCES_NOTE=""
+  [ -n "$cache" ] || cache="$(_forge_cache_file)"
+  [ -f "$cache" ] || return 1
+  rec="$(_forge_sources_record_file "$cache")"
+  _forge_layout
+  if ! grep -qE '"([^"\\]|\\.)*":\{"lastModificationDate"' "$cache" 2> /dev/null; then
+    FORGE_SOURCES_NOTE="forge's cache $cache lists no source in the shape this kit reads (another forge version?): what its build read is not checked"
+    return 1
+  fi
+  if [ ! -f "$rec" ]; then
+    FORGE_SOURCES_WHY="there is no record of what forge's last build here read ($rec, written by the kit after each build it trusts), so a source changed since then would not be seen"; FORGE_SOURCES_SHORT="no record of what the last build read"
+    if [ "${2:-}" = --no-record-ok ]; then
+      FORGE_SOURCES_NOTE="$FORGE_SOURCES_WHY - a change outside src/ that forge's incremental build does not follow (scripts/lib/forge-env.sh) is not seen by this run; the battery records one"
+      FORGE_SOURCES_WHY=""; FORGE_SOURCES_SHORT=""; return 1
+    fi
+    return 0
+  fi
+  # the recorded files whose content is not the recorded one, or that are gone (the first input is never empty: a
+  # header line, so NR == FNR is the sums only)
+  changed="$({ echo '#'; grep -v '^#' "$rec" | cut -f2 | _forge_sources_sums; } | awk -F '\t' 'NR == FNR { if (!/^#/) now[$2] = $1; next } !/^#/ && now[$2] != $1 { print $2 }' - "$rec")"
+  [ -n "$changed" ] || return 1
+  root="$(pwd -P)"
+  while IFS= read -r k; do
+    n=$((n + 1)); [ -n "$first" ] || first="$k"
+    [ -n "$why" ] && continue
+    case "$k" in
+      "$FORGE_SRC_DIR"/*)
+        # a plain file under src that is gone: forge drops it, and whatever imported it has changed too
+        d="$(dirname "$k")"
+        if [ -e "$k" ] && { [ -L "$k" ] || [ "$(cd "$d" 2> /dev/null && pwd -P)" != "$root/$d" ]; }; then why="it is reached through a symlink"; fi ;;
+      /*) why="forge recorded it by an absolute path (outside this project, or through a symlink)" ;;
+      ../*) why="it is outside this project" ;;
+      *) why="it is outside $FORGE_SRC_DIR/" ;;
+    esac
+    [ -z "$why" ] || first="$k"
+  done <<< "$changed"
+  if [ -z "$why" ]; then
+    # only plain files under src changed: forge is right for them unless a remapping reaches into src (a test that
+    # imports app/B.sol for src/B.sol ran the old B), or a source outside src imports one (its artifact keeps the old)
+    srcc="$root/$FORGE_SRC_DIR"
+    while IFS= read -r m; do
+      tgt="${m#*=}"; [ -n "$tgt" ] || continue
+      case "$tgt" in /*) ;; *) tgt="$root/$tgt" ;; esac
+      canon="$(cd "$tgt" 2> /dev/null && pwd -P)" || continue
+      case "$canon/" in "$srcc"/* | "$srcc/") why="a remapping ($m) reaches into $FORGE_SRC_DIR/, and a test that imports through it runs the old code" ;; esac
+      case "$srcc/" in "$canon"/*) why="a remapping ($m) reaches into $FORGE_SRC_DIR/, and a test that imports through it runs the old code" ;; esac
+      [ -z "$why" ] || break
+    done < <(forge remappings 2> /dev/null)
+  fi
+  if [ -z "$why" ]; then
+    m="$(grep -oE '"([^"\\]|\\.)*":\{"lastModificationDate":[0-9]+,"contentHash":"[^"]*","interfaceReprHash":[^,]*,"sourceName":"([^"\\]|\\.)*","imports":\[[^]]*\]' "$cache" \
+      | awk -v s="$FORGE_SRC_DIR/" -v t="$FORGE_TEST_DIR/" -v p="$FORGE_SCRIPT_DIR/" '{
+          k = substr($0, 2, index($0, "\":{\"lastModificationDate\"") - 2)
+          if (index(k, s) == 1 || index(k, t) == 1 || index(k, p) == 1) next
+          i = substr($0, index($0, "\"imports\":[") + 11); if (index(i, "\"" s) > 0) { print k; exit } }')"
+    [ -z "$m" ] || why="$m, outside $FORGE_SRC_DIR/, imports it"
+  fi
+  [ -n "$why" ] || return 1
+  FORGE_SOURCES_WHY="$first changed since the last build the kit recorded$([ "$n" -gt 1 ] && echo " (and $((n - 1)) more)"), and $why: after such a change forge's incremental build can leave tests running the old code"
+  FORGE_SOURCES_SHORT="$first changed, where forge's incremental build is not trusted"
+  return 0
+}
+
 # forge_cache_rehome <tag> [<cache file>]
-#   forge_cache_elsewhere, and on a hit the next build is from NOTHING: forge's build record (the cache file) is removed
-#   and one line says so. Not `forge build --force`: it also deletes cache/invariant and cache/fuzz (the failures forge
+#   forge_cache_elsewhere, then forge_sources_stale; on either the next build is from NOTHING: forge's build record (the
+#   cache file) is removed and one line says why (FORGE_REHOME_WHY: the short reason, for a summary). Not
+#   `forge build --force`: it also deletes cache/invariant and cache/fuzz (the failures forge
 #   persisted, which replay first - a counterexample), cache/test-failures and the corpus directory (measured, forge
 #   1.8.1), and nothing here deletes those. Without its record forge compiles every source (measured: 27 files of 27 on
-#   the root kit, 2.5 s against 0.14 s for a no-op build) and writes the paths of this place.
+#   the root kit, 2.5 s against 0.14 s for a no-op build; 228 s on the v4 module) and writes the paths of this place.
 #   Returns 0 when it removed the record, 1 when there was nothing to do, 2 when the record could not be removed (said).
 forge_cache_rehome() {
   local tag="$1" cache="${2:-}" elsewhere
+  FORGE_REHOME_WHY=""
   [ -n "$cache" ] || cache="$(_forge_cache_file)"
-  elsewhere="$(forge_cache_elsewhere "$cache")" || return 1
+  if elsewhere="$(forge_cache_elsewhere "$cache")"; then
+    if ! rm -f -- "$cache" 2> /dev/null || [ -e "$cache" ]; then
+      echo "$tag: forge's cache was written at another path ($elsewhere), and its record $cache cannot be removed: an incremental build here would run the old code in tests. Remove it, or run forge build --force."
+      return 2
+    fi
+    FORGE_REHOME_WHY="written at another path"
+    echo "$tag: forge's cache was written at another path ($elsewhere): its record $cache is removed, so this build is from nothing (an incremental one leaves tests running the old code)"
+    return 0
+  fi
+  forge_sources_stale "$cache" || return 1
   if ! rm -f -- "$cache" 2> /dev/null || [ -e "$cache" ]; then
-    echo "$tag: forge's cache was written at another path ($elsewhere), and its record $cache cannot be removed: an incremental build here would run the old code in tests. Remove it, or run forge build --force."
+    echo "$tag: $FORGE_SOURCES_WHY - and forge's record $cache cannot be removed. Remove it, or run forge build --force."
     return 2
   fi
-  echo "$tag: forge's cache was written at another path ($elsewhere): its record $cache is removed, so this build is from nothing (an incremental one leaves tests running the old code)"
+  # shellcheck disable=SC2034   # read by the scripts that call this
+  FORGE_REHOME_WHY="$FORGE_SOURCES_SHORT"
+  echo "$tag: $FORGE_SOURCES_WHY. Its record $cache is removed, so this build is from nothing."
   return 0
 }

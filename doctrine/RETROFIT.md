@@ -22,7 +22,7 @@ The flags `NEXT.md` needs, and where an existing project usually keeps them:
 | `phase` | is there a frozen release (a canonical copy, a tag, a manifest of hashes)? then 6-8. A spec and a green battery but no rounds? 3. No spec you could falsify? 1, whatever the code looks like |
 | `bytecode_changed_since` | `git log` on `src/` against the dates of the last test run, the last long fuzz, the last review, the last release. No git? compare hashes against the manifest |
 | `battery`, `blackbox` | run their battery yourself: green or red. Has a source-free review ever happened? usually `never_run` |
-| `open_findings` | the last review report, and whatever the project uses as a log. Anything reported and never answered is open |
+| `open_findings` | the last review report, and whatever the project uses as a log. Anything reported and never answered is open. Each open high by its id, in parentheses after the count: `high=2 (F-3, R2-1)` (none when it is 0) |
 | `last_audit_round`, `last_other_round` | same place |
 | `ceiling` | ask the owner. An existing project almost never has one written down |
 | `real_manager_battery` | grep the tests for `vm.etch`, `readFile`, `createSelectFork`. A suite that etches the real manager's bytecode, or runs on a fork of the target chain, has answered this - however it is named |

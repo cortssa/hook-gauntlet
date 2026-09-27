@@ -21,7 +21,8 @@ lost or stolen key, the storage layout across versions - `HOOK-ATTACKS.md` class
 Write the choice in `DECISIONS.md`, with a **ceiling**: the maximum number of rounds (or of money) the owner is
 willing to spend before stopping to reconsider. **When the ceiling is reached**, whatever the state: **stop the rounds,
 report, the route continues** (`NEXT.md` row 2: a gate, not a stop - no more model rounds; every open finding is
-triaged or handed to the human audit by name, then the dossier). The owner may raise the ceiling in writing instead.
+triaged by the owner - fixed, refused, accepted, or handed by them to the human audit by name - then the dossier; the
+owner absent, the skeleton lists them and the route pauses, `NEXT.md` row 3). The owner may raise the ceiling in writing instead.
 
 **The owner absent, in full mode.** Light mode's ceiling comes with the mode (3 adversarial rounds + 1 black-box = 4).
 Full mode has none until somebody sets one, and without one row 2 never fires and the route never reaches the dossier.

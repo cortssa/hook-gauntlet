@@ -30,7 +30,8 @@
 #                       key as <set>, by its shape; a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
 #                       Run mode names, too, the keys ~/.foundry/foundry.toml (the machine's forge configuration)
 #                       changes in the run, and removes the record of a build cache written at another path, so the
-#                       campaign builds from nothing (scripts/lib/forge-env.sh)
+#                       campaign builds from nothing - and of one whose sources changed where forge's incremental build
+#                       does not follow them, or that has no record of what its last build read (scripts/lib/forge-env.sh)
 #          CORE         action names, space separated, that MUST have succeeded in at least MIN_PCT per cent of the runs
 #          REACH        boundary names, SEMICOLON separated (they contain spaces), that MUST have been reached in at least
 #                       MIN_PCT per cent of the runs - e.g. REACH="fee at the cap". The boundary a hook's main promise is
@@ -297,8 +298,10 @@ forge_dotenv_check census "$(pwd -P)" || { echo "census: NOTHING MEASURED."; exi
 # the machine's ~/.foundry/foundry.toml: what it changes in this run is named
 forge_global_config census
 # a cache written at another path: the campaign ran the OLD code over a new source (measured: a planted mutant tabled,
-# rc 0), so its record is removed and the campaign builds from nothing
+# rc 0), so its record is removed and the campaign builds from nothing - and so when a source changed that forge's
+# incremental build does not follow, or nothing recorded what the last build read (forge-env.sh, forge_sources_stale)
 forge_cache_rehome census; [ "$?" -ne 2 ] || { echo "census: NOTHING MEASURED."; exit 2; }
+sources_pre="$(forge_sources_snapshot)"
 mkdir -p "$OUT_DIR" census
 # one corpus per manager, for the reason given in battery.sh: this script runs the same campaigns, and a corpus recorded
 # against one deployment layout, replayed against another, invents a counterexample - and PERSISTS it in cache/invariant,
@@ -323,6 +326,8 @@ started_at="$OUT_DIR/.census-started"; : > "$started_at"
 # shellcheck disable=SC2086
 forge test $FORGE_FLAGS $MATCH > "$OUT_DIR/06-census-run.txt" 2>&1
 rc_forge=$?
+# the build this campaign ran on is recorded when it compiled (forge printed a summary: tests ran), as battery.sh does
+parse_test_summary "$OUT_DIR/06-census-run.txt" > /dev/null && forge_sources_record "" "$sources_pre"
 # a failed campaign is never judged, whatever forge exited with: `--allow-failure` (FORGE_FLAGS) exits 0 over a failed
 # test, and its census is a line per shrink replay like any red campaign's. A FAIL line or a failed count is rc 1 here.
 if [ "$rc_forge" -eq 0 ]; then

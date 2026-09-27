@@ -1300,6 +1300,34 @@ for f in "$FIX"/state-case-*.md "$FIX"/state-hole*.md; do
     echo "  FAIL  and not with NEXT.md's STOP line"; fails=$((fails + 1)); fi
 done
 [ "$nn" -ge 537 ] || { echo "  FAIL  fewer case fixtures than written (state-case-*.md, state-hole*.md): $((nn - 500)) of 37"; fails=$((fails + 1)); }
+# V26b's probes a1-a11 (row 1 was quiet by an id that is not an open high: `high all`, `TBA`, the count `1`, a medium's
+# id, one high spelled twice...), as fixtures (state-v26b-*.md, the same first line): with open_findings naming the open
+# highs (K28) each is REFUSED (an id recorded to tell that is not an open high) or ASKED - never quiet, never a STOP. And
+# the same file with the ids taken out of open_findings (as V26b wrote it: `high=1`, no ids) is refused: a count needs
+# its ids.
+nn=840
+for f in "$FIX"/state-v26b-*.md; do
+  nn=$((nn + 1)); j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
+  a=(); [ "$j" = "none" ] || a=(--judge "$j")
+  "$NX" "$f" "${a[@]}" > "$TMP/o$nn" 2>&1; nrc=$?
+  check "next.sh: $(basename "$f" .md) gives rows $want" "$wrc" "$nrc" "$TMP/o$nn"
+  got="$(nx_rows "$TMP/o$nn")"; [ -n "$got" ] || got=none
+  if [ "$got" != "$want" ]; then echo "  FAIL  and it named rows '$got', not '$want'"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); fi
+  if grep -qE '^next: STOP|row 1 is quiet' "$TMP/o$nn"; then echo "  FAIL  and row 1 was quiet, or the pause was given"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); fi
+  case "$wrc" in
+    2) grep -qF "is not an open high in open_findings" "$TMP/o$nn" && grep -qF "a recorded high is no longer open: remove it" "$TMP/o$nn" \
+         || { echo "  FAIL  and not refused as a recorded high that is not open: $(head -1 "$TMP/o$nn")"; fails=$((fails + 1)); } ;;
+    3) [ "$(sed -n 1p "$TMP/o$nn" | cut -c1-24)" = "needs judgement: row 1 -" ] \
+         || { echo "  FAIL  and row 1 is not the first question"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); } ;;
+    *) echo "  FAIL  $(basename "$f"): rc=$wrc in its first line is neither 2 (refused) nor 3 (asked)"; fails=$((fails + 1)) ;;
+  esac
+  sed -E 's/^(open_findings:[[:space:]]+high=[0-9]+) [(][^()]*[)]/\1/' "$f" > "$TMP/state-${nn}n.md"
+  cmp -s "$f" "$TMP/state-${nn}n.md" && { echo "  FAIL  $(basename "$f"): no ids to take out of open_findings"; fails=$((fails + 1)); }
+  "$NX" "$TMP/state-${nn}n.md" "${a[@]}" > "$TMP/o${nn}n" 2>&1
+  check "next.sh: the same, open_findings without its ids (as V26b wrote it): refused" 2 $? "$TMP/o${nn}n"
+  grep -qF "names no ids" "$TMP/o${nn}n" || { echo "  FAIL  and not for a count with no ids: $(head -1 "$TMP/o${nn}n")"; fails=$((fails + 1)); }
+done
+[ "$nn" -ge 851 ] || { echo "  FAIL  fewer V26b fixtures than written (state-v26b-*.md): $((nn - 840)) of 11"; fails=$((fails + 1)); }
 nx_variant 449 "full mode at the ceiling, the black-box STALE, the owner wants to freeze: row 16" \
   state-case-ceiling-full-blackbox-never.md 's/^blackbox: .*/blackbox: stale (an event changed since it ran)/' \
   5=false,8=false,10=false,16=true 0 "2,14,16"
@@ -1333,9 +1361,10 @@ nx_variant 604 "a STATE.md with CRLF line endings gives the same rows as with LF
   5=false,8=false,10=false,11b=false 0 "14,17"
 nx_variant 605 "rehearsal: done on a leap day (2024-02-29) is a date" state-row-18.md 's/^rehearsal: .*/rehearsal: done (2024-02-29)/' \
   5=false,8=false,10=false,11b=false 0 "14,18"
-# row 1 (K26b): ONLY items `high <id>[, <id>...] - to tell` of waiting_on_owner quiet it, and only when their ids are exactly
-# as many as the highs open; a told: note is not read (the owner present: the question is asked, and answered 1=false) -
-# V26's T3, T5-T7, T9-T11, T13: `told: F-1` of a closed high, `told: none`, `told: TBD`, `Told: F-1`, `told: nobody` ...
+# row 1 (K26b, K28): ONLY items `high <id>[, <id>...] - to tell` of waiting_on_owner quiet it, and only when EVERY id of
+# open_findings' `high=N (<ids>)` is among them (case aside); a told: note is not read (the owner present: the question
+# is asked, and answered 1=false) - V26's T3, T5-T7, T9-T11, T13: `told: F-1` of a closed high, `told: none`, `told: TBD`,
+# `Told: F-1`, `told: nobody` ...
 nx_variant 606 "a told: note (told: none) does not quiet row 1: it is asked" state-row-1.md \
   's/^notes: .*/notes: fork: n\/a - no chain yet; told: none/' 5=false,8=false,9=true 3 "1,9"
 nx_variant 607 "a told: note on an indented line under notes: does not quiet row 1: it is asked" state-row-1.md \
@@ -1345,16 +1374,31 @@ nx_variant 671 "the same, answered 1=false (the owner told, present): row 9" sta
 nx_variant 672 "an item that says the high was told (high F-1 - told) is not a high to tell: row 1 is asked" state-row-1.md \
   's/^waiting_on_owner: .*/waiting_on_owner: high F-1 - told/' 5=false,8=false,9=true 3 "1,9"
 nx_variant 630 "two highs open, one item naming both between commas: row 1 is quiet" state-row-1.md \
-  's/^open_findings: .*/open_findings: high=2 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, F-2 - to tell (with their tests)/' \
+  's/^open_findings: .*/open_findings: high=2 (F-1, F-2) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, F-2 - to tell (with their tests)/' \
   5=false,8=false,9=true 0 9
 nx_variant 673 "two highs open, one item naming both between spaces: row 1 is quiet" state-row-1.md \
-  's/^open_findings: .*/open_findings: high=2 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 F-2 - to tell/' \
+  's/^open_findings: .*/open_findings: high=2 (F-1 F-2) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 F-2 - to tell/' \
   5=false,8=false,9=true 0 9
 nx_variant 631 "two highs open, the same id recorded twice (F-1 and f-1: one id, case aside): row 1 is asked" state-row-1.md \
-  's/^open_findings: .*/open_findings: high=2 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell; high f-1 - to tell/' \
+  's/^open_findings: .*/open_findings: high=2 (F-1, F-2) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell; high f-1 - to tell/' \
   5=false,8=false,9=true 3 "1,9"
 nx_variant 674 "one high open, the same id in two items (F-1, f-1): counted once, row 1 is quiet" state-row-1.md \
   's/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell; high f-1 - to tell/' 5=false,8=false,9=true 0 9
+# K28: row 1 by ids - quiet only when every id of open_findings' `high=N (<ids>)` is recorded to tell, in any order, case
+# aside, in one item or several; one not recorded, and it is asked (the question names it)
+nx_variant 830 "two highs open, recorded in the other order and case (high f-2 F-1): row 1 is quiet" state-row-1.md \
+  's/^open_findings: .*/open_findings: high=2 (F-1, F-2) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high f-2 F-1 - to tell/' \
+  5=false,8=false,9=true 0 9
+nx_variant 831 "two highs open, one per item: row 1 is quiet" state-row-1.md \
+  's/^open_findings: .*/open_findings: high=2 (F-1, F-2) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-2 - to tell; triage of F-1 F-2; high F-1 - to tell/' \
+  5=false,8=false,9=true 0 9
+nx_variant 832 "the ids after a key other than first (medium=0 high=1 (F-1) ...), a comment after: row 1 is quiet" state-row-1.md \
+  's/^open_findings: .*/open_findings: medium=0 high=1 (F-1) low=0 reasoned_high_or_medium=0   (F-1: the fee cap; see the report)/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell/' \
+  5=false,8=false,9=true 0 9
+"$NX" "$FIX/state-case-high-not-all-told.md" --judge 5=false,8=false,9=false > "$TMP/o833" 2>&1
+if grep -q '^needs judgement: row 1 - .*F-2 not recorded to tell' "$TMP/o833" && ! grep -q 'F-1 not recorded' "$TMP/o833"; then
+  echo "  ok    one high of two recorded: row 1's question names the one not recorded (F-2), not the one recorded"; else
+  echo "  FAIL  row 1's question does not name F-2 as the high not recorded to tell:"; sed "s/^/        | /" "$TMP/o833"; fails=$((fails + 1)); fi
 "$NX" "$FIX/state-case-high-not-all-told.md" > "$TMP/o632" 2>&1
 if [ "$(sed -n 1p "$TMP/o632" | cut -c1-24)" = "needs judgement: row 1 -" ] && grep -q '^needs judgement: row 1 - .*high <id>' "$TMP/o632" \
   && [ "$(tail -1 "$TMP/o632")" = "if every answer is false: STOP - paused, waiting on the owner: high F-1 - to tell" ]; then
@@ -1377,8 +1421,8 @@ grep -q '^needs judgement: row 9 - .*fix at the cause' "$TMP/o608" \
   || { echo "  FAIL  and row 9's question does not name a fix at the cause not yet written"; sed "s/^/        | /" "$TMP/o608"; fails=$((fails + 1)); }
 "$NX" "$FIX/state-case-fix-not-written.md" --judge 5=false,8=false,9=true > "$TMP/o609" 2>&1
 check "next.sh: the same, row 9 answered true: row 9" 0 $? "$TMP/o609"
-grep -q '^next: row 9 - .*write the fix' "$TMP/o609" \
-  || { echo "  FAIL  and row 9's action does not say: write the fix"; sed "s/^/        | /" "$TMP/o609"; fails=$((fails + 1)); }
+grep -q '^next: row 9 - .*a fix already decided: write it' "$TMP/o609" \
+  || { echo "  FAIL  and row 9's action does not say: a fix already decided: write it";sed "s/^/        | /" "$TMP/o609"; fails=$((fails + 1)); }
 # notes are read by name only at the START of a note item: a note line (the value of notes:, or an indented line under it),
 # or a part of one after the middle dot or ";" - real manager: (row 7b) as pending: (row 1)
 nx_variant 610 "a real manager: note after the middle dot quiets row 7b: 14, 16" state-case-real-manager-note-not-at-start.md \
@@ -1430,8 +1474,22 @@ if [ "$(nx_rows "$TMP/o634")" = "5,8,9,10,11b,STOP?" ] && [ "$(tail -1 "$TMP/o63
 nx_variant 635 "the skeleton written, 9b=true answered: still the pause, not row 9b again" state-case-skeleton-written-owner-away.md '' \
   5=false,8=false,9=false,9b=true,10=false,11b=false 0 STOP
 # ... the skeleton stale (a finding opened since): 9b again - and with K written in words, or no K, refused (row 9b reads it)
-nx_variant 636 "a complete dossier with the open findings in it: row 9b is quiet, the pause" state-case-skeleton-written-owner-away.md \
-  's/^dossier: .*/dossier: complete (1 judge not done)/' 5=false,8=false,9=false,10=false,11b=false 0 STOP
+# ... a `complete` dossier with a finding open is refused (K28, NEXT.md: `complete` means no finding is open - with one
+# open the dossier is a skeleton); with none open it is read as before
+sed 's/^dossier: .*/dossier: complete (1 judge not done)/' "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-636.md"
+"$NX" "$TMP/state-636.md" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o636" 2>&1
+check "next.sh: a complete dossier with 2 findings open is refused" 2 $? "$TMP/o636"
+if grep -qF "a dossier with an open finding is a skeleton" "$TMP/o636" && ! grep -qE '^next: (STOP|row) ' "$TMP/o636"; then
+  echo "  ok    and it says a dossier with an open finding is a skeleton, and gives no next: line"; else
+  echo "  FAIL  the complete dossier with findings open was not refused as a skeleton:"; sed "s/^/        | /" "$TMP/o636"; fails=$((fails + 1)); fi
+sed 's/^dossier: .*/dossier: complete (1 judge not done)/; s/^open_findings: .*/open_findings: high=0 medium=0 low=1 reasoned_high_or_medium=0/' \
+  "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-641.md"
+"$NX" "$TMP/state-641.md" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o641" 2>&1
+check "next.sh: a complete dossier with one LOW open is refused too (high + medium + low)" 2 $? "$TMP/o641"
+nx_variant 642 "a complete dossier with no finding open: read as before (the loop over, neither freeze nor decline: the pause)" \
+  state-case-skeleton-written-owner-away.md \
+  's/^dossier: .*/dossier: complete (1 judge not done)/; s/^open_findings: .*/open_findings: high=0 medium=0 low=0 reasoned_high_or_medium=0/' \
+  5=false,8=false,10=false,11b=false,16=false,18b=false 0 "14,STOP"
 nx_variant 637 "the skeleton names 2, open_findings has 1 (one fixed since): stale, row 9b" state-case-skeleton-written-owner-away.md \
   's/^open_findings: .*/open_findings: high=0 medium=1 low=0 reasoned_high_or_medium=0/' 5=false,8=false,9=false,9b=true 0 9b
 nx_variant 638 "waiting_on_owner none, the skeleton written, nothing stands: a hole, not a pause" state-case-skeleton-written-owner-away.md \
@@ -1559,19 +1617,40 @@ nx_refused "an operator's ceiling with 'OPERATOR' (never read as the owner's)" "
 # names - anything else is refused, never counted and never ignored
 nn=650
 nx_refused "a high to tell naming a placeholder (high none - to tell, V26 T14)" "'none' is a placeholder, not a finding id" 's/^waiting_on_owner: .*/waiting_on_owner: high none - to tell/'
-nx_refused "a high to tell naming a placeholder (TBD)" "'TBD' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high TBD - to tell/'
-nx_refused "a high to tell naming a placeholder (nobody)" "'nobody' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high nobody - to tell/'
-nx_refused "a high to tell naming a placeholder (n/a)" "'n/a' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high n\/a - to tell/'
-nx_refused "a high to tell naming a placeholder (?)" "'?' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high ? - to tell/'
-nx_refused "a high to tell with no id (high - to tell)" "names no finding id" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high - to tell/'
-nx_refused "a high to tell with a word between the ids (high F-1 and F-2 - to tell, 3 highs open)" "'and' is a word, not a finding id" 's/^open_findings: .*/open_findings: high=3 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 and F-2 - to tell/'
-nx_refused "more highs recorded to tell than are open (a stale entry)" "a recorded high is no longer open: remove it" 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, F-2 - to tell/'
+nx_refused "a high to tell naming a placeholder (TBD)" "'TBD' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high TBD - to tell/'
+nx_refused "a high to tell naming a placeholder (nobody)" "'nobody' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high nobody - to tell/'
+nx_refused "a high to tell naming a placeholder (n/a)" "'n/a' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high n\/a - to tell/'
+nx_refused "a high to tell naming a placeholder (?)" "'?' is a placeholder, not a finding id" 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high ? - to tell/'
+nx_refused "a high to tell with no id (high - to tell)" "names no finding id" 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high - to tell/'
+nx_refused "a high to tell with a word between the ids (high F-1 and F-2 - to tell, 3 highs open)" "'and' is a word, not a finding id" 's/^open_findings: .*/open_findings: high=3 (F-1, F-2, F-3) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 and F-2 - to tell/'
+nx_refused "more highs recorded to tell than are open (a stale entry)" "a recorded high is no longer open: remove it" 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, F-2 - to tell/'
 nx_refused "a high to tell recorded when no high is open" "a recorded high is no longer open: remove it" 's/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell/'
 nx_refused "a high to tell in another shape (F-1 high - to tell)" "is not 'high <id>[, <id>...] - to tell'" 's/^waiting_on_owner: .*/waiting_on_owner: F-1 high - to tell/'
 nx_refused "a dossier skeleton that does not say how many open findings it names" "is not skeleton (<K> open" 's/^dossier: .*/dossier: skeleton/'
 nx_refused "a dossier skeleton with K in words" "is not skeleton (<K> open" 's/^dossier: .*/dossier: skeleton (two open, 1 judge not done)/'
+# K28: open_findings names the open highs, `high=N (<ids>)` - the parentheses exactly when N > 0, one id per high, each
+# once; and a recorded high to tell must be one of them. Anything else is refused, never counted and never ignored
+nn=860
+OFH='s/^open_findings: .*/open_findings: '
+nx_refused "a high open with no ids (high=1 medium=0 ...)" "open_findings: high=1 names no ids" "${OFH}high=1 medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "a high open with its id only in the comment after" "open_findings: high=1 names no ids" "${OFH}high=1 medium=0 low=0 reasoned_high_or_medium=0 (F-1)/"
+nx_refused "ids when no high is open (high=0 (F-1))" "open_findings: high=0 with ids" "${OFH}high=0 (F-1) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "an empty id list when no high is open (high=0 ())" "open_findings: high=0 with ids" "${OFH}high=0 () medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "fewer ids than highs (high=2 (F-1))" "open_findings: high=2 names 1 id" "${OFH}high=2 (F-1) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "more ids than highs (high=1 (F-1, F-2))" "open_findings: high=1 names 2 ids" "${OFH}high=1 (F-1, F-2) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "an empty id list for a high (high=1 ())" "open_findings: high=1 names 0 ids" "${OFH}high=1 () medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "the same id twice among the open highs (F-1, f-1)" "is named twice" "${OFH}high=2 (F-1, f-1) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "a placeholder for an open high's id (high=1 (TBD))" "'TBD' is a placeholder, not a finding id" "${OFH}high=1 (TBD) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "a word between the open highs' ids (F-1 and F-2)" "'and' is a word, not a finding id" "${OFH}high=3 (F-1 and F-2) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "an open high's id that is not one id (F-1/F-2)" "is not one finding id" "${OFH}high=1 (F-1\/F-2) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "a high recorded to tell that is not an open high (F-2 recorded, F-1 open)" "a recorded high is no longer open: remove it" \
+  "${OFH}high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-2 - to tell/"
+nx_refused "a medium's id recorded as a high to tell (V26b a6)" "a recorded high is no longer open: remove it" \
+  "${OFH}high=1 (F-1) medium=1 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, M-1 - to tell/"
+nx_refused "a complete dossier with a finding open" "a dossier with an open finding is a skeleton" \
+  "${OFH}high=0 medium=1 low=0 reasoned_high_or_medium=0/; s/^dossier: .*/dossier: complete (0 judges not done)/"
 # ... and a told: note is a note like any other: not read, not refused (row 1 is asked while a high is open, owner present)
-sed 's/^open_findings: .*/open_findings: high=1 medium=0 low=0 reasoned_high_or_medium=0/; s/^notes:.*/notes: told: F-1 and F-2 (by mail)/' "$NP" > "$TMP/state-677.md"
+sed 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^notes:.*/notes: told: F-1 and F-2 (by mail)/' "$NP" > "$TMP/state-677.md"
 "$NX" "$TMP/state-677.md" > "$TMP/o677" 2>&1; check "next.sh: a told: note in any shape is not refused (it is not read)" 3 $? "$TMP/o677"
 [ "$(sed -n 1p "$TMP/o677" | cut -c1-26)" = "needs judgement: row 1 - d" ] || { echo "  FAIL  and row 1 is not the first question:"; sed "s/^/        | /" "$TMP/o677"; fails=$((fails + 1)); }
 # drift guard: next.sh's rows and NEXT.md's table must name the same rows, in the same order, and each row's condition
@@ -1593,8 +1672,8 @@ nx_drift() { # nx_drift <n> <label> <sed or awk program -> the edited NEXT.md> <
 nx_drift 711 "a row 12a inserted after row 12 (an id of another form)" 's/^| 12 |.*/&\n| 12a | a row inserted | x | y |/' 2 "row 12a"
 nx_drift 712 "row 11b written 11B" 's/^| 11b |/| 11B |/' 2 "row 11B"
 nx_drift 713 "rows 17 and 18 swapped" 'awk:/^\| 17 \|/ { h = $0; next } { print } /^\| 18 \|/ { print h }' 2 "another order"
-nx_drift 714 "row 16's condition cell changed, its id kept" 's/^| 16 | the loop is over, /| 16 | the loop is over (and nothing else), /' 2 "row 16"
-nx_drift 715 "row 16's condition cell with its spaces changed only" 's/^\(| 16 | the loop is over,\) /\1    /; s/^| 16 | /|  16  |   /' 0 "agree"
+nx_drift 714 "row 16's condition cell changed, its id kept" 's/^| 16 | the loop is over; /| 16 | the loop is over (and nothing else); /' 2 "row 16"
+nx_drift 715 "row 16's condition cell with its spaces changed only" 's/^\(| 16 | the loop is over;\) /\1    /; s/^| 16 | /|  16  |   /' 0 "agree"
 nx_drift 718 "NEXT.md with CRLF line endings" 's/$/\r/' 0 "agree"
 # inside the table every non-blank line is a row: a "|" at column 0 and four cells - an indented row, a row without its
 # leading "|" (GFM shows both in the table) or a line of prose is refused, naming the line
@@ -2008,6 +2087,67 @@ EOF
   "$HERE/assert-fresh-build.sh" "$FCP" > "$TMP/o796" 2>&1; check "the freshness check on it, alone: FRESH" 0 $? "$TMP/o796"
   grep -q '^evidence: cache fcache/solidity-files-cache.json' "$TMP/o796" || { echo "  FAIL  and it did not read fcache/"; fails=$((fails + 1)); }
   rm -rf "$FCP"
+  # what the build READ (K27): forge 1.8.1 links tests to sources dynamically, and after a change that keeps a source's
+  # interface it recompiles the source and not the tests - right for a plain file under src/ imported by path, wrong for
+  # the rest: the tests ran the OLD code, no copy anywhere, and the freshness check said FRESH. Measured on the root kit
+  # with src/ a symlink (BATTERY PASSED 107 over a mutant that fails 3 suites) and on toys of the v4 module's shape (the
+  # v4 module itself was judged right: its suites derive from what they use). The kit's record of what the build read decides.
+  rk_toy() { # rk_toy <dir> <import of B in the test>: a toy whose unit test and invariant new B() and read x
+    mkdir -p "$1/src" "$1/test" "$1/.gauntlet"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$1/lib"
+    printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n%s\n[invariant]\nruns = 4\ndepth = 4\nfail_on_revert = true\n[profile.long.invariant]\nruns = 8\ndepth = 8\nfail_on_revert = true\n' "${3:-}" > "$1/foundry.toml"
+    printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "%s";\ncontract BUnit is Test { function test_add() public { B b = new B(); b.add(); assertEq(b.x(), 2); } }\ncontract BInvariant is Test { B b; function setUp() public { b = new B(); targetContract(address(b)); } function invariant_even() public view { assertEq(b.x() %% 2, 0); } }\n' "$2" > "$1/test/B.t.sol"
+  }
+  rk_b() { printf 'pragma solidity ^0.8.26;\ncontract B { uint256 public x; function add() external { x += %s; } }\n' "$2" > "$1"; }
+  # (a) the v4 module's shape: the source outside the project, through a remapping (kit/=../ext/), new'd by the test
+  RK="$TMP/rk-remap"; mkdir -p "$RK/ext"; rk_toy "$RK/p" kit/B.sol 'allow_paths = ["../ext"]'; echo 'kit/=../ext/' > "$RK/p/remappings.txt"; rk_b "$RK/ext/B.sol" 2
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o827" 2>&1; check "battery on a project whose test news a source outside it, through a remapping" 0 $? "$TMP/o827"
+  rk_b "$RK/ext/B.sol" 3
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o828" 2>&1; check "the same battery after that source is broken: BATTERY FAILED (it ran the old code: BATTERY PASSED)" 1 $? "$TMP/o828"
+  if grep -q '^battery: \.\./ext/B\.sol changed since the last build the kit recorded.*outside this project: .*Its record cache/solidity-files-cache\.json is removed, so this build is from nothing\.$' "$TMP/o828" \
+    && grep -Eq '^test +rc=1 +\(passed [0-9]+, failed [1-9]' "$TMP/o828" && grep -q '^cache     \.\./ext/B\.sol changed, where forge.s incremental build is not trusted: its record removed' "$TMP/o828"; then
+    echo "  ok    and one line names the file and why, it builds from nothing, and the tests see the broken code"; else
+    echo "  FAIL  the battery ran the old code, or did not say why it rebuilt:"; grep -a -e '^battery:' -e '^test ' -e '^cache ' "$TMP/o828" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # (a trusted build of the good B - recorded - then the break, then a plain `forge build`: forge says nothing is left)
+  rk_reset() { rk_b "$RK/ext/B.sol" 2; "$HERE/battery.sh" "$RK/p" > /dev/null 2>&1; rk_b "$RK/ext/B.sol" 3; (cd "$RK/p" && forge build > /dev/null 2>&1); }
+  rk_reset; USE_BENCH=0 "$HERE/fuzz-long.sh" "$RK/p" > "$TMP/o829" 2>&1; check "fuzz-long (USE_BENCH=0) after the same break and a forge build: LONG FUZZ FAILED" 1 $? "$TMP/o829"
+  grep -q '^fuzz-long: \.\./ext/B\.sol changed since the last build the kit recorded' "$TMP/o829" || { echo "  FAIL  and fuzz-long.sh does not say why it built from nothing"; fails=$((fails + 1)); }
+  rk_reset; "$HERE/census.sh" "$RK/p" > "$TMP/o830" 2>&1; check "census.sh after the same break (a toy with no census)" 2 $? "$TMP/o830"
+  if grep -q '^census: \.\./ext/B\.sol changed since the last build the kit recorded' "$TMP/o830" && grep -q '^census: the campaign itself FAILED (rc=1)' "$TMP/o830"; then
+    echo "  ok    and it says why it built from nothing, and the campaign FAILED on the broken code"; else
+    echo "  FAIL  census.sh ran the old code, or did not say why it rebuilt:"; grep -a '^census:' "$TMP/o830" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rk_reset; "$HERE/assert-fresh-build.sh" "$RK/p" > "$TMP/o831" 2>&1; check "the freshness check after the break and a forge build (forge: 'No files changed'): STALE, rebuilt from nothing" 1 $? "$TMP/o831"
+  grep -q '^evidence: \.\./ext/B\.sol changed since the last build the kit recorded' "$TMP/o831" || { echo "  FAIL  and it does not say why"; fails=$((fails + 1)); }
+  "$HERE/assert-fresh-build.sh" "$RK/p" > "$TMP/o832" 2>&1; check "and the next run is FRESH (recorded)" 0 $? "$TMP/o832"
+  rm -rf "$RK"
+  # (b) src/ a symlink (V25b's shape, and the root kit's with src linked): battery, break B through the link, battery
+  RK="$TMP/rk-link"; mkdir -p "$RK/shared"; rk_toy "$RK/p" ../src/B.sol; rmdir "$RK/p/src"; ln -s "$RK/shared" "$RK/p/src"; rk_b "$RK/shared/B.sol" 2
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o833" 2>&1; check "battery on a project whose src/ is a symlink" 0 $? "$TMP/o833"
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o834" 2>&1; check "and again, nothing changed" 0 $? "$TMP/o834"
+  grep -q 'changed since the last build\|no record of what' "$TMP/o834" && { echo "  FAIL  and it rebuilt from nothing with nothing changed"; fails=$((fails + 1)); }
+  rk_b "$RK/shared/B.sol" 3
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o835" 2>&1; check "the same battery after B is broken through the link: BATTERY FAILED" 1 $? "$TMP/o835"
+  if grep -q '^battery: .*B\.sol changed since the last build the kit recorded' "$TMP/o835" && grep -Eq '^test +rc=1 +\(passed [0-9]+, failed [1-9]' "$TMP/o835"; then
+    echo "  ok    and it says which file, builds from nothing, and the tests see the broken code"; else
+    echo "  FAIL  the battery ran the old code, or did not say why:"; grep -a -e '^battery:' -e '^test ' "$TMP/o835" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$RK"
+  # (c) src/ imported through a remapping into it (app/=src/): the same, for a plain file under src/
+  RK="$TMP/rk-app"; rk_toy "$RK" app/B.sol; echo 'app/=src/' > "$RK/remappings.txt"; rk_b "$RK/src/B.sol" 2
+  "$HERE/battery.sh" "$RK" > /dev/null 2>&1; rk_b "$RK/src/B.sol" 3
+  "$HERE/battery.sh" "$RK" > "$TMP/o836" 2>&1; check "battery after a break in src/B.sol, which the test imports as app/B.sol: BATTERY FAILED" 1 $? "$TMP/o836"
+  grep -q '^battery: src/B\.sol changed since the last build the kit recorded, and a remapping (app/=src/) reaches into src/' "$TMP/o836" || { echo "  FAIL  and it does not say why it rebuilt"; grep -a '^battery:' "$TMP/o836" | sed "s/^/        | /"; fails=$((fails + 1)); }
+  rm -rf "$RK"
+  # (d) what forge IS right for is left to it (the cost: no build from nothing on every edit): a plain src/B.sol imported
+  # by path - the battery sees the break with an incremental build, and says nothing about the record
+  RK="$TMP/rk-plain"; rk_toy "$RK" ../src/B.sol; rk_b "$RK/src/B.sol" 2
+  (cd "$RK" && forge build > /dev/null 2>&1)
+  "$HERE/battery.sh" "$RK" > "$TMP/o837" 2>&1; check "battery on a project forge built, with no record of what that build read" 0 $? "$TMP/o837"
+  grep -q "^battery: there is no record of what forge's last build here read" "$TMP/o837" || { echo "  FAIL  and it did not build from nothing, or did not say why"; fails=$((fails + 1)); }
+  rk_b "$RK/src/B.sol" 3
+  "$HERE/battery.sh" "$RK" > "$TMP/o838" 2>&1; check "the battery after a break in a plain src/B.sol: BATTERY FAILED, incrementally" 1 $? "$TMP/o838"
+  if ! grep -q 'changed since the last build\|no record of what' "$TMP/o838" && grep -Eq '^test +rc=1 +\(passed [0-9]+, failed [1-9]' "$TMP/o838"; then
+    echo "  ok    and without a build from nothing"; else
+    echo "  FAIL  it rebuilt from nothing, or ran the old code:"; grep -a -e '^battery:' -e '^test ' "$TMP/o838" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$RK"
   # ~/.foundry/foundry.toml, the machine's configuration forge merges into every project's (a temporary HOME, never the
   # real one; the compilers linked from the real one). V24b: `skip` there, BATTERY PASSED on 86 of 107 with "filter:
   # none"; `match_test` there, "long fuzz passed" over 1 invariant of 6 and "VARIANT PASSED" over a variant that breaks 8

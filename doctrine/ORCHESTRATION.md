@@ -83,6 +83,14 @@ for at least twice the tokens. So:
   (mutants, sweeps, fixes against a written brief) to the cheaper one;
 - nothing becomes a recommendation to the owner without a verifier that is not its author.
 
+## 5b. A push is not a result
+
+The result of a push is the CI run read to its end: every job named green, red or skipped with its reason. A run that
+never started - an invalid workflow file, a missing secret - looks exactly like a green one to someone who did not
+look (four pushes of this kit ran no job at all, for two days, over one unquoted colon in a step name). So: after every
+push, read the run before saying "green"; a red or an absent job is the next piece of work, and the selftest refuses a
+workflow file that does not parse.
+
 ## 6. Cost is part of the record
 
 Every agent's cost goes in its ROUND line (`state/README.md`). The harness does not always return a subagent's usage;

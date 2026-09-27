@@ -48,7 +48,9 @@
 #                     a key as <set>, by its shape; a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
 #          Not the environment, and named too (scripts/lib/forge-env.sh): the keys ~/.foundry/foundry.toml, the machine's
 #          forge configuration, changes in this run - in the verdict line as well; and a build cache written at another
-#          path (a project copied with its out/ and cache/), whose record is removed so the campaign builds from nothing.
+#          path (a project copied with its out/ and cache/), whose record is removed so the campaign builds from nothing -
+#          as it is when a source changed that forge's incremental build does not follow (outside src/, or src/ through a
+#          link or a remapping), or when nothing recorded what the last build read (the kit records it after each build).
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
 # Exit:    forge's exit code - 1, never 0, when a test FAILED whatever forge exited with (`--allow-failure` exits 0
 #          over one: a FAIL line or a failed count is a failed campaign); 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
@@ -146,8 +148,10 @@ forge_dotenv_check fuzz-long "$(pwd -P)" || { echo "fuzz-long: NOTHING PROVEN.";
 forge_global_config fuzz-long
 global_shown="${FORGE_GLOBAL_KEYS:+; from $FORGE_GLOBAL_FILE: $FORGE_GLOBAL_KEYS}"
 # a cache written at another path: the campaign ran the OLD code over a new source (measured: "long fuzz passed", 6 of 6
-# invariants, over a planted mutant), so its record is removed and the campaign builds from nothing
+# invariants, over a planted mutant), so its record is removed and the campaign builds from nothing - and so when a source
+# changed that forge's incremental build does not follow, or nothing recorded what the last build read (forge-env.sh)
 forge_cache_rehome fuzz-long; [ "$?" -ne 2 ] || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
+sources_pre="$(forge_sources_snapshot)"
 flags_shown="$(forge_flags_shown "$FORGE_FLAGS")"
 
 # forge falls back to the DEFAULT profile, with a warning, when the named one does not exist - and the default budget
@@ -207,6 +211,8 @@ rm -f "$GAUNTLET_CENSUS"
 # shellcheck disable=SC2086
 forge test $FORGE_FLAGS $MATCH $seed_flag -vv 2>&1 | tee "$OUT_DIR/05-fuzz-long.txt"
 rc=${PIPESTATUS[0]}
+# the build this campaign ran on is recorded when it compiled (forge printed a summary: tests ran), as battery.sh does
+parse_test_summary "$OUT_DIR/05-fuzz-long.txt" > /dev/null && forge_sources_record "" "$sources_pre"
 # A failed test is never a pass, whatever forge exited with (`--allow-failure` in FORGE_FLAGS exits 0 over one): a FAIL
 # line or a failed count makes this a failed campaign, rc 1, before anything below reads rc - the census of a red
 # campaign is renamed, never tabled (measured, 2026-09-27: with FORGE_ALLOW_FAILURE, 3 FAILs and "long fuzz passed")

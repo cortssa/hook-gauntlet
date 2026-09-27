@@ -49,7 +49,7 @@ Done: the last line is `SELFTEST PASSED: every guard went red exactly where it w
 scripts/battery.sh foundry-kit
 ```
 
-Done: `BATTERY PASSED`, with a summary above it (`test rc=0 (passed N, failed 0, skipped 0; filter: none)`, sizes, freshness; a filter your own `foundry.toml` sets, such as the v4 module's `no_match_path = "test/fork/**"`, is named there instead of `none`). The battery runs the whole suite: `TEST_FLAGS`, and every `FOUNDRY_*`, `FORGE_*` or `DAPP_*` variable in your environment but `FOUNDRY_PROFILE` and `FORGE_FLAGS` (forge reads them all, in any case), is ignored, and a line names each; a `.env` in the project that sets one is refused; a filter in `~/.foundry/foundry.toml` (your machine's forge configuration, which forge merges into every project) is refused, by file and key, and any other key it changes is named; a project copied with its `out/` and `cache/` from another path is built from nothing, and a line says so; and a failed test fails the battery whatever forge exited with.
+Done: `BATTERY PASSED`, with a summary above it (`test rc=0 (passed N, failed 0, skipped 0; filter: none)`, sizes, freshness; a filter your own `foundry.toml` sets is named there instead of `none`). The battery runs the whole suite and says what it refused to let narrow or soften it - forge's environment variables, a project `.env`, a `~/.foundry/foundry.toml`, build artefacts from another path - and a failed test fails it whatever forge exited with (`foundry-kit/README.md`, "What the battery refuses").
 Read the summary, not the exit code: the battery refuses an empty green (a filter that matched nothing, a skipped test).
 
 ## 3. The v4 module: Uniswap's sources, then the example hook
@@ -205,12 +205,9 @@ black-box round (`briefs/black-box.md`, a bench WITHOUT the source) belongs earl
 mode's default, or a full-mode owner's own decision) sends you to the handoff dossier, `briefs/handoff-dossier.md` - and row 9b, when findings are open and the
 owner is not there to triage, sends you to the same file as a skeleton: what the judges said read from their outputs,
 every divergence, and a non-empty list of what was **not** checked. With the owner absent that is where the route ENDS
-until they answer: once `STATE.md` says `dossier: skeleton (K open, ...)` with K the number open and
-`waiting_on_owner: triage of <ids>` (the highs among them also `high <id>[, <id>...] - to tell`, every open high named),
-`scripts/next.sh` prints `next: STOP - paused, waiting on the owner: <items>` (exit 0) - decided by the flags, once no row
-is left to judge. While one is (rows 5, 8, 9, 10 after a round, 11b and 12 below the ceiling), it prints the questions
-and `if every answer is false: STOP - paused, waiting on the owner: <items>` (exit 3): answer them with `--judge`, and
-run it again. Then its reading copy for the auditor, the Markdown
+until they answer: the skeleton names the open findings, `STATE.md` says so (`dossier: skeleton (K open, ...)`,
+`waiting_on_owner: triage of <ids>`, every open high `to tell`), and `scripts/next.sh` answers `STOP - paused, waiting
+on the owner` (`doctrine/NEXT.md` row 3). Then its reading copy for the auditor, the Markdown
 staying the record: `python3 scripts/dossier-pdf.py .gauntlet/DOSSIER.md` (needs `reportlab`; without it, exit 2 and
 nothing written - the Markdown goes alone). **STOP there.** The next step is a human audit.
 Never `forge script --broadcast`, never `cast send`: the kit has no step that deploys.

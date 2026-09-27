@@ -52,6 +52,14 @@
 # and the tests run the old code - measured, 2026-09-27: this check said FRESH (rc 0 in the battery) over artifacts that
 # ran a planted mutant's ORIGINAL. So the record is removed, everything is built from nothing, and the verdict is STALE:
 # nothing measured from the copied artifacts can be vouched for.
+# A SOURCE CHANGED WHERE FORGE'S INCREMENTAL BUILD DOES NOT FOLLOW IT is not asked either, nor a build with no record of
+# what it read: forge 1.8.1 links tests to sources dynamically and, after a change that keeps a source's interface,
+# recompiles the source and not the tests - wrong for a file outside src/ (the root kit under the v4 module, a remapped or
+# linked directory, lib/) and for src/ reached through a symlink or a remapping; then it says "No files changed" and the
+# tests run the old code (measured, K27: FRESH here, BATTERY PASSED, over a planted mutant). The kit's record of what the
+# last build it trusted read (scripts/lib/forge-env.sh, forge_sources_stale) decides: built from nothing, STALE, recorded.
+# Every build this check makes and that succeeds is recorded. With NO record (a build forge made alone) forge's answer
+# decides, as it always has, and an evidence line says a change outside src/ is not seen: the battery records first.
 #
 # Exit:    0 FRESH: forge compiled nothing
 #          1 STALE: forge compiled - the artifacts were older than the sources or the settings; they are rebuilt now.
@@ -175,12 +183,41 @@ if elsewhere="$(forge_cache_elsewhere "$CACHE_FILE")"; then
     echo "Nothing decided. Fix the build; $OUT_DIR holds whatever the other path's build left."
     exit 2
   fi
+  forge_sources_record "$CACHE_FILE"
   echo "STALE BUILD: the artifacts in $OUT_DIR came with a cache written at another path, where forge leaves tests running the old code after a change; they are rebuilt from nothing now ($(grep -E 'Compiling [0-9]+ files? with ' "$LOG" | sed -e 's/^\[[^]]*\] //' | paste -sd ';' - | sed 's/;/; /g'))."
   echo "  Anything measured from them before this run was measured on artifacts this check cannot vouch for: measure it again."
   exit 1
 fi
 
+# ---- a source changed that forge's incremental build does not follow, or no record of what the last build read (the
+# header): forge's answer is not asked either - "No files changed" after such a change is what forge says while the
+# tests run the old code. Built from nothing, recorded, STALE
+# (standalone, with no record - a build forge made alone - forge's answer decides as it always has, and a line says what
+# that leaves unseen; the battery records what its build read before it calls this check)
+if forge_sources_stale "$CACHE_FILE" --no-record-ok; then
+  echo "evidence: $FORGE_SOURCES_WHY"
+  if ! rm -f -- "$CACHE_FILE" 2> /dev/null || [ -e "$CACHE_FILE" ]; then
+    echo "CANNOT CHECK: $CACHE_FILE cannot be removed, and forge's incremental answer is not true here. Nothing decided."; exit 2
+  fi
+  echo "decision: $(echo "$cmd" | tr -s ' ' | sed 's/ $//') with its record $CACHE_FILE removed, so from nothing (forge's 'No files changed' is not true after such a change)"
+  # shellcheck disable=SC2086   # FORGE_FLAGS is a list of flags on purpose, as in battery.sh
+  forge build $offline $FORGE_FLAGS > "$LOG" 2>&1
+  brc=$?
+  if [ "$brc" -ne 0 ]; then
+    echo "CANNOT CHECK: forge build failed (rc=$brc) building from nothing:"
+    if err="$(first_error_line "$LOG")"; then echo "  $err"; else tail -n 5 "$LOG" | sed 's/^/  | /'; fi
+    echo "Nothing decided. Fix the build; $OUT_DIR holds whatever the last build left."
+    exit 2
+  fi
+  forge_sources_record "$CACHE_FILE"
+  echo "STALE BUILD: what the last build read cannot be vouched for here (above); the artifacts in $OUT_DIR are rebuilt from nothing now ($(grep -E 'Compiling [0-9]+ files? with ' "$LOG" | sed -e 's/^\[[^]]*\] //' | paste -sd ';' - | sed 's/;/; /g'))."
+  echo "  Anything measured from them before this run was measured on artifacts this check cannot vouch for: measure it again."
+  exit 1
+fi
+
 # ---- the verdict: forge's
+[ -z "$FORGE_SOURCES_NOTE" ] || echo "evidence: $FORGE_SOURCES_NOTE"
+sources_pre="$(forge_sources_snapshot "$CACHE_FILE")"
 echo "decision: $(echo "$cmd" | tr -s ' ' | sed 's/ $//') (forge decides; when it compiles, it rewrites $OUT_DIR and the cache)"
 # shellcheck disable=SC2086   # FORGE_FLAGS is a list of flags on purpose, as in battery.sh
 forge build $offline $FORGE_FLAGS > "$LOG" 2>&1
@@ -191,6 +228,9 @@ if [ "$brc" -ne 0 ]; then
   echo "Nothing decided. Fix the build; the artifacts in $OUT_DIR are whatever the last good build left."
   exit 2
 fi
+# recorded only when a record was compared above: with none, this build may be one forge made over a change it does not
+# follow, and recording it would bless it
+[ -n "$FORGE_SOURCES_NOTE" ] || forge_sources_record "$CACHE_FILE" "$sources_pre"
 answer="$(parse_build_verdict "$LOG")"
 case "$answer" in
   skipped)

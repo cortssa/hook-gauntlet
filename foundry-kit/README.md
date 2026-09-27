@@ -365,6 +365,18 @@ allowlist, because forge reads its whole configuration from `FOUNDRY_*`, `DAPP_*
 What forge reads besides the environment is checked there as well: a `.env` (refused), `~/.foundry/foundry.toml` (what
 it changes is named; the battery refuses a filter from it) and a build cache written at another path (built from nothing).
 
+### What the battery refuses
+
+forge reads its configuration from more places than the command line, and each of them can narrow a run or soften a
+verdict without a word on the console. The judging scripts refuse or name every one (`scripts/lib/forge-env.sh`):
+`TEST_FLAGS` meant for `mutate.sh`, and every `FOUNDRY_*`, `FORGE_*` and `DAPP_*` variable in any case (removed and
+named; `FOUNDRY_PROFILE` and `FORGE_FLAGS` kept and printed, secrets in them shown as `<set>`; a newline in
+`FORGE_FLAGS` refused); a project `.env` that sets one (refused, read the way forge reads it); a `~/.foundry/foundry.toml`
+that filters tests (the battery fails, by file and key) or changes anything else (named); a build cache written at
+another path (built from nothing, and a line says why); a source the build read that changed since (a record of every source's checksum is kept next to forge's cache; a
+change in one reached by a remapping or a symlink, which forge's incremental build misses, rebuilds from scratch); and a
+failed test, whatever forge's exit code. What is still not seen is in "Not covered yet" below and `doctrine/LESSONS.md` 12.
+
 ## Not covered yet
 
 The hostile token is a switchboard, not a catalogue. Behaviours that real tokens have and this mock does not model

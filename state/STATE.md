@@ -21,7 +21,7 @@ rehearsal:                 n/a (no runbook)
 notes:                     static triage: Slither 0.10 (owner allowed the install 2026-09-11)
 ```
 
-*These lines are what `doctrine/NEXT.md` reads. With them as they stand: row 1 is false (no high is waiting); row 2 is false (5 of 8 used); row 3 is true (F-24 is with the owner) but nothing below depends on that answer; the next true row is the black-box round (row
+*These lines are what `doctrine/NEXT.md` reads. With them as they stand: row 1 is false (no high is open: `high=0`, so no ids in parentheses after it - a high open would be `high=1 (<its id>)`); row 2 is false (5 of 8 used); row 3 is true (F-24 is with the owner) but nothing below depends on that answer; the next true row is the black-box round (row
 12): a round has run, the battery is green, and it has never been run. It goes before round 6.*
 
 ## Where we are

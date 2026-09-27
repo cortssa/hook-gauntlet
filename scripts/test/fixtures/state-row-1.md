@@ -8,7 +8,7 @@ phase:                     4
 bytecode_changed_since:    last_battery=no  last_long_fuzz=no  last_other_free_judges=no  last_audit_round=no  last_promotion=n/a
 battery:                   green
 blackbox:                  current
-open_findings:             high=1 medium=0 low=0 reasoned_high_or_medium=0
+open_findings:             high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0
 last_audit_round:          r03 regression 0H 1M 0L
 last_other_round:          none
 ceiling:                   8 model rounds (adversarial + black-box) agreed in phase 0; 3 used
