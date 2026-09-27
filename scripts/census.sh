@@ -26,7 +26,11 @@
 #                       variable whose name, upper-cased, starts with FOUNDRY_, FORGE_ or DAPP_ is removed, a line names
 #                       each, but FOUNDRY_PROFILE and FORGE_FLAGS; a `.env` in the project that sets one is refused (exit 2).
 #                       --aggregate runs no test, and reads the environment as it is.
-#          FORGE_FLAGS  extra flags for forge test   (e.g. --offline, --fuzz-seed <n>)
+#          FORGE_FLAGS  extra flags for forge test   (e.g. --offline, --fuzz-seed <n>; printed with an endpoint or a
+#                       key as <set>, by its shape; a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
+#                       Run mode names, too, the keys ~/.foundry/foundry.toml (the machine's forge configuration)
+#                       changes in the run, and removes the record of a build cache written at another path, so the
+#                       campaign builds from nothing (scripts/lib/forge-env.sh)
 #          CORE         action names, space separated, that MUST have succeeded in at least MIN_PCT per cent of the runs
 #          REACH        boundary names, SEMICOLON separated (they contain spaces), that MUST have been reached in at least
 #                       MIN_PCT per cent of the runs - e.g. REACH="fee at the cap". The boundary a hook's main promise is
@@ -276,6 +280,11 @@ MATCH="${MATCH:---match-contract Invariant}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 cd "$PROJECT" || { echo "census: cannot enter $PROJECT"; exit 2; }
 forge_dotenv_check census "$(pwd -P)" || { echo "census: NOTHING MEASURED."; exit 2; }
+# the machine's ~/.foundry/foundry.toml: what it changes in this run is named
+forge_global_config census
+# a cache written at another path: the campaign ran the OLD code over a new source (measured: a planted mutant tabled,
+# rc 0), so its record is removed and the campaign builds from nothing
+forge_cache_rehome census; [ "$?" -ne 2 ] || { echo "census: NOTHING MEASURED."; exit 2; }
 OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 mkdir -p "$OUT_DIR" census
 # one corpus per manager, for the reason given in battery.sh: this script runs the same campaigns, and a corpus recorded

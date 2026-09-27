@@ -12,7 +12,8 @@
 # Env:     OUT_DIR      where to write the logs   (default: <project>/.gauntlet/reports)
 #          FORGE_FLAGS  extra flags for forge     (e.g. --offline). The kit's own variable (forge does not read it):
 #                       allowed, and when set the test line names it next to the filter - a path or a --match-* in it
-#                       narrows the run like any filter
+#                       narrows the run like any filter (an endpoint or a key is printed as <set>, by its shape:
+#                       scripts/lib/forge-env.sh, forge_flags_shown). A line break in it is refused: exit 2, nothing run.
 #          FOUNDRY_PROFILE  the profile forge runs (allowed; the summary's `profile` line names it)
 #          ALLOW_SKIPS  1 to accept skipped tests (default: a skipped test fails the battery - it tested nothing)
 #          NOT read: TEST_FLAGS, nor anything else of forge's from the environment. The battery is the WHOLE suite: a
@@ -22,9 +23,15 @@
 #          (V4_MANAGER's corpus directory is set by the battery itself, after), and a line names each one removed. A
 #          `.env` in the project that sets one is refused (forge loads it; the battery cannot remove it): BATTERY FAILED.
 #          A filter in the project's own foundry.toml (`match_contract = ...`) is forge's configuration, not the
-#          environment: it is not removed, and the summary names it (and says so when ~/.foundry/foundry.toml sets one).
+#          environment: it is not removed, and the summary names it. One in ~/.foundry/foundry.toml, the machine's
+#          configuration that forge merges into every project's (a match_* / no_match_*, `skip` or `test` this run would
+#          take from it), is refused: BATTERY FAILED, naming the file and the key, never the value. Any other key it
+#          changes here (a fuzz budget the project does not set, say) is named at the top and in the summary.
+#          A build cache written at another path (the project copied with its out/ and cache/) is rebuilt from nothing,
+#          and a line says so: forge's incremental build there left tests running the OLD code. (scripts/lib/forge-env.sh)
 # Exit:    0 all steps passed, 1 something failed - a failed test fails it whatever forge's exit code (`--allow-failure`
 #          in FORGE_FLAGS exits 0 over one). The summary names which, and the test line names the filter in force.
+#          2 nothing run: a line break in FORGE_FLAGS, or a variable the re-run could not remove.
 
 set -uo pipefail
 
@@ -43,6 +50,13 @@ if [ -n "${TEST_FLAGS+x}" ]; then echo "battery: ignoring TEST_FLAGS from the en
 PROJECT="${1:-.}"
 cd "$PROJECT" || { echo "battery: cannot enter $PROJECT"; exit 1; }
 if ! forge_dotenv_check battery "$(pwd -P)"; then echo "BATTERY FAILED"; exit 1; fi
+# the machine's ~/.foundry/foundry.toml: what it changes here is named; a filter from it is refused (the header says why)
+forge_global_config battery
+if [ -n "$FORGE_GLOBAL_NARROW" ]; then
+  echo "battery: $FORGE_GLOBAL_FILE narrows the tests forge runs here ($FORGE_GLOBAL_NARROW), and the battery is the whole suite."
+  echo "battery: take that key out of it - it narrows every project on this machine; a filter THIS project wants goes in its own foundry.toml, where the summary names it"
+  echo "BATTERY FAILED"; exit 1
+fi
 
 OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
@@ -61,6 +75,9 @@ fi
 rc_build=0; rc_test=0; rc_sizes=0; rc_fresh=0
 
 echo "== build =="
+# a cache written at another path is not trusted (scripts/lib/forge-env.sh, forge_cache_rehome): built from nothing
+forge_cache_rehome battery; rc_rehome=$?
+if [ "$rc_rehome" -eq 2 ]; then echo "BATTERY FAILED"; exit 1; fi
 # shellcheck disable=SC2086
 forge build $FORGE_FLAGS 2>&1 | tee "$OUT_DIR/01-build.txt"
 rc_build=${PIPESTATUS[0]}
@@ -70,13 +87,9 @@ echo "== test =="
 # sets one - forge prints a match_* / no_match_* key only when it is set
 cfg_filter="$(forge config 2> /dev/null | awk '/^\[/ { if (seen) exit; if ($0 ~ /^\[profile\./) seen = 1; next }
   seen && $1 ~ /^(no_)?match_(test|contract|path)$/ { printf "%s%s", (n++ ? ", " : ""), $0 }')"
-# where it came from: `forge config` merges the machine's ~/.foundry/foundry.toml with the project's, and a filter set
-# there narrows every project on the machine (measured, forge 1.8.1: 5 tests of 107) - said, never labelled the project's
+# where it came from: the project's own foundry.toml. One that ~/.foundry/foundry.toml would have set was refused above
+# (forge_global_config compares forge's configuration with and without that file)
 cfg_where="the project's foundry.toml"
-if [ -n "$cfg_filter" ] && [ -f "${HOME:-/nonexistent}/.foundry/foundry.toml" ] \
-  && grep -Eq '^[[:space:]]*(no_)?match_(test|contract|path)[[:space:]]*=' "$HOME/.foundry/foundry.toml"; then
-  cfg_where="the project's foundry.toml, or $HOME/.foundry/foundry.toml, which sets one"
-fi
 # the profile in force, for the summary: forge falls back to the default one, with a warning, on a name it does not have
 profile_shown="${FOUNDRY_PROFILE:-default}"; [ -z "${FOUNDRY_PROFILE:-}" ] || profile_shown="$profile_shown (FOUNDRY_PROFILE)"
 # (captured, then matched: `| grep -q` under pipefail can kill forge with SIGPIPE and make the check false - fuzz-long.sh)
@@ -137,9 +150,10 @@ echo
 echo "== battery summary =="
 echo "build     rc=$rc_build"
 filter_shown="none"; [ -z "$cfg_filter" ] || filter_shown="$cfg_filter ($cfg_where)"
-[ -z "$FORGE_FLAGS" ] || filter_shown="$filter_shown; FORGE_FLAGS: $FORGE_FLAGS"
+[ -z "$FORGE_FLAGS" ] || filter_shown="$filter_shown; FORGE_FLAGS: $(forge_flags_shown "$FORGE_FLAGS")"
 echo "test      rc=$rc_test   (passed $tests_passed, failed $tests_failed, skipped $tests_skipped; filter: $filter_shown)"
-echo "profile   $profile_shown"
+echo "profile   $profile_shown${FORGE_GLOBAL_KEYS:+; and from $FORGE_GLOBAL_FILE: $FORGE_GLOBAL_KEYS}"
+[ "$rc_rehome" -ne 0 ] || echo "cache     written at another path: its record removed, built from nothing"
 # by NAME, per test directory, so a log shows which parts of the suite ran (e.g. the v4 sandbox's test/sim)
 echo "suites    $(parse_suites_by_dir "$OUT_DIR/02-test.txt")"
 echo "sizes     rc=$rc_sizes"

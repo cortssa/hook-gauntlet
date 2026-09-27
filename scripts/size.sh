@@ -16,16 +16,18 @@
 #          MIN_INIT_MARGIN  the same for the INITCODE margin                                 (default: 0)
 #          LABEL       name of the output file                                           (default: sizes)
 #          OUT_DIR     where it goes                                                     (default: <project>/.gauntlet/reports)
-#          FORGE_FLAGS extra flags for forge
+#          FORGE_FLAGS extra flags for forge (a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
 # Output:  lines of "name runtime_bytes runtime_margin initcode_bytes initcode_margin", also saved to $OUT_DIR/$LABEL.txt
 #          (usable as a BASELINE; a baseline of the older three-column form is read too)
 # Exit:    0 ok, 1 a margin is below MIN_MARGIN or MIN_INIT_MARGIN, 2 no sizes could be read (a table without BOTH size
-#          columns measures nothing)
+#          columns measures nothing), or a line break in FORGE_FLAGS
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
 . "$HERE/lib/parse.sh" || { echo "size: $HERE/lib/parse.sh is missing"; exit 2; }
+# shellcheck source=lib/forge-env.sh
+. "$HERE/lib/forge-env.sh" || { echo "size: $HERE/lib/forge-env.sh is missing"; exit 2; }
 
 PROJECT="${1:-.}"
 [ "$#" -gt 0 ] && shift
@@ -36,6 +38,7 @@ MIN_INIT_MARGIN="${MIN_INIT_MARGIN:-0}"
 LABEL="${LABEL:-sizes}"
 OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
+forge_flags_one_line size || exit 2
 BASELINE="${BASELINE:-}"
 LIMIT=24576
 INIT_LIMIT=49152

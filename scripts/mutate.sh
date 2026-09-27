@@ -22,7 +22,11 @@
 #                      every variable whose name, upper-cased, starts with FOUNDRY_, FORGE_ or DAPP_ is removed, a line
 #                      names each, but FOUNDRY_PROFILE and FORGE_FLAGS; a `.env` in the project that sets one is refused,
 #                      rc=2. The header of each mutant's log names the tests it ran)
-#          FORGE_FLAGS extra flags for forge                 (e.g. --offline; named in the log's header when set)
+#          FORGE_FLAGS extra flags for forge                 (e.g. --offline; named in the log's header when set, an
+#                      endpoint or a key as <set>, by its shape; a line break in it is refused, rc=2:
+#                      scripts/lib/forge-env.sh)
+#          (not the environment: the keys ~/.foundry/foundry.toml, the machine's forge configuration, changes in the run
+#          are named in a line and in the log's header, scripts/lib/forge-env.sh)
 #          LABEL       a name for the log                    (default: mutant)
 #          OUT_DIR     where the log goes                    (default: <project>/.gauntlet/reports/mutants)
 #          KEEP=1      keep the copy and print its path
@@ -114,6 +118,9 @@ if ! cp -a "$COPY_SRC/." "$COPY/"; then
 fi
 WORK="$COPY/$REL"
 forge_dotenv_check mutate "$WORK" || { echo "mutate: NOTHING PROVEN."; exit 2; }
+# the machine's ~/.foundry/foundry.toml: what it changes in the run is named (a match_test there made a variant that breaks
+# 8 tests "VARIANT PASSED 1 test(s)", measured)
+forge_global_config mutate "$WORK"
 
 # The file must be a file OF THE COPY. `cp -a` keeps a symlink as a symlink, so `lib/X.sol` in the copy can be the
 # ORIGINAL `lib/X.sol` of whatever the link points at (a shared lib/, a monorepo's package): the mutation below would be
@@ -213,7 +220,8 @@ mv "$WORK/$FILE.mutated" "$WORK/$FILE"
 {
   echo "== $LABEL (EXPECT=$EXPECT) =="
   echo "tests: forge test ${TEST_FLAGS:-(no filter: TEST_FLAGS is empty)}"
-  [ -z "$FORGE_FLAGS" ] || echo "FORGE_FLAGS: $FORGE_FLAGS"
+  [ -z "$FORGE_FLAGS" ] || echo "FORGE_FLAGS: $(forge_flags_shown "$FORGE_FLAGS")"
+  [ -z "$FORGE_GLOBAL_KEYS" ] || echo "machine configuration: $FORGE_GLOBAL_FILE changes $FORGE_GLOBAL_KEYS"
   [ -z "${FOUNDRY_PROFILE:-}" ] || echo "profile: $FOUNDRY_PROFILE (FOUNDRY_PROFILE)"
   echo "file: $FILE"
   echo "-    $MUT_OLD"

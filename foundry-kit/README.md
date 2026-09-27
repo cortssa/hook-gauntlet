@@ -362,6 +362,8 @@ sandbox ledger - is parsed in one place, `scripts/lib/parse.sh`, against real an
 `scripts/test/fixtures/`: a shape it does not recognise is refused, never read as 0. The environment forge runs under in
 the four judging scripts (battery, long fuzz, census, mutate) is set in one place too, `scripts/lib/forge-env.sh`: by an
 allowlist, because forge reads its whole configuration from `FOUNDRY_*`, `DAPP_*` and some `FORGE_*` variables as well.
+What forge reads besides the environment is checked there as well: a `.env` (refused), `~/.foundry/foundry.toml` (what
+it changes is named; the battery refuses a filter from it) and a build cache written at another path (built from nothing).
 
 ## Not covered yet
 

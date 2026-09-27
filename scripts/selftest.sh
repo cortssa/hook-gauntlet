@@ -14,9 +14,9 @@
 # success included, from fake local clones - with V4_WITH_PERIPHERY=1 too (K17b: the periphery's pin, its permit2,
 # v4-core's OpenZeppelin, one v4-core) - and so are the v4 module's remappings, read by forge over a fake periphery.
 #
-# Usage:   scripts/selftest.sh
+# Usage:   scripts/selftest.sh             (--env-only: print the first line, the environment it cleared, and stop)
 # Env:     none read. Every variable the scripts under test read as configuration is REMOVED at the start (the first
-#          line of the run names them, and which of them the calling shell had set); each case sets its own.
+#          line of the run names them, and every one of them the calling shell had set); each case sets its own.
 # Exit:   0 every case behaved as declared; 1 a case did not; 3 INCOMPLETE - a section was skipped (no forge, or no
 #          foundry-kit/lib), so the scripts in it are NOT proven on this machine. A skipped section is not a pass.
 
@@ -29,20 +29,42 @@ set -uo pipefail
 # whose floor was broken (a false green per case), and with CORE and REACH exported fifteen cases failed on a sound
 # kit. So every such variable is removed here, before the first case, and named. The list: every name in the scripts'
 # "Env:" headers (a case below fails if one is missing from it), the ones they read without listing them there, what
-# the kit's Solidity reads (vm.envOr), the endpoint, and every FOUNDRY_* / DAPP_* forge would read. Not removed: HOME,
-# PATH and TMPDIR (the machine's, not the kit's configuration).
+# the kit's Solidity reads (vm.envOr), the endpoint, the selftest's own KIT_PROJECT (it redirected the mutate, size,
+# battery and census cases to another project in silence - V17c; nothing here sets it), and every name forge would read:
+# FOUNDRY_*, FORGE_*, DAPP_*, in any case, dotted ones too (`FOUNDRY_FUZZ.RUNS`). Those are removed as the scripts'
+# forge-env.sh removes them - by re-running this script without them (bash cannot unset a dotted name), once - and the
+# first line names every one that was set: it said "none" over FORGE_ALLOW_FAILURE and a dotted name (V17c).
+# Not removed: HOME, PATH and TMPDIR (the machine's, not the kit's configuration).
 SELFTEST_CLEARED="ALLOW_SKIPS ALLOW_SMALL_BUDGET BASELINE BASELINE_MAY_BE_RED BENCH_ARTIFACTS BENCH_EXCLUDE BENCH_KEEP \
 BENCH_ROOT CACHE_FILE CENSUS_FORGE_LOG CENSUS_TABLE_ONLY COPY_ROOT CORE DEPTH EXPECT EXTRA_SRC FORGE_FLAGS GATE_WHY \
 GUARD_EXCLUDE HASH_PYTHON KEEP LABEL LINK_FROM LINK_LIB MATCH MIN_INIT_MARGIN MIN_MARGIN MIN_PCT OUT_DIR REACH RUNS SEED \
 SRC_DIRS TEST_FLAGS USE_BENCH V4_ALLOW_UNTRACKED V4_CORE_SUBMODULES V4_FORCE V4_LOCAL_SRC V4_WITH_PERIPHERY \
-V4_MANAGER V4_FIXTURE FORK_BLOCK GAUNTLET_CENSUS GAUNTLET_SIM SIM_SEED RPC_URL ETH_RPC_URL"
-selftest_forge_env="$(compgen -e | grep -iE '^(FOUNDRY|DAPP)_' | tr '\n' ' ')"
-selftest_was_set=""
-for v in $SELFTEST_CLEARED $selftest_forge_env; do
-  [ -n "${!v+x}" ] && selftest_was_set="$selftest_was_set $v"
-  unset "$v"
-done
-echo "selftest: environment cleared of: $SELFTEST_CLEARED FOUNDRY_* DAPP_*; of these, set in the calling shell:${selftest_was_set:- none}"
+V4_MANAGER V4_FIXTURE FORK_BLOCK GAUNTLET_CENSUS GAUNTLET_SIM SIM_SEED RPC_URL ETH_RPC_URL KIT_PROJECT"
+selftest_clears() { # selftest_clears <name>: 0 when the name is one this run removes
+  case "$1" in [Ff][Oo][Uu][Nn][Dd][Rr][Yy]_* | [Ff][Oo][Rr][Gg][Ee]_* | [Dd][Aa][Pp][Pp]_*) return 0 ;; esac
+  case " $SELFTEST_CLEARED " in *" $1 "*) return 0 ;; esac
+  return 1
+}
+selftest_set_names() { # every name in the environment this run removes, one per line (env -0 sees dotted names; compgen does not)
+  local kv n
+  if env -0 > /dev/null 2>&1; then
+    while IFS= read -r -d '' kv; do n="${kv%%=*}"; if selftest_clears "$n"; then printf '%s\n' "$n"; fi; done < <(env -0)
+  else
+    while IFS= read -r n; do if selftest_clears "$n"; then printf '%s\n' "$n"; fi; done < <(compgen -e)
+  fi
+}
+if [ -z "${_SELFTEST_ENV_DONE:-}" ]; then
+  selftest_drop=(); selftest_set=""
+  while IFS= read -r v; do [ -n "$v" ] && { selftest_drop+=(-u "$v"); selftest_set="$selftest_set $v"; }; done < <(selftest_set_names)
+  exec env ${selftest_drop[@]+"${selftest_drop[@]}"} _SELFTEST_ENV_DONE=1 _SELFTEST_WAS_SET="$selftest_set" "$BASH" "$0" "$@"
+fi
+selftest_was_set="${_SELFTEST_WAS_SET:-}"; unset _SELFTEST_ENV_DONE _SELFTEST_WAS_SET
+selftest_left="$(selftest_set_names | tr '\n' ' ')"
+if [ -n "$selftest_left" ]; then
+  echo "selftest: ${selftest_left% } still in the environment after the re-run that removed them (BASH_ENV?). Nothing run."; exit 1
+fi
+echo "selftest: environment cleared of: $SELFTEST_CLEARED FOUNDRY_* FORGE_* DAPP_* (any case); of these, set in the calling shell:${selftest_was_set:- none}"
+if [ "${1:-}" = "--env-only" ]; then exit 0; fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
@@ -133,6 +155,15 @@ for v in $SELFTEST_CLEARED; do [ -n "${!v+x}" ] && env_left="$env_left $v"; done
 if [ "$env_n" -ge 30 ] && [ -z "$env_missing" ] && [ -z "$env_left" ]; then
   echo "  ok    the environment: all $env_n names of the scripts' Env: headers are cleared at the start, and none is set"; else
   echo "  FAIL  the environment: $env_n Env: names read; not cleared:${env_missing:- -}; still set:${env_left:- -}"; fails=$((fails + 1)); fi
+# the first line names EVERY name it removed that was set (V17c: "none" over FORGE_ALLOW_FAILURE, a dotted name and
+# KIT_PROJECT, which this script read): a selftest of its own, stopped after that line
+env KIT_PROJECT=/nonexistent FORGE_ALLOW_FAILURE=true 'FOUNDRY_FUZZ.RUNS=1' dapp_test_x=1 CORE=x "$HERE/selftest.sh" --env-only > "$TMP/o790" 2>&1
+check "a selftest with KIT_PROJECT, FORGE_ALLOW_FAILURE, FOUNDRY_FUZZ.RUNS, dapp_test_x and CORE set (its first line only)" 0 $? "$TMP/o790"
+env_first="$(head -1 "$TMP/o790")"; env_named=""
+for v in KIT_PROJECT FORGE_ALLOW_FAILURE FOUNDRY_FUZZ.RUNS dapp_test_x CORE; do case "${env_first#*set in the calling shell:} " in *" $v "*) env_named="$env_named $v" ;; esac; done
+if [ "$env_named" = " KIT_PROJECT FORGE_ALLOW_FAILURE FOUNDRY_FUZZ.RUNS dapp_test_x CORE" ] && [ "$(wc -l < "$TMP/o790" | tr -d ' ')" = "1" ]; then
+  echo "  ok    and its first line names all five as set in the calling shell"; else
+  echo "  FAIL  the first line does not name every one that was set (named:${env_named:- none}): $env_first"; fails=$((fails + 1)); fi
 
 # ================================================================= doctor.sh (it checks; it never installs, never uses the network)
 # doctor.sh runs here on a FAKE machine: a kit tree of its own (forge-std's package.json, and a v4-core that is a real git
@@ -1412,7 +1443,7 @@ fi
 
 # ================================================================= mutate.sh and size.sh (need forge and a project)
 echo "== mutate.sh / size.sh =="
-KIT="${KIT_PROJECT:-$HERE/../foundry-kit}"
+KIT="$HERE/../foundry-kit"   # always the kit's own: KIT_PROJECT is removed at the start (see there)
 if command -v forge > /dev/null 2>&1 && [ -e "$KIT/lib" ]; then
   export OUT_DIR="$TMP/mut"
   V="src/examples/ToyVault.sol"
@@ -1583,6 +1614,151 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
     echo "  ok    and it names the variable and the file, before building anything"; else
     echo "  FAIL  the .env refusal:"; grep -a -e '^battery:' -e '^BATTERY' "$TMP/o762" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   rm -f "$M/.env"
+  # ... saved with a UTF-8 byte-order mark and CR LF (Notepad's): forge reads the key behind the mark, and the check read
+  # past it (V24b: BATTERY PASSED on 5 tests of 107). Read as forge reads it now
+  printf '\357\273\277FOUNDRY_MATCH_CONTRACT = AUnit\r\n' > "$M/.env"
+  "$HERE/battery.sh" "$M" > "$TMP/o780" 2>&1; check "battery with a .env saved with a BOM and CR LF that sets FOUNDRY_MATCH_CONTRACT is refused" 1 $? "$TMP/o780"
+  if grep -q '^battery: .*/\.env sets FOUNDRY_MATCH_CONTRACT, which forge loads' "$TMP/o780" && ! grep -q '^== build' "$TMP/o780"; then
+    echo "  ok    and it names the variable behind the byte-order mark"; else
+    echo "  FAIL  the .env with a BOM was not refused by name:"; grep -a -e '^battery:' -e '^BATTERY' "$TMP/o780" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -f "$M/.env"
+  # FORGE_FLAGS is printed (a filter in it narrows the run), never the value after a flag that carries an endpoint or a key
+  ff_shown="$(. "$HERE/lib/forge-env.sh" && forge_flags_shown "--offline --fork-url https://K25-A/x --rpc-url=https://K25-B -r K25-C -rK25-D --etherscan-api-key K25-E --private-key=K25-F --match-contract AUnit")"
+  if [ "$ff_shown" = "--offline --fork-url <set> --rpc-url=<set> -r <set> -r<set> --etherscan-api-key <set> --private-key=<set> --match-contract AUnit" ]; then
+    echo "  ok    FORGE_FLAGS as printed: every endpoint and key is <set>, every other flag as it is"; else
+    echo "  FAIL  FORGE_FLAGS as printed: $ff_shown"; fails=$((fails + 1)); fi
+  FWS="$TMP/fws"; mkdir -p "$FWS"
+  # a forge that drops those flags (they would reach the network) and runs the real one with the rest
+  cat > "$FWS/forge" << 'EOF'
+#!/usr/bin/env bash
+a=(); skip=0
+for x in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$x" in --fork-url | --rpc-url | --etherscan-api-key | --private-key | -[a-z]*r) skip=1; continue ;; --fork-url=* | --rpc-url=* | --etherscan-api-key=* | --private-key=* | -[a-z]*r?*) continue ;; esac
+  a+=("$x")
+done
+exec "$K25_REAL_FORGE" "${a[@]}"
+EOF
+  chmod +x "$FWS/forge"
+  K25_REAL_FORGE="$(command -v forge)" PATH="$FWS:$PATH" FORGE_FLAGS="--offline --fork-url https://K25SENTINEL.example/key --private-key=K25SENTINEL" \
+    "$HERE/battery.sh" "$M" > "$TMP/o781" 2>&1; check "battery with an endpoint and a key in FORGE_FLAGS" 0 $? "$TMP/o781"
+  if ! grep -q K25SENTINEL "$TMP/o781" && grep -qx 'battery: FORGE_FLAGS=--offline --fork-url <set> --private-key=<set> from the environment (allowed)' "$TMP/o781" \
+    && grep -q 'FORGE_FLAGS: --offline --fork-url <set> --private-key=<set>)$' "$TMP/o781" && grep -q '^decision: forge build --offline --fork-url <set>' "$TMP/o781"; then
+    echo "  ok    and neither value is printed anywhere in its output: the flags are, with <set>"; else
+    echo "  FAIL  a value from FORGE_FLAGS was printed, or the flags were not:"; grep -a -e K25SENTINEL -e 'FORGE_FLAGS' -e '^decision' "$TMP/o781" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # ... by its SHAPE, not by the flag's spelling: forge takes grouped short flags (`-vr <url>` is --rpc-url), and a list
+  # of names printed those (V25). A word with ://, a word that is 0x and 64 hex digits, the value of a group with an r
+  hx="0x$(printf 'ab%.0s' $(seq 32))"
+  ff_shown="$(. "$HERE/lib/forge-env.sh" && forge_flags_shown "-vr https://K25B-A/x -sr K25B-B -vrK25B-C -vvvr=K25B-D wss://K25B-E/k --sender $hx --some-url=https://K25B-F -j 2 --match-test test_a -vvv ${hx%?}")"
+  if [ "$ff_shown" = "-vr <set> -sr <set> -vr<set> -vvvr<set> <set> --sender <set> --some-url=<set> -j 2 --match-test test_a -vvv ${hx%?}" ]; then
+    echo "  ok    FORGE_FLAGS as printed, by shape: grouped short flags with r, a URL, a 64-hex word are <set>; the rest as it is"; else
+    echo "  FAIL  FORGE_FLAGS as printed, by shape: $ff_shown"; fails=$((fails + 1)); fi
+  K25_REAL_FORGE="$(command -v forge)" PATH="$FWS:$PATH" FORGE_FLAGS="--offline -vr https://K25SENTINEL.example/key" \
+    "$HERE/battery.sh" "$M" > "$TMP/o797" 2>&1; check "battery with -vr <endpoint> in FORGE_FLAGS" 0 $? "$TMP/o797"
+  if ! grep -q K25SENTINEL "$TMP/o797" && grep -qx 'battery: FORGE_FLAGS=--offline -vr <set> from the environment (allowed)' "$TMP/o797" \
+    && grep -q 'FORGE_FLAGS: --offline -vr <set>)$' "$TMP/o797" && grep -q '^decision: forge build --offline -vr <set>' "$TMP/o797"; then
+    echo "  ok    and the endpoint is printed nowhere in its output"; else
+    echo "  FAIL  the endpoint after -vr was printed:"; grep -a -e K25SENTINEL -e 'FORGE_FLAGS' -e '^decision' "$TMP/o797" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # a line break in FORGE_FLAGS: forge gets every line, what printed it showed the first (V25: "long fuzz passed (...;
+  # FORGE_FLAGS: --offline)" over 1 invariant of 6, the filter on the second line). Refused by every script that reads
+  # it: rc 2, one line, the variable named and never its value
+  nlf=$'--offline\n--match-contract AUnit --fork-url https://K25SENTINEL.example/key'
+  n=798
+  for sc in battery fuzz-long census mutate assert-fresh-build size; do
+    case "$sc" in
+      mutate) FORGE_FLAGS="$nlf" LABEL=m25b OUT_DIR="$TMP/mut" EXPECT=green "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x += 1;" > "$TMP/o$n" 2>&1 ;;
+      size) FORGE_FLAGS="$nlf" OUT_DIR="$TMP/sz25b" "$HERE/size.sh" "$M" > "$TMP/o$n" 2>&1 ;;
+      fuzz-long) FORGE_FLAGS="$nlf" USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o$n" 2>&1 ;;
+      *) FORGE_FLAGS="$nlf" "$HERE/$sc.sh" "$M" > "$TMP/o$n" 2>&1 ;;
+    esac
+    check "$sc.sh with a line break in FORGE_FLAGS: refused" 2 $? "$TMP/o$n"
+    if [ "$(wc -l < "$TMP/o$n" | tr -d ' ')" = 1 ] && grep -q "^$sc: FORGE_FLAGS holds a line break" "$TMP/o$n" && ! grep -q -e K25SENTINEL -e AUnit "$TMP/o$n"; then
+      echo "  ok    in one line that names FORGE_FLAGS and prints none of its value"; else
+      echo "  FAIL  the refusal:"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); fi
+    n=$((n + 1))
+  done
+  FORGE_FLAGS=$'--offline\r--match-contract AUnit' "$HERE/battery.sh" "$M" > "$TMP/o804" 2>&1; check "battery with a CR in FORGE_FLAGS: refused" 2 $? "$TMP/o804"
+  # a build cache written at ANOTHER path (the project copied with its out/ and cache/, V24b): forge's incremental build
+  # there recompiled the changed source without the test file that derives from it (recorded by absolute path) and the
+  # tests ran the OLD code - a unit test and an invariant green over a broken B, and the freshness check rc 0. Here only
+  # the derived contract (BMock) sees B, so nothing else can catch it
+  MK="$TMP/mockp"; mkdir -p "$MK/src" "$MK/test"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$MK/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[invariant]\nruns = 4\ndepth = 4\nfail_on_revert = true\n[profile.long.invariant]\nruns = 8\ndepth = 8\nfail_on_revert = true\n' > "$MK/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract B { uint256 public x; function add() external { x += 2; } }\n' > "$MK/src/B.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/B.sol";\ncontract BMock is B {}\ncontract BUnit is Test { function test_add() public { B b = new BMock(); b.add(); assertEq(b.x(), 2); } }\ncontract BInvariant is Test { B b; function setUp() public { b = new BMock(); targetContract(address(b)); } function invariant_even() public view { assertEq(b.x() %% 2, 0); } }\n' > "$MK/test/B.t.sol"
+  (cd "$MK" && forge build > "$TMP/o782.build" 2>&1)
+  moved() { rm -rf "$TMP/mockp-moved"; cp -a "$MK" "$TMP/mockp-moved"; sed -i 's/x += 2;/x += 3;/' "$TMP/mockp-moved/src/B.sol"; }
+  moved; "$HERE/battery.sh" "$TMP/mockp-moved" > "$TMP/o782" 2>&1; check "battery on a project copied with its build to another path, then broken: BATTERY FAILED" 1 $? "$TMP/o782"
+  if grep -q "^battery: forge's cache was written at another path (/.*/mockp/test/B\.t\.sol)" "$TMP/o782" && grep -Eq '^test +rc=1 +\(passed [0-9]+, failed [1-9]' "$TMP/o782"; then
+    echo "  ok    and it says so in a line, builds from nothing, and the tests see the broken code"; else
+    echo "  FAIL  the battery ran the old code, or did not say why it rebuilt:"; grep -a -e '^battery:' -e '^test ' -e '^freshness' "$TMP/o782" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  moved; USE_BENCH=0 "$HERE/fuzz-long.sh" "$TMP/mockp-moved" > "$TMP/o783" 2>&1; check "fuzz-long (USE_BENCH=0) on the same copy: LONG FUZZ FAILED" 1 $? "$TMP/o783"
+  grep -q "^fuzz-long: forge's cache was written at another path" "$TMP/o783" || { echo "  FAIL  and fuzz-long.sh does not say why it built from nothing"; fails=$((fails + 1)); }
+  # (this toy writes no census: rc 2, NOTHING MEASURED either way - what tells the two apart is the campaign's own verdict)
+  moved; "$HERE/census.sh" "$TMP/mockp-moved" > "$TMP/o784" 2>&1; check "census.sh on the same copy (a toy with no census)" 2 $? "$TMP/o784"
+  if grep -q "^census: forge's cache was written at another path" "$TMP/o784" && grep -q '^census: the campaign itself FAILED (rc=1)' "$TMP/o784"; then
+    echo "  ok    and it says why it built from nothing, and the campaign FAILED on the broken code"; else
+    echo "  FAIL  census.sh ran the old code, or did not say why it rebuilt:"; grep -a '^census:' "$TMP/o784" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$TMP/mockp-moved"; cp -a "$MK" "$TMP/mockp-moved"
+  "$HERE/assert-fresh-build.sh" "$TMP/mockp-moved" > "$TMP/o785" 2>&1; check "the freshness check on a copy with a cache written at another path: STALE, rebuilt from nothing" 1 $? "$TMP/o785"
+  grep -q '^STALE BUILD: the artifacts in out came with a cache written at another path' "$TMP/o785" || { echo "  FAIL  and it does not say why"; fails=$((fails + 1)); }
+  "$HERE/assert-fresh-build.sh" "$TMP/mockp-moved" > "$TMP/o786" 2>&1; check "and the next run is FRESH (the cache is this path's now)" 0 $? "$TMP/o786"
+  rm -rf "$TMP/mockp-moved"
+  # ... copied one level UP (built in nest/inner, `cp -a inner/. nest/`): the path forge recorded, nest/inner/test/B.t.sol,
+  # is UNDER the project, and "outside it?" said no (V25: BATTERY PASSED, freshness rc 0, over a broken B). The question is
+  # "exactly <project>/<that file's key in the cache>?"
+  NST="$TMP/nest"; mkdir -p "$NST"; cp -a "$MK" "$NST/inner"; rm -rf "$NST/inner/cache" "$NST/inner/out"
+  (cd "$NST/inner" && forge build > "$TMP/o793.build" 2>&1)
+  cp -a "$NST/inner/." "$NST/"; sed -i 's/x += 2;/x += 3;/' "$NST/src/B.sol"
+  "$HERE/battery.sh" "$NST" > "$TMP/o793" 2>&1; check "battery on a project built one directory down and copied up into it, then broken: BATTERY FAILED" 1 $? "$TMP/o793"
+  if grep -q "^battery: forge's cache was written at another path (/.*/nest/inner/test/B\.t\.sol)" "$TMP/o793" && grep -Eq '^test +rc=1 +\(passed [0-9]+, failed [1-9]' "$TMP/o793"; then
+    echo "  ok    and it says so, builds from nothing, and the tests see the broken code"; else
+    echo "  FAIL  the battery ran the old code, or did not say why it rebuilt:"; grep -a -e '^battery:' -e '^test ' -e '^freshness' "$TMP/o793" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$NST"
+  # and the project where it was built, reached through a symlink (forge and this check both see the real path): quiet
+  ln -s "$MK" "$TMP/mockp-link"
+  "$HERE/battery.sh" "$TMP/mockp-link" > "$TMP/o794" 2>&1; check "battery on the project where it was built, through a symlink" 0 $? "$TMP/o794"
+  grep -q "written at another path" "$TMP/o794" && { echo "  FAIL  and it took its own cache for another path's"; fails=$((fails + 1)); }
+  rm -f "$TMP/mockp-link"
+  # a project with its own cache_path: the freshness check read cache/ always and said NO CACHE, and the battery failed
+  # on every run (V25)
+  FCP="$TMP/fcache-p"; mkdir -p "$FCP/src" "$FCP/test"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$FCP/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\ncache_path = "fcache"\n' > "$FCP/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract C { function f() external pure returns (uint256) { return 1; } }\n' > "$FCP/src/C.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/C.sol";\ncontract CUnit is Test { function test_f() public { assertEq(new C().f(), 1); } }\n' > "$FCP/test/C.t.sol"
+  "$HERE/battery.sh" "$FCP" > "$TMP/o795" 2>&1; check "battery on a project whose cache_path is fcache" 0 $? "$TMP/o795"
+  grep -Eq '^freshness rc=0 ' "$TMP/o795" || { echo "  FAIL  and its freshness line is not rc=0"; fails=$((fails + 1)); }
+  "$HERE/assert-fresh-build.sh" "$FCP" > "$TMP/o796" 2>&1; check "the freshness check on it, alone: FRESH" 0 $? "$TMP/o796"
+  grep -q '^evidence: cache fcache/solidity-files-cache.json' "$TMP/o796" || { echo "  FAIL  and it did not read fcache/"; fails=$((fails + 1)); }
+  rm -rf "$FCP"
+  # ~/.foundry/foundry.toml, the machine's configuration forge merges into every project's (a temporary HOME, never the
+  # real one; the compilers linked from the real one). V24b: `skip` there, BATTERY PASSED on 86 of 107 with "filter:
+  # none"; `match_test` there, "long fuzz passed" over 1 invariant of 6 and "VARIANT PASSED" over a variant that breaks 8
+  GH="$TMP/ghome"; mkdir -p "$GH/.foundry"
+  for d in .svm .local/share/svm "Library/Application Support/svm"; do
+    if [ -e "$HOME/$d" ]; then mkdir -p "$GH/$(dirname "$d")"; ln -s "$HOME/$d" "$GH/$d"; fi
+  done
+  printf '[profile.default]\nno_match_contract = "K25GlobalValue"\n' > "$GH/.foundry/foundry.toml"
+  HOME="$GH" "$HERE/battery.sh" "$M" > "$TMP/o787" 2>&1; check "battery with a filter in ~/.foundry/foundry.toml: BATTERY FAILED" 1 $? "$TMP/o787"
+  if grep -q "^battery: $GH/.foundry/foundry.toml narrows the tests forge runs here (profile.default.no_match_contract)" "$TMP/o787" \
+    && ! grep -q 'K25GlobalValue' "$TMP/o787" && ! grep -q '^== build' "$TMP/o787"; then
+    echo "  ok    and it names the file and the key, never the value, before building anything"; else
+    echo "  FAIL  the global filter was not refused by file and key, or its value was printed:"; grep -a -e '^battery:' -e 'K25GlobalValue' "$TMP/o787" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  printf '[fuzz]\nruns = 3\n' > "$GH/.foundry/foundry.toml"
+  HOME="$GH" "$HERE/battery.sh" "$M" > "$TMP/o788" 2>&1; check "battery with a fuzz budget in ~/.foundry/foundry.toml (not a filter): it runs" 0 $? "$TMP/o788"
+  if grep -q "^battery: $GH/.foundry/foundry.toml, forge's configuration for every project on this machine, changes this run's: fuzz.runs " "$TMP/o788" \
+    && grep -q "^profile .*; and from $GH/.foundry/foundry.toml: fuzz.runs\$" "$TMP/o788"; then
+    echo "  ok    and it names the file and the key, at the top and in the summary"; else
+    echo "  FAIL  the global key was not named:"; grep -a -e '^battery:' -e '^profile' "$TMP/o788" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  HOME="$GH" USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o789" 2>&1; check "fuzz-long with the same file" 0 $? "$TMP/o789"
+  grep -q "^long fuzz passed (filter: MATCH=--match-contract Invariant; from $GH/.foundry/foundry.toml: fuzz.runs)" "$TMP/o789" || {
+    echo "  FAIL  fuzz-long.sh's verdict line does not name it:"; grep -a -e '^fuzz-long:' -e 'long fuzz passed' "$TMP/o789" | sed "s/^/        | /"; fails=$((fails + 1)); }
+  HOME="$GH" "$HERE/census.sh" "$M" > "$TMP/o791" 2>&1
+  grep -q "^census: $GH/.foundry/foundry.toml, forge's configuration for every project on this machine, changes this run's: fuzz.runs " "$TMP/o791" \
+    && echo "  ok    census.sh names it" || { echo "  FAIL  census.sh does not name it"; fails=$((fails + 1)); }
+  HOME="$GH" LABEL=m25 OUT_DIR="$TMP/mut" EXPECT=green TEST_FLAGS="--match-contract AUnit" "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x += 1;" > "$TMP/o792" 2>&1
+  check "mutate.sh with the same file" 0 $? "$TMP/o792"
+  grep -qx "machine configuration: $GH/.foundry/foundry.toml changes fuzz.runs" "$TMP/o792" || { echo "  FAIL  and the mutant's header does not name it"; fails=$((fails + 1)); }
   # a failed test is never a pass, whatever forge exits with: a forge that exits 0 on `forge test` (what --allow-failure does)
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract AFails is Test { function test_fails_on_purpose() public pure { assertEq(uint256(1), 2, "red on purpose"); } }\n' > "$M/test/Fails.t.sol"
   PATH="$FW0:$PATH" "$HERE/battery.sh" "$M" > "$TMP/o763" 2>&1; check "battery, a forge that exits 0 over a failed test: BATTERY FAILED" 1 $? "$TMP/o763"

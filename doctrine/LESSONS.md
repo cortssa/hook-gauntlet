@@ -205,6 +205,11 @@ found only because a second agent ran the same case four ways and got two differ
 (`forge build --force`, or delete `out/` and `cache/`). And make every tool that says "unchanged" prove that it looked:
 if the build reports that it compiled nothing right after you changed a file, stop - that is not a result.
 Lesson 6 is the same trap at promotion time; this is the same trap at test time.
+It came back in the whole project, not a helper's copy (2026-09-27): a project copied with its build to another path,
+then changed, compiled "1 files", and its invariant suites ran the old contract - a long fuzz passed, and the freshness
+check agreed. forge keeps the test files that derive from a source by absolute path. The kit's scripts now look for
+that and build from nothing when they find it; they remove forge's build record rather than run `--force`, which also
+deletes the failures forge persisted and the corpus.
 
 ## 13. A bare `expectRevert` proves that something reverted, not that your thing did
 

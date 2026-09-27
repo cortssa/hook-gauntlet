@@ -33,7 +33,11 @@
 #                     no census (forge writes a line per shrink replay): the file is renamed <name>.FAILED.tsv, named, and
 #                     the gate refuses it.
 #          OUT_DIR    where to write the log (default: <project>/.gauntlet/reports)
-#          FORGE_FLAGS  extra flags for forge test (e.g. --offline); named in the verdict line when set
+#          FORGE_FLAGS  extra flags for forge test (e.g. --offline); named in the verdict line when set (an endpoint or
+#                     a key as <set>, by its shape; a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
+#          Not the environment, and named too (scripts/lib/forge-env.sh): the keys ~/.foundry/foundry.toml, the machine's
+#          forge configuration, changes in this run - in the verdict line as well; and a build cache written at another
+#          path (a project copied with its out/ and cache/), whose record is removed so the campaign builds from nothing.
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
 # Exit:    forge's exit code - 1, never 0, when a test FAILED whatever forge exited with (`--allow-failure` exits 0
 #          over one: a FAIL line or a failed count is a failed campaign); 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
@@ -105,6 +109,13 @@ seed_flag=""
 echo "profile=$FOUNDRY_PROFILE runs=${RUNS:-from profile} depth=${DEPTH:-from profile} in $RUN_IN"
 cd "$RUN_IN" || exit 1
 forge_dotenv_check fuzz-long "$(pwd -P)" || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
+# the machine's ~/.foundry/foundry.toml: what it changes in this run is named here and in the verdict line
+forge_global_config fuzz-long
+global_shown="${FORGE_GLOBAL_KEYS:+; from $FORGE_GLOBAL_FILE: $FORGE_GLOBAL_KEYS}"
+# a cache written at another path: the campaign ran the OLD code over a new source (measured: "long fuzz passed", 6 of 6
+# invariants, over a planted mutant), so its record is removed and the campaign builds from nothing
+forge_cache_rehome fuzz-long; [ "$?" -ne 2 ] || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
+flags_shown="$(forge_flags_shown "$FORGE_FLAGS")"
 
 # forge falls back to the DEFAULT profile, with a warning, when the named one does not exist - and the default budget
 # under the label "long" is worse than no run. Check before spending the time.
@@ -249,9 +260,9 @@ if [ "$rc" -ne 0 ]; then
   echo "Record the seed in the run log before you change anything, then replay it with SEED=<seed>."
 else
   if [ "${ALLOW_SMALL_BUDGET:-0}" = "1" ] && { [ "$long_budget" -le "$default_budget" ] || [ "$smallest" -lt "$long_budget" ]; }; then
-    echo "passed ON A BUDGET NO LARGER THAN THE EVERYDAY ONE (ALLOW_SMALL_BUDGET=1): a replay, not a long fuzz (filter: MATCH=$MATCH${FORGE_FLAGS:+; FORGE_FLAGS: $FORGE_FLAGS}). Log: $OUT_DIR/05-fuzz-long.txt"
+    echo "passed ON A BUDGET NO LARGER THAN THE EVERYDAY ONE (ALLOW_SMALL_BUDGET=1): a replay, not a long fuzz (filter: MATCH=$MATCH${FORGE_FLAGS:+; FORGE_FLAGS: $flags_shown}$global_shown). Log: $OUT_DIR/05-fuzz-long.txt"
   else
-    echo "long fuzz passed (filter: MATCH=$MATCH${FORGE_FLAGS:+; FORGE_FLAGS: $FORGE_FLAGS}). Log: $OUT_DIR/05-fuzz-long.txt"
+    echo "long fuzz passed (filter: MATCH=$MATCH${FORGE_FLAGS:+; FORGE_FLAGS: $flags_shown}$global_shown). Log: $OUT_DIR/05-fuzz-long.txt"
   fi
 fi
 exit "$rc"

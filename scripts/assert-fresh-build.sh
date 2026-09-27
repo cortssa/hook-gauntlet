@@ -33,19 +33,31 @@
 # Env:     FORGE_FLAGS  the flags the artifacts were built with (the battery passes its own). `--offline` is added if it
 #                     is not there (the check never downloads a compiler: a solc that is not installed decides nothing).
 #                     `--force` is refused: it always compiles, so its answer means nothing.
-#          FOUNDRY_PROFILE  as forge reads it: the check builds the profile you measured. A profile with its own `out` /
-#                     `cache_path` needs OUT_DIR and CACHE_FILE set to them.
+#                     A line break in it is refused (scripts/lib/forge-env.sh, forge_flags_one_line): exit 2.
+#          FOUNDRY_PROFILE  as forge reads it: the check builds the profile you measured. A profile with its own `out`
+#                     needs OUT_DIR set to it (its `cache_path` is read, below).
 #          OUT_DIR    artifact directory (default: out). No .json in it: nothing was built - exit 2, nothing built here.
-#          CACHE_FILE forge's cache (default: cache/solidity-files-cache.json). Missing: exit 2, nothing built here.
+#          CACHE_FILE forge's cache (default: <cache_path>/solidity-files-cache.json, cache_path as `forge config` gives it
+#                     here, under the profile in force; `cache` when it cannot say). Missing: exit 2, nothing built here.
+#                     It was cache/ always, and a project with its own cache_path failed the battery's freshness on
+#                     every run with "NO CACHE" (V25, 2026-09-27).
 #          SRC_DIRS   evidence only: where the sources to hash are (default: "src test script").
 #          EXTRA_SRC  evidence only: other files whose time is compared with the cache's (default: "foundry.toml
 #                     remappings.txt"; forge's cache does not record their content, forge's build sees them).
 #          HASH_PYTHON  evidence only: the Python 3 to hash with (default: python3, then python). None: no evidence,
 #                     and the verdict is forge's as always.
+# A CACHE WRITTEN AT ANOTHER PATH (the project copied with its out/ and cache/, or moved) is not asked: there forge's
+# answer is not true. Its incremental build recompiles a changed source without the test files that derive from it,
+# which it recorded by absolute path (scripts/lib/forge-env.sh, forge_cache_elsewhere), says "No files changed" after,
+# and the tests run the old code - measured, 2026-09-27: this check said FRESH (rc 0 in the battery) over artifacts that
+# ran a planted mutant's ORIGINAL. So the record is removed, everything is built from nothing, and the verdict is STALE:
+# nothing measured from the copied artifacts can be vouched for.
+#
 # Exit:    0 FRESH: forge compiled nothing
-#          1 STALE: forge compiled - the artifacts were older than the sources or the settings; they are rebuilt now
+#          1 STALE: forge compiled - the artifacts were older than the sources or the settings; they are rebuilt now.
+#            Or the cache was written at another path: rebuilt from nothing, and what was measured before is not vouched for
 #          2 nothing can be decided: no artifacts or no cache (never built), no forge, --force, a build that failed
-#            (its error is printed), or an answer from forge this check does not know
+#            (its error is printed), an answer from forge this check does not know, or a line break in FORGE_FLAGS
 
 set -uo pipefail
 
@@ -54,15 +66,19 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 CHECKER="$HERE/lib/forge-cache-check.py"
 # shellcheck source=lib/parse.sh
 . "$HERE/lib/parse.sh" || { echo "assert-fresh-build: $HERE/lib/parse.sh is missing. Nothing decided."; exit 2; }
+# shellcheck source=lib/forge-env.sh
+. "$HERE/lib/forge-env.sh" || { echo "assert-fresh-build: $HERE/lib/forge-env.sh is missing. Nothing decided."; exit 2; }
 
 PROJECT="${1:-.}"
 cd "$PROJECT" || { echo "assert-fresh-build: cannot enter $PROJECT"; exit 2; }
 
 SRC_DIRS="${SRC_DIRS:-src test script}"
 OUT_DIR="${OUT_DIR:-out}"
-CACHE_FILE="${CACHE_FILE:-cache/solidity-files-cache.json}"
 EXTRA_SRC="${EXTRA_SRC:-foundry.toml remappings.txt}"
 FORGE_FLAGS="${FORGE_FLAGS:-}"
+forge_flags_one_line assert-fresh-build || exit 2
+# forge's record where forge keeps it here (scripts/lib/forge-env.sh: `forge config`'s cache_path, `cache` without forge)
+CACHE_FILE="${CACHE_FILE:-$(_forge_cache_file)}"
 
 # ---- never built: nothing to judge, and nothing is built here (building it is the battery's job, not a verdict)
 if [ ! -d "$OUT_DIR" ]; then
@@ -137,12 +153,34 @@ evidence() {
 }
 evidence
 
-# ---- the verdict: forge's
 offline="--offline"
 case " $FORGE_FLAGS " in *" --offline "*) offline="" ;; esac
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
-cmd="forge build $offline $FORGE_FLAGS"
+cmd="forge build $offline $(forge_flags_shown "$FORGE_FLAGS")"
+
+# ---- a cache written at another path: forge's answer is not asked (see the header); built from nothing, STALE
+if elsewhere="$(forge_cache_elsewhere "$CACHE_FILE")"; then
+  echo "evidence: forge's cache records $elsewhere, which is not under $(pwd -P): it was written at another path"
+  if ! rm -f -- "$CACHE_FILE" 2> /dev/null || [ -e "$CACHE_FILE" ]; then
+    echo "CANNOT CHECK: $CACHE_FILE cannot be removed, and forge's incremental answer is not true for a cache written elsewhere. Nothing decided."; exit 2
+  fi
+  echo "decision: $(echo "$cmd" | tr -s ' ' | sed 's/ $//') with its record $CACHE_FILE removed, so from nothing (forge's 'No files changed' is not true for a cache written at another path)"
+  # shellcheck disable=SC2086   # FORGE_FLAGS is a list of flags on purpose, as in battery.sh
+  forge build $offline $FORGE_FLAGS > "$LOG" 2>&1
+  brc=$?
+  if [ "$brc" -ne 0 ]; then
+    echo "CANNOT CHECK: forge build failed (rc=$brc) building from nothing:"
+    if err="$(first_error_line "$LOG")"; then echo "  $err"; else tail -n 5 "$LOG" | sed 's/^/  | /'; fi
+    echo "Nothing decided. Fix the build; $OUT_DIR holds whatever the other path's build left."
+    exit 2
+  fi
+  echo "STALE BUILD: the artifacts in $OUT_DIR came with a cache written at another path, where forge leaves tests running the old code after a change; they are rebuilt from nothing now ($(grep -E 'Compiling [0-9]+ files? with ' "$LOG" | sed -e 's/^\[[^]]*\] //' | paste -sd ';' - | sed 's/;/; /g'))."
+  echo "  Anything measured from them before this run was measured on artifacts this check cannot vouch for: measure it again."
+  exit 1
+fi
+
+# ---- the verdict: forge's
 echo "decision: $(echo "$cmd" | tr -s ' ' | sed 's/ $//') (forge decides; when it compiles, it rewrites $OUT_DIR and the cache)"
 # shellcheck disable=SC2086   # FORGE_FLAGS is a list of flags on purpose, as in battery.sh
 forge build $offline $FORGE_FLAGS > "$LOG" 2>&1
