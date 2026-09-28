@@ -78,7 +78,24 @@
 #   - rows 13b and 14 count a finding against "closed with 0 high and 0 medium" only while it is OPEN in `open_findings`
 #     (one accepted by the owner, refused in writing or handed to the human audit by name does not): the terms are
 #     `open_findings.high=0 open_findings.medium=0`, not the round's own counts;
-#   - row 18b is either mode: the owner declined promotion in writing (light mode by default) - a judgement.
+#   - row 18b is either mode: the owner declined promotion in writing (light mode by default) - a judgement;
+#   - row 10 does not count the route's whole workspace (everything under .gauntlet/ - STATE.md, DECISIONS.md, LOG.md,
+#     SPEC.md, the dossier, briefs/, reports/, rounds/, bench/, backtests/, ... - or those same files at the root with
+#     location: root; an owner's own SPEC.md, README or NatSpec outside it still counts): its question says so - a
+#     walker of the route found the row true at the letter over the skeleton it had just written, and answered it false
+#     to reach the pause (K31); the benches and the tests written in them were still outside the words (V31, K31b).
+# And two checks before any row (K31, K31b), neither of them a flag of STATE.md:
+#   - the kit is proven on this machine: scripts/selftest.sh, ending PASSED, leaves <kit>/.gauntlet/selftest-passed with
+#     the SHA-256 of the kit's scripts, a hash of the machine's identity and forge's version (scripts/lib/kit-proof.sh).
+#     Absent, with one of the three missing, or written for other scripts, on another machine or with another forge,
+#     this prints ONE line, `next: FIRST - prove the kit on this machine: <kit>/scripts/selftest.sh (then run next.sh
+#     again) - <which>` (the scripts / the machine / forge), and exits 0 - nothing else, no row. --check-table does not
+#     look;
+#   - a test in pending/ that STATE.md does not name is refused: the project is the STATE.md's directory (its parent
+#     when that directory is .gauntlet/), and each .sol file below its pending/ (subdirectories and hidden files too:
+#     row 6b's profile compiles and runs them all) needs a note `pending: <id> ...`, the id its name without .t.sol or
+#     .sol, and each id of such a note (`pending: F-4, F-5 - ...` names two) its file (NEXT.md row 6b); no pending/,
+#     nothing is checked.
 # Readings of NEXT.md this script makes, each from NEXT.md's own words: `phase` advances only when a phase's gate is met,
 # so rows 4 and 4b are `phase` 0-1 and 2-3; "promoted" is `last_promotion=no` (`yes` = changed since, no longer promoted;
 # `n/a` = never promoted); "the loop is over" (rows 15-18b) is row 14's condition; a finding from outside the fuzzer
@@ -87,6 +104,8 @@
 # Usage:   scripts/next.sh [STATE.md] [--judge <row>=true|false[,<row>=true|false...]]... [--table <NEXT.md>]
 #          scripts/next.sh --check-table [<NEXT.md>]     the drift guard alone
 #   STATE.md defaults to .gauntlet/STATE.md, then ./STATE.md. --table defaults to the kit's doctrine/NEXT.md.
+#   Before any row: the kit's selftest marker (above); without it, or not for these scripts, this machine and this
+#   forge, the one line `next: FIRST - ...` and exit 0.
 #   --judge answers a row that needs judgement: `true` makes it true (it is then given, if it is the first), `false`
 #   passes it. Row 3 (waiting on the owner) is not one: `--judge 3=...` is refused - answer `false` each row below that
 #   depends on the owner's answer; when nothing below stands and nothing is left to judge, the pause is given.
@@ -96,10 +115,13 @@
 #          the owner: <items>" (STOP, not "row": a caller that walks the rows stops here, and runs this again when the
 #          owner has answered) - or, with rows still to judge and nothing below standing on the flags, the questions and
 #          "if every answer is false: STOP - paused, waiting on the owner: <items>" (exit 3: answer them, run it again).
-# Exit:    0 the row given is the first true one, or the pause; 1 no row is true and nothing waits on the owner: the
-#          table has a hole or a flag is stale (NEXT.md's STOP rule); 2 REFUSED - a flag missing, of an unknown value, a
-#          malformed line, a bad --judge, or the table and NEXT.md disagree: one line on stderr naming what; 3 a row above
-#          the one given needs judgement (named), or rows still need judgement before the pause can be given.
+# Env:     NEXT_SELFTEST=1  the selftest's own cases: the marker is not checked, and the first line on stderr says so
+#          every time it is set (a user never sets it; any other value is refused)
+# Exit:    0 the row given is the first true one, or the pause, or FIRST (the kit not proven here); 1 no row is true and
+#          nothing waits on the owner: the table has a hole or a flag is stale (NEXT.md's STOP rule); 2 REFUSED - a flag
+#          missing, of an unknown value, a malformed line, a bad --judge, a pending/ test and the notes disagreeing, or the
+#          table and NEXT.md disagree: one line on stderr naming what; 3 a row above the one given needs judgement
+#          (named), or rows still need judgement before the pause can be given.
 
 set -uo pipefail
 
@@ -107,6 +129,14 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 TABLE="$HERE/../doctrine/NEXT.md"
 
 refuse() { echo "next: REFUSED - $*" >&2; exit 2; }
+
+KIT="$(cd "$HERE/.." && pwd)"
+# the selftest's own cases run without the marker - said on one line every time, never silently (K31)
+case "${NEXT_SELFTEST-}" in
+  "") ;;
+  1) echo "next: NEXT_SELFTEST=1 - the kit's selftest marker is NOT checked (the selftest's own cases set this; a user never does)" >&2 ;;
+  *) refuse "NEXT_SELFTEST='${NEXT_SELFTEST}' is not 1: it is set by the kit's selftest for its own cases only - unset it." ;;
+esac
 
 # ------------------------------------------------------------------------------------------------ the rows, as data
 # id | NEXT.md hash | kind | turns off | condition | the question, when the flags cannot decide the row ("-": they can)
@@ -133,7 +163,7 @@ ROWS='
 8   | c328f377 | act  | -                   | any_round=yes | is there an ACCEPTED or FIXED finding (triaged in row 9) from outside the fuzzer with no rule for it yet (an invariant or action, or a unit test and a not fuzzable: note)?
 9   | 6d5b5f55 | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | is a finding from any round still open (not fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name - one triaged fix at the cause whose fix is not written yet is still open; a phase-3 pending: finding is one too, now that round 1 has run or the ceiling is reached), and is the owner there to answer, or is it already triaged fix at the cause?
 9b  | 3fac6ddc | act  | -                   | last_audit_round!=none open_findings.total>0 dossier.lists_open=no ; ceiling=reached open_findings.total>0 dossier.lists_open=no | open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached) wait on the owner'"'"'s triage, and the dossier does not name them yet ({dossier_names}): is the owner unavailable to triage them now (an exercise, or away)?
-10  | 75485129 | act  | -                   | any_round=yes bytecode_changed_since.last_audit_round=no | did only documents, comments, scripts or tests change since the last round, making claims about the code?
+10  | 335ae40f | act  | -                   | any_round=yes bytecode_changed_since.last_audit_round=no | did only documents, comments, scripts or tests change since the last round, making claims about the code? The route'"'"'s whole workspace does not count - everything under .gauntlet/ (STATE.md, DECISIONS.md, LOG.md, the route'"'"'s SPEC.md, the dossier, STATIC-TRIAGE.md, briefs/, reports/, rounds/, the benches in bench/ and the tests written in them, backtests/, the triage notes), or with location: root those same files and directories at the root; an owner'"'"'s own SPEC.md, README or NatSpec outside that workspace still counts. A skeleton written since the last round does not make this row true
 11b | 39b95289 | act  | -                   | - | was a model round STOPPED by the environment (the harness, the provider'"'"'s classifier) before delivering, and not yet retried - or stopped again, and not yet recorded (notes: round <id> stopped; a black-box round also blackbox: stopped (<id>))?
 11  | 29326122 | act  | -                   | last_audit_round=none battery=green | -
 12  | 9f085660 | act  | -                   | last_audit_round!=none battery=green blackbox=never_run real_manager.owed=no | did the spec'"'"'s promises stay unchanged in the last triage (no triage yet counts as unchanged)?
@@ -564,6 +594,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# before any row: the kit's own tools proven on this machine, for these scripts and this forge (K31, K31b). Not for
+# --check-table, which reads no STATE.md
+if [ "$check_only" != 1 ] && [ "${NEXT_SELFTEST-}" != 1 ]; then
+  [ -f "$HERE/lib/kit-proof.sh" ] || refuse "$HERE/lib/kit-proof.sh is missing (the kit's own check that its selftest passed here)."
+  # shellcheck source=lib/kit-proof.sh
+  . "$HERE/lib/kit-proof.sh"
+  if ! kit_why="$(kit_proof_check "$KIT")"; then
+    echo "next: FIRST - prove the kit on this machine: $KIT/scripts/selftest.sh (then run next.sh again) - $kit_why"
+    exit 0
+  fi
+fi
 load_table "$TABLE"
 if [ "$check_only" = 1 ]; then echo "next: next.sh's rows and $TABLE agree: ${#IDS[@]} rows, ${IDS[*]}."; exit 0; fi
 
@@ -586,6 +627,70 @@ if [ -z "$STATE" ]; then
 fi
 [ -f "$STATE" ] || refuse "$STATE does not exist."
 parse_state "$STATE"
+
+# ------------------------------------------------------------------------------------------------ pending/ and the notes
+# NEXT.md row 6b: a phase-3 test that shows the code breaking a promise, the owner absent, goes to pending/<id>.t.sol,
+# OUTSIDE test/, so that the battery is honestly green - and the finding goes into open_findings and a note `pending:
+# <id> - <promise>, owner undecided`. A test moved there and never written down is a red test hidden from the battery
+# and from the route alike. So, before any row (K31): the project is the STATE.md's directory, or its parent when that
+# directory is .gauntlet/; with a pending/ there, every file row 6b's profile would run needs its note and every id of a
+# pending: note its file (ids compared case aside, as everywhere here). No pending/, nothing is checked. A note is read
+# by its name at the START of a note item, like real manager: above.
+# What the profile runs (`[profile.pending] test = "pending"`, forge 1.8.1, measured - K31b): every .sol file below
+# pending/, in subdirectories, without .t, hidden (.F-5.t.sol) or in a hidden directory - so each is read here, its id
+# the file's name without .t.sol or .sol (and without a leading dot). pending/ is matched case-sensitively, as forge
+# matches it. A note may name several ids: `pending: F-4, F-5 - ...` (commas, `and`, `&` or spaces between them; the
+# list ends at the first word that is not an id - at least one letter and one digit - such as the ` - ` before the
+# promise), and each needs its file.
+pending_ids() { # pending_ids <the text after pending:>: its ids, one per line; exit 1 when the first word is not an id
+  local rest="$1" tok first=1 re_comma='^[[:space:]]*,[[:space:]]*((and|[&])[[:space:]]+)?(.*)$' re_amp='^[[:space:]]*[&][[:space:]]*(.*)$'
+  while :; do
+    rest="${rest#"${rest%%[![:space:]]*}"}"
+    tok=""
+    if [[ $rest =~ ^([A-Za-z0-9][A-Za-z0-9._-]*)(.*)$ ]]; then tok="${BASH_REMATCH[1]}"; rest="${BASH_REMATCH[2]}"; fi
+    while [[ $tok =~ ^(.+)[._-]$ ]]; do tok="${BASH_REMATCH[1]}"; done   # `pending: F-1. ...`
+    if ! [[ $tok =~ [A-Za-z] && $tok =~ [0-9] ]]; then [ "$first" = 1 ] && return 1; return 0; fi
+    printf '%s\n' "$tok"; first=0
+    if [[ $rest =~ $re_comma ]]; then rest="${BASH_REMATCH[3]}"
+    elif [[ $rest =~ $re_amp ]]; then rest="${BASH_REMATCH[1]}"
+    elif [[ $rest =~ ^[[:space:]]+and[[:space:]]+(.*)$ ]]; then rest="${BASH_REMATCH[1]}"
+    elif [[ $rest =~ ^[[:space:]]+(.*)$ ]]; then rest="${BASH_REMATCH[1]}"
+    else return 0; fi
+  done
+}
+check_pending() {
+  local st_dir proj f id ids key line item re_pend='^pending:(.*)$'
+  local -a items=() order=()
+  local -A note=() file=()
+  st_dir="$(cd "$(dirname "$1")" && pwd)" || refuse "cannot read the directory of $1."
+  if [ "$(basename "$st_dir")" = ".gauntlet" ]; then proj="$(dirname "$st_dir")"; else proj="$st_dir"; fi
+  [ -d "$proj/pending" ] || return 0
+  for line in ${NOTE_LINES[@]+"${NOTE_LINES[@]}"}; do
+    IFS=';' read -ra items <<< "${line//$'\302\267'/;}"
+    for item in ${items[@]+"${items[@]}"}; do
+      item="$(trim "$item")"
+      if [[ $item =~ ^[-*+][[:space:]]+(.*)$ ]]; then item="${BASH_REMATCH[1]}"; fi
+      [[ $item =~ $re_pend ]] || continue
+      ids="$(pending_ids "${BASH_REMATCH[1]}")" \
+        || refuse "notes: a pending: note names no id ('$item'): pending: <id>[, <id>...] - <promise>, owner undecided - NEXT.md row 6b."
+      while IFS= read -r id; do
+        [ -n "${note[${id,,}]+x}" ] || order+=("${id,,}")
+        note[${id,,}]="$id"
+      done <<< "$ids"
+    done
+  done
+  while IFS= read -r -d '' f; do
+    id="$(basename "$f")"; id="${id%.sol}"; id="${id%.t}"; while [ "${id#.}" != "$id" ]; do id="${id#.}"; done
+    file[${id,,}]="$id"
+    [ -n "${note[${id,,}]+x}" ] \
+      || refuse "$f is a test in pending/, and STATE.md's notes have no 'pending: $id ...' for it: write it in STATE.md notes and in open_findings before anything else - NEXT.md row 6b."
+  done < <(find -L "$proj/pending" -name '*.sol' -type f -print0 2> /dev/null | LC_ALL=C sort -z)
+  for key in ${order[@]+"${order[@]}"}; do
+    [ -n "${file[$key]+x}" ] \
+      || refuse "STATE.md's notes name 'pending: ${note[$key]}', and $proj/pending/${note[$key]}.t.sol does not exist (nor any ${note[$key]}.sol below pending/): a pending finding's test is pending/<id>.t.sol - put it there, or, if the finding is closed, take the note out and the finding out of open_findings - NEXT.md row 6b."
+  done
+}
+check_pending "$STATE"
 
 # ------------------------------------------------------------------------------------------------ the table, top to bottom
 # The gates first (NEXT.md: a gate that is true turns its rows off wherever they stand - row 14's are above it), then

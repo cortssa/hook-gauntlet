@@ -39,6 +39,21 @@ scripts/next.sh .gauntlet/STATE.md
 scripts/next.sh .gauntlet/STATE.md --judge 5=false,8=false,12=true    # the answers to the rows that need judgement
 ```
 
+Before any row it checks that the kit's own tools are proven on this machine. `scripts/selftest.sh`, when it ends
+`SELFTEST PASSED`, leaves `<kit>/.gauntlet/selftest-passed` (git-ignored): the SHA-256 of the kit's scripts
+(`scripts/*.sh`, `scripts/lib/*.sh`, `scripts/*.py`, `scripts/lib/*.py`), a hash of this machine's identity
+(`/etc/machine-id` when readable, else the hostname - hashed, never written as it is), the date and the first line of
+`forge --version`; every other ending leaves none. `next.sh` compares the scripts, the machine and forge, and requires
+all three recorded. With no marker, one with a field missing, or one written for other scripts (one edited, added or
+renamed since; a fresh clone), on another machine (the kit copied there with its `.gauntlet/`, or a project copied
+with the kit in `lib/hook-gauntlet` - "another machine" as `/etc/machine-id` tells, or the hostname where there is
+none, as on macOS: a clone that kept both is not seen) or with another forge, `next.sh` prints one line - `next: FIRST - prove the kit
+on this machine: <kit>/scripts/selftest.sh (then run next.sh again) - <which>`, where `<which>` says the scripts, the
+machine or forge (`... changed since its selftest passed`, `its marker does not record ...`, or `the selftest has not
+passed here`) - and exits 0, nothing else. It is a property of the machine and the kit, not of the hook:
+not a `STATE.md` flag. The dossier's section 10 cites it. `--check-table` does not look. The selftest's own cases run
+`next.sh` with `NEXT_SELFTEST=1`, which it names on stderr every time it is set; a user never sets it.
+
 It refuses (exit 2, one line naming the flag) a flag that is missing, a value not on the flag's list, a line of the
 block that is not `name: value`, a `ceiling` of no known shape (`not agreed ...`, `undecided ...`, or `N model rounds
 ...; M used`), a `rehearsal: done` without a real date (`done (YYYY-MM-DD)`), a `blackbox: stopped` without its round
@@ -46,8 +61,14 @@ id (`stopped (<round id>)`), more `reasoned_high_or_medium` than high + medium o
 not say how many open findings it names (`skeleton (<K> open, <N> judges not done)`), an item of `waiting_on_owner`
 that says "to tell" in any shape but `high <id>[, <id>...] - to tell` or names a placeholder there (`none`, `TBD`,
 `nobody`, `n/a`, `?`), a word that is not an id there or in `open_findings`' parentheses (an id has at least one letter
-and one digit: `F-1`, `r01-A1`; `all`, `TBA`, `1` are not), an id recorded to tell that is not an open high ("a recorded high is no longer open: remove it"), and an `open_findings` whose
-high count does not match the ids in its parentheses (`high=N (<ids>)`; no parentheses when N is 0).
+and one digit: `F-1`, `r01-A1`; `all`, `TBA`, `1` are not), an id recorded to tell that is not an open high ("a recorded high is no longer open: remove it"), an `open_findings` whose
+high count does not match the ids in its parentheses (`high=N (<ids>)`; no parentheses when N is 0), and a test
+in the project's `pending/` (the project is the directory of `STATE.md`, or its parent when that is `.gauntlet/`) that
+no note `pending: <id> ...` names - "write it in STATE.md notes and in open_findings before anything else - NEXT.md row
+6b" - or an id of such a note with no file in `pending/` (no `pending/`, nothing is checked). Every `.sol` file below
+`pending/` is a test here - in a subdirectory, without `.t`, hidden, a helper - because row 6b's profile compiles and
+runs them all (forge 1.8.1, measured); its id is its name without `.t.sol` or `.sol`. A note may name several ids,
+`pending: F-4, F-5 - <promise>, owner undecided` (commas, `and` or `&` between them), and each needs its file.
 Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
 the flags that made it true (exit 0). With the owner absent, nothing below row 3 standing AND no row left to judge -
 typically once row 9b's skeleton names the open findings, `waiting_on_owner` asks for their triage, and rows 5, 8, 9, 10
@@ -65,7 +86,7 @@ each once; an id there that is not an open high is refused) - then the `because:
 the dossier names the open findings: `skeleton (<K> open, ...)` with K the number open (high + medium + low;
 informational findings are not counted) - decided by the flags, never asked; while it does not, the question row 9b
 asks is the owner's presence; `complete` next to an open finding is refused. What the flags cannot decide is not guessed. Rows 1 (a high
-open, not every one recorded to tell), 5, 8, 9 and 9b (a finding open, from any round, once round 1 has run or the ceiling is reached), 10 (after a round, with no bytecode change since),
+open, not every one recorded to tell), 5, 8, 9 and 9b (a finding open, from any round, once round 1 has run or the ceiling is reached), 10 (after a round, with no bytecode change since; the route's whole workspace does not count - everything under `.gauntlet/`: `STATE.md`, `DECISIONS.md`, `LOG.md`, the route's `SPEC.md`, the dossier, `STATIC-TRIAGE.md`, `briefs/`, `reports/`, `rounds/`, the benches in `bench/` and the tests written in them, `backtests/`, the triage notes - or, with `location: root`, those same files and directories at the root; an owner's own `SPEC.md`, README or NatSpec outside it still counts; so a skeleton written since the round does not make it true),
 11b, 12 (did the spec's promises change?), 16 and 18b
 need something `STATE.md` does not carry, and are printed `needs judgement: row <id> - <the question>`; the row after
 them is printed as the answer only if they are all false (exit 3). Answer with `--judge <row>=true|false`: the answers

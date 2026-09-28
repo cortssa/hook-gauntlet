@@ -209,7 +209,11 @@ From a clean checkout on a machine with nothing but Foundry: the exact commands,
 are not portable: a HANDOFF ships the kit inside the project (`lib/hook-gauntlet`, a submodule or a copy, with relative
 remappings) so that this section runs on a clean machine; absolute paths into a kit checkout are for an exercise, and
 then this section says `not yet` and the dossier is a skeleton, whatever else it holds. If it needs an RPC endpoint, say for which step; never
-include one.
+include one. Cite the kit's own proof, read from `<kit>/.gauntlet/selftest-passed` (`scripts/selftest.sh` leaves it only
+when it ends PASSED; `scripts/next.sh` names no row without it): "the kit's selftest passed on <date> for scripts
+<hash>", with forge's version from the same file - the reproducer runs `scripts/selftest.sh` first and gets the same
+scripts hash from the same kit (the file's machine hash is the machine it ran on: a copied kit starts with the
+selftest).
 
 ## 10b. What comes after the handoff (so the owner is ready for it)
 

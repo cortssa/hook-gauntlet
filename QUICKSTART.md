@@ -44,6 +44,12 @@ scripts/selftest.sh
 Done: the last line is `SELFTEST PASSED: every guard went red exactly where it was supposed to.` If it says
 `INCOMPLETE`, forge or `foundry-kit/lib` is missing; that is not a pass. The self-test makes every guard in
 `scripts/` fail on purpose and checks that it did - a guard never seen red is decoration (`doctrine/EVIDENCE.md` §2).
+What this step leaves is the marker `.gauntlet/selftest-passed` in the kit (the two lines above the last name it: the
+SHA-256 of the kit's scripts, a hash of this machine's identity, the date, forge's version). `scripts/next.sh` names
+no row without it - it answers `next: FIRST - prove the kit on this machine: ...`, saying whether the scripts, the
+machine or forge is what changed - and a script edited since, another forge, or the kit on another machine (copied
+with its `.gauntlet/`, or inside a copied project; the machine as `/etc/machine-id` or, without one, the hostname
+tells it) needs the selftest again. Any ending but PASSED leaves no marker.
 
 ## 2. The worked example, root kit
 
@@ -53,6 +59,8 @@ scripts/battery.sh foundry-kit
 
 Done: `BATTERY PASSED`, with a summary above it (`test rc=0 (passed N, failed 0, skipped 0; filter: none)`, sizes, freshness; a filter your own `foundry.toml` sets is named there instead of `none`). The battery runs the whole suite and says what it refused to let narrow or soften it - forge's environment variables, a project `.env`, a `~/.foundry/foundry.toml`, build artefacts from another path - and a failed test fails it whatever forge exited with (`foundry-kit/README.md`, "What the battery refuses").
 Read the summary, not the exit code: the battery refuses an empty green (a filter that matched nothing, a skipped test).
+Steps 1 and 2 are the kit proven on this machine; what they leave for the route is step 1's marker, which your
+dossier's section 10 cites ("the kit's selftest passed on <date> for scripts <hash>").
 
 ## 3. The v4 module: Uniswap's sources, then the example hook
 
