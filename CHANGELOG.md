@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased (v0.3) - the kit against a window of real swaps
+
+- **Backtests:** `scripts/backtest.sh <proj> --pool <id> --from <block> --to <block>` fetches the pool's `Swap`
+  events (block-pinned fixture with a sidecar: blockHash, SHA-256, request count; refused when they disagree), replays
+  them through the hook on a fork at the window's first block - the real pool's price and active liquidity in one
+  full-range position, each swap at its real block and timestamp - next to a control without the hook, and writes
+  `07-backtest.txt`: what the hook took, returned, refused or paid, per swap and in total, the largest price
+  deviations, the RPC requests. Measured on the chain's ETH/USDC 0.05 % pool, 200 blocks, 44 swaps, the three
+  fee-taking examples: prices within 2 ppm of the real pool (control 1), DeltaFee's totals equal to its own counters
+  to the wei; a cold replay costs ~124 requests, a warm one 16, the fetch 27. A replay is a sandbox report, not a proof
+  - `doctrine/SIMULATE.md` 6 says what it substitutes (the LP set, MEV, the hook's effect on later swaps) and this
+  window's own limits (liquidity-quiet it is not: JIT of 0.124 % inside six swaps, hidden at 1 ppm of price).
+
 ## v0.2.1 - 2026-09-28 - four small things the last verifiers and the thirteenth fresh reader left
 
 - The source record the judging scripts keep (a change forge's incremental build misses: a remapping, a symlink)

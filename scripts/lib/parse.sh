@@ -177,3 +177,29 @@ is_evm_address() {
 is_git_sha() {
   [[ "$1" =~ ^[0-9a-f]{40}$ ]]
 }
+
+# parse_backtest_totals <report>   (K19: scripts/backtest.sh's .gauntlet/reports/07-backtest.txt)
+#   the table under "== totals per run ==": its header line exactly
+#     run swaps replayed refused unreplayable took0 took1 returned0 returned1 donated0 donated1 lpFees0 lpFees1 swapFeeMin swapFeeMax gasAvg gasMax booksOpen maxAbsDevPpm
+#   then one row per run, up to the first empty line: a name, then 18 whole numbers. Prints the rows as they are. Every
+#   number must be digits and nothing else (a "-", an empty column, "12a", a sign: refused, never added up as 0), a row
+#   must have exactly 19 columns, a run must be named once, and replayed + refused + unreplayable must be the swaps.
+#   Fixtures: scripts/test/fixtures/backtest-*.txt.
+#   exit 1: no such table (no header line)
+#   exit 2: the header is not that one, a row is malformed, a run is named twice, or no row at all - REFUSED, not read
+parse_backtest_totals() {
+  local want="run swaps replayed refused unreplayable took0 took1 returned0 returned1 donated0 donated1 lpFees0 lpFees1 swapFeeMin swapFeeMax gasAvg gasMax booksOpen maxAbsDevPpm"
+  [ -r "$1" ] || return 1
+  _parse_clean "$1" | grep -x '== totals per run ==' > /dev/null || return 1   # not -q: an early exit under pipefail
+  _parse_clean "$1" | awk -v want="$want" '
+    $0 == "== totals per run ==" { on = 1; next }
+    on == 1 { if ($0 != want) { bad = 1; exit } on = 2; next }
+    on == 2 && $0 == "" { exit }
+    on == 2 {
+      if (NF != 19) { bad = 1; exit }
+      for (i = 2; i <= 19; i++) if ($i !~ /^[0-9]+$/) { bad = 1; exit }
+      if (seen[$1]++ || $3 + $4 + $5 != $2) { bad = 1; exit }
+      rows = rows $0 "\n"; n++
+    }
+    END { if (bad || on == 1 || n == 0) exit 2; printf "%s", rows }'
+}

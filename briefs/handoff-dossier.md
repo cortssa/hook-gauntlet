@@ -172,7 +172,7 @@ is what tells them apart.
 | symbolic / formal | | what was proven, for which bounds - or "not done", and in full mode the owner's reason | |
 | second fuzzing engine | | or "not done" | |
 | size, gas | | sizes and margins; gas of the main paths, regenerated for this revision | |
-| simulation sandbox (`doctrine/SIMULATE.md`; optional, owner-requested) | scenario, agents, ordering model, seeds, steps; `scripts/sim-report.sh` | the ledger table over seeds and the spec line each number was compared against - SUPPORTED, never PROVED; or "not run: <owner's written reason>" | the census TSV and the report |
+| simulation sandbox (`doctrine/SIMULATE.md`; optional, owner-requested) | scenario, agents, ordering model, seeds, steps; `scripts/sim-report.sh`. A backtest (`scripts/backtest.sh`, SIMULATE.md section 6) goes in this row too: the pool (id, key, chain), the window, the fixture's SHA-256 | the ledger table over seeds and the spec line each number was compared against - SUPPORTED, never PROVED; for a backtest, the totals per run NEXT TO THE CONTROL's, the refusals by selector and the substitutions the report prints; or "not run: <owner's written reason>" | the census TSV and the report; `.gauntlet/reports/07-backtest.txt` and the fixture under `.gauntlet/backtests/` |
 
 ## 7. The adversarial history (must)
 
@@ -198,7 +198,9 @@ Be specific. Examples of the form this takes: economic and ordering attacks (MEV
 not tested · native currency paths do not exist and were not tested · behaviour on chains other than {{CHAIN}} ·
 the deployment script was simulated, never broadcast · nothing here was reviewed by a human with security training ·
 rows of section 6 marked "not done" · a black-box round the ceiling left unrun or the environment stopped, and what it would have added · what
-promotion would have added, when it was skipped.
+promotion would have added, when it was skipped · for a backtest, what the replay cannot say: how the real swappers, arbitrageurs
+and LPs would have REACTED to the hook (the replay keeps their real orders, placed against another price), the LP set it
+replaced with one position, the swap types it did not replay, and the windows not run (`doctrine/SIMULATE.md` section 6).
 
 ## 10. Reproduce it (must)
 

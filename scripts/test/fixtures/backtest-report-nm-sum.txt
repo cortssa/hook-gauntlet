@@ -1,0 +1,109 @@
+== backtest report ==
+project      foundry-kit/v4
+pool         0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27 (chain 1): 0x0000000000000000000000000000000000000000 / 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48, fee 500, spacing 10, hooks 0x0000000000000000000000000000000000000000 (key from PositionManager.poolKeys at block 26050000)
+window       the state at the end of block 26049800; the swaps of blocks 26049801 .. 26050000 (200 blocks)
+fixture      .gauntlet/backtests/21c67e77-26049800-26050000.tsv: 44 swaps, sha256 0x61a89373fd28c666aa4c5490dd6cc54ddf77d5f9007fc100d45cf03d2ee2ba7a, fetched 2026-09-28T04:05:11Z with cast Version: 1.8.1
+             reused (not fetched again); block 26050000 re-checked: block 26050000 has the hash the sidecar names (1 request)
+replay       forge test --match-contract 'Backtest$', profile fork, V4_MANAGER=fork, a fork at block 26049800; 1 s
+forge        rc 0; passed 6, failed 0, skipped 0 (log: foundry-kit/v4/.gauntlet/reports/07-backtest-forge.txt)
+rpc          fetch: 23 calls to the endpoint when the fixture was fetched (sidecar castCalls: one per cast call,
+             retries included; chunks of 10 blocks; timestamps from the logs' blockTimestamp)
+             this run: 1 calls (the fixture was reused)
+             replay: NOT counted here - forge does not report its requests (foundry-kit/v4/README.md, "Backtests", has the
+             kit's window measured through a counting relay)
+seed         the real pool at the end of block 26049800: sqrtPriceX96 4108460217689435950812047, tick -197351, in-range liquidity 171357403690873183, lp fee 500, protocol fee 125 / 125 pips (0 to 1 / 1 to 0)
+
+== what this replay is not (the substitutions) ==
+- the liquidity: ONE full-range position of the real pool's in-range liquidity at block 26049800, in a NEW pool (a hook is part
+  of a pool's key: it cannot be attached to the pool that exists). The real pool's ranges, and every add and remove of
+  the window, are absent: deviations grow wherever the real price crossed a tick where liquidity changed.
+- the swaps: every one EXACT-IN of what the real swapper paid in, in the real direction, with no price limit, through the
+  kit's MinimalRouter, by one trader. Exact-out swaps, limits, multi-hop routes, the real routers and senders are not.
+- the reactions: the order is the chain's, but the swaps were placed against the REAL pool's price. A hook that changes
+  what a swap pays moves this pool's price under later swaps that were never placed against it; arbitrage, MEV and
+  the hook's own effect on who trades are not modelled.
+- the fees: the hook pool's key has the real fee unless the hook needs another (a dynamic-fee hook sets its own, and
+  its runs line shows the flag, 8388608); the protocol fee is whatever the chain's controller gives a NEW pool on the
+  fork (the runs table), which need not be the real pool's (the seed line) - the swapper's output moves by the difference.
+- the control: the same replay, in a test of its own, on a pool with NO hook (same currencies and fee; tick spacing
+  doubled, the real key being taken), one per hook contract - control(<hook>). Its deviations are the replay's own;
+  the hook's effect is the difference from ITS control (the gas of two controls can differ by a few units: the test
+  contracts' own code differs).
+
+== runs ==
+run hook fee spacing protocolFee(0to1/1to0) liquidity
+CappedDynamicFeeHook 0xA6dfa0900ca6Acc4D04634DA2dB4c8ED892E9080 8388608 10 0/0 171357403690873183
+DeltaFeeHook 0x55088BF158be73688964117495cfe4098A0600CC 500 10 0/0 171357403690873183
+InRangeDonateHook 0x3d84Ff285EDB2c70D799a01fcB17e689d22d4aC4 500 10 0/0 171357403690873183
+control(CappedDynamicFeeHook) 0x0000000000000000000000000000000000000000 500 20 0/0 171357403690873183
+control(DeltaFeeHook) 0x0000000000000000000000000000000000000000 500 20 0/0 171357403690873183
+control(InRangeDonateHook) 0x0000000000000000000000000000000000000000 500 20 0/0 171357403690873183
+
+== totals per run ==
+run swaps replayed refused unreplayable took0 took1 returned0 returned1 donated0 donated1 lpFees0 lpFees1 swapFeeMin swapFeeMax gasAvg gasMax booksOpen maxAbsDevPpm
+CappedDynamicFeeHook 44 44 0 0 0 0 0 0 0 0 6623846451318493 18243088 500 1500 131579 150959 0 1
+DeltaFeeHook 44 43 0 0 31625960269111114 89451733 6828638781044775 21765350 0 0 5550260770709015 14172345 500 500 221234 361383 0 2
+InRangeDonateHook 44 44 0 0 31601675916026682 89396709 0 0 31271892194004117 89396709 36818738645322610 103558170 500 500 189960 254610 0 1
+control(CappedDynamicFeeHook) 44 44 0 0 0 0 0 0 0 0 5546846451318493 14161461 500 500 118499 137743 0 1
+control(DeltaFeeHook) 44 44 0 0 0 0 0 0 0 0 5546846451318493 14161461 500 500 118499 137743 0 1
+control(InRangeDonateHook) 44 44 0 0 0 0 0 0 0 0 5546846451318493 14161461 500 500 118511 137754 0 1
+
+(took = the hook's delta, positive, summed: what it took from swappers; returned = its negative delta: what it paid
+ them; donated = Donate events on its pool; lpFees = what the one position earned as LP fees; the currencies are the
+ key's 0 and 1, in their smallest units; swapFee is the manager's, protocol fee included; gas is the router call's,
+ one test transaction per run; booksOpen = swaps where swapper + hook + manager != 0; maxAbsDevPpm = the largest
+ distance of this pool's post-swap price from the real pool's, in parts per million of the price)
+
+== refusals ==
+none
+
+== the ten largest deviations from the real pool's post-swap price, per run (ppm of price) ==
+run swap block direction amountIn devPpm outDevPpm
+CappedDynamicFeeHook 33 26049973 0to1 2336948488307632420 -1 124
+CappedDynamicFeeHook 0 26049804 1to0 78448606 0 125
+CappedDynamicFeeHook 1 26049834 0to1 825244250284287616 0 125
+CappedDynamicFeeHook 10 26049872 0to1 6606997979797977 0 124
+CappedDynamicFeeHook 11 26049879 0to1 149250730375965 0 124
+CappedDynamicFeeHook 12 26049879 0to1 146651590233884649 0 124
+CappedDynamicFeeHook 13 26049885 0to1 22557600984491314 0 124
+CappedDynamicFeeHook 14 26049887 0to1 1266164422396772864 0 124
+CappedDynamicFeeHook 15 26049887 0to1 8379000000000000 0 124
+CappedDynamicFeeHook 16 26049888 1to0 4598609 0 -875
+DeltaFeeHook 37 26049983 0to1 2154000000000000000 -2 -1977
+DeltaFeeHook 26 26049964 0to1 1198445852395526130 -1 -1973
+DeltaFeeHook 27 26049964 1to0 3205738 -1 -1876
+DeltaFeeHook 28 26049964 1to0 65780809 -1 -1876
+DeltaFeeHook 33 26049973 0to1 2336948488307632420 -1 -2205
+DeltaFeeHook 38 26049983 1to0 1139115919 -1 -1876
+DeltaFeeHook 0 26049804 1to0 78448606 0 -2875
+DeltaFeeHook 1 26049834 0to1 825244250284287616 0 -2864
+DeltaFeeHook 10 26049872 0to1 6606997979797977 0 -1877
+DeltaFeeHook 11 26049879 0to1 149250730375965 0 -1874
+InRangeDonateHook 37 26049983 0to1 2154000000000000000 -1 -2875
+InRangeDonateHook 0 26049804 1to0 78448606 0 -2875
+InRangeDonateHook 1 26049834 0to1 825244250284287616 0 -2875
+InRangeDonateHook 10 26049872 0to1 6606997979797977 0 -2875
+InRangeDonateHook 11 26049879 0to1 149250730375965 0 -2874
+InRangeDonateHook 12 26049879 0to1 146651590233884649 0 -2875
+InRangeDonateHook 13 26049885 0to1 22557600984491314 0 -2875
+InRangeDonateHook 14 26049887 0to1 1266164422396772864 0 -2875
+InRangeDonateHook 15 26049887 0to1 8379000000000000 0 -2875
+InRangeDonateHook 16 26049888 1to0 4598609 0 -2875
+control 37 26049983 0to1 2154000000000000000 -1 124
+control 0 26049804 1to0 78448606 0 125
+control 1 26049834 0to1 825244250284287616 0 125
+control 10 26049872 0to1 6606997979797977 0 125
+control 11 26049879 0to1 149250730375965 0 124
+control 12 26049879 0to1 146651590233884649 0 125
+control 13 26049885 0to1 22557600984491314 0 125
+control 14 26049887 0to1 1266164422396772864 0 125
+control 15 26049887 0to1 8379000000000000 0 124
+control 16 26049888 1to0 4598609 0 125
+
+== the hooks' own ledgers ==
+CappedDynamicFeeHook: fee quoted for the next block: 500
+DeltaFeeHook: currency0: feesBooked 31625960269111114, rebatesPaid 6828638781044775, reserveOf 24797321488066339, held 24797321488066339
+DeltaFeeHook: currency1: feesBooked 89451733, rebatesPaid 21765350, reserveOf 67686383, held 67686383
+InRangeDonateHook: currency0: feesTaken 31601675916026682, donated 31271892194004117, pot left 329783722022565, unowned 0
+InRangeDonateHook: currency1: feesTaken 89396709, donated 89396709, pot left 0, unowned 0
+backtest: REPORT WRITTEN - foundry-kit/v4/.gauntlet/reports/07-backtest.txt (CappedDynamicFeeHook, DeltaFeeHook, InRangeDonateHook; passed 6)

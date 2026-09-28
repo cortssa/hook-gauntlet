@@ -8,7 +8,8 @@
 # code printed either way.
 #
 # What it does NOT exercise, because it needs the network: a SUCCESSFUL fetch-bytecode.sh against a real endpoint (its
-# block and metadata are exercised against a stub `cast`, K16), the fork suites (foundry-kit/v4, FOUNDRY_PROFILE=fork) and a
+# block and metadata are exercised against a stub `cast`, K16), the fork suites (foundry-kit/v4, FOUNDRY_PROFILE=fork), the
+# backtest's replay (a fork; its fetch, refusals and report shape are here against a stub `cast`, K19) and a
 # successful install-v4.sh (GitHub). Their refusals are here; their success is the CI's `battery` job, which runs
 # install-v4.sh on every push, and the fetch is run by hand (foundry-kit/v4/README.md). The OFFLINE install is here,
 # success included, from fake local clones - with V4_WITH_PERIPHERY=1 too (K17b: the periphery's pin, its permit2,
@@ -39,7 +40,8 @@ SELFTEST_CLEARED="ALLOW_SKIPS ALLOW_SMALL_BUDGET BASELINE BASELINE_MAY_BE_RED BE
 BENCH_ROOT CACHE_FILE CENSUS_FORGE_LOG CENSUS_TABLE_ONLY COPY_ROOT CORE DEPTH EXPECT EXTRA_SRC FORGE_FLAGS GATE_WHY \
 GUARD_EXCLUDE HASH_PYTHON KEEP LABEL LINK_FROM LINK_LIB MATCH MIN_INIT_MARGIN MIN_MARGIN MIN_PCT OUT_DIR REACH RUNS SEED \
 SRC_DIRS TEST_FLAGS USE_BENCH V4_ALLOW_UNTRACKED V4_CORE_SUBMODULES V4_FORCE V4_LOCAL_SRC V4_WITH_PERIPHERY \
-V4_MANAGER V4_FIXTURE FORK_BLOCK GAUNTLET_CENSUS GAUNTLET_SIM SIM_SEED RPC_URL ETH_RPC_URL KIT_PROJECT"
+V4_MANAGER V4_FIXTURE FORK_BLOCK GAUNTLET_CENSUS GAUNTLET_SIM SIM_SEED RPC_URL ETH_RPC_URL KIT_PROJECT \
+BACKTEST_LOGS_CHUNK BACKTEST_FIXTURE"
 selftest_clears() { # selftest_clears <name>: 0 when the name is one this run removes
   case "$1" in [Ff][Oo][Uu][Nn][Dd][Rr][Yy]_* | [Ff][Oo][Rr][Gg][Ee]_* | [Dd][Aa][Pp][Pp]_*) return 0 ;; esac
   case " $SELFTEST_CLEARED " in *" $1 "*) return 0 ;; esac
@@ -2913,6 +2915,148 @@ if grep -q '"block": 777,' "$TMP/xb.json" && grep -qx 'code --block 777 0x000000
   echo "  FAIL  no --block: metadata $(grep '"block"' "$TMP/xb.json" 2> /dev/null | tr -d ' '), calls: $(tr '\n' ';' < "$TMP/cast.log")"; fails=$((fails + 1)); fi
 if grep -q '"blockHash": "0x0*bb"' "$TMP/xb.json"; then echo "  ok    and the block's hash is recorded next to it"; else
   echo "  FAIL  no blockHash in the metadata"; fails=$((fails + 1)); fi
+
+# ================================================================= backtest.sh (K19: the fixture, its refusals, the report's shape; no network)
+# A stub `cast` answers for the chain - chain id, block hash, the PositionManager's key, the logs (one real Swap of the
+# chain's ETH / USDC 0.05 % pool, scripts/test/fixtures/backtest-logs-real.json) - and hands everything that needs no
+# network (abi-encode, keccak, abi-decode, --version) to the real cast. Without a real cast the section is SKIPPED. The
+# replay itself forks the chain and is not here: it is the fork battery's (foundry-kit/v4/test/backtest/, README
+# "Backtests").
+echo "== backtest.sh =="
+REALCAST="$(command -v cast 2> /dev/null)"
+if [ -n "$REALCAST" ]; then
+  BB="$TMP/btbin"; mkdir -p "$BB"
+  cat > "$BB/cast" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$CAST_LOG"
+case "$1" in
+  chain-id) echo "${STUB_CHAIN:-1}" ;;
+  block) case "$*" in
+      *timestamp*) echo 1790282963 ;;
+      *) echo "${STUB_HASH:-0x42890220c0576cfd58ac43f6f4418fed0a5eca1b1a39efe43a2b76567864f7a9}" ;;
+    esac ;;
+  call)
+    if [ -n "${STUB_NOKEY:-}" ]; then z=0x0000000000000000000000000000000000000000; printf '%s\n%s\n0\n0\n%s\n' "$z" "$z" "$z"
+    else printf '0x0000000000000000000000000000000000000000\n0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n500 [5e2]\n10\n0x0000000000000000000000000000000000000000\n'; fi ;;
+  logs)
+    if [ -n "${STUB_429:-}" ] && { [ -n "${STUB_429_ALWAYS:-}" ] || [ ! -e "$STUB_429" ]; }; then
+      : > "$STUB_429"; echo "Error: HTTP error 429 with body: {\"error\":\"too many requests\"} from https://example.invalid/v2/SECRET" >&2; exit 1
+    fi
+    case "$*" in *"--from-block 26049801 "*) cat "$STUB_LOGS" ;; *) echo "[]" ;; esac ;;
+  *) exec "$REALCAST" "$@" ;;
+esac
+STUB
+  sed -i "s#\"\$REALCAST\"#$REALCAST#" "$BB/cast"; chmod +x "$BB/cast"
+  BTP="$TMP/btp"; mkdir -p "$BTP/.gauntlet"; : > "$BTP/foundry.toml"
+  BTID=0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27
+  BTF="$BTP/.gauntlet/backtests/21c67e77-26049800-26049810"
+  bt() { PATH="$BB:$PATH" CAST_LOG="$TMP/btcast.log" STUB_LOGS="$FIX/backtest-logs-real.json" "$HERE/backtest.sh" "$@"; }
+  btw() { bt "$BTP" --pool "$BTID" --from 26049800 --to 26049810 "$@"; }
+  : > "$TMP/btcast.log"
+  ( unset RPC_URL; bt > "$TMP/o400" 2>&1 ); check "backtest.sh with no arguments: the usage, refused" 1 $? "$TMP/o400"
+  for bad in latest 012 -5 0x10 26049800.0; do
+    ( unset RPC_URL; bt "$BTP" --pool "$BTID" --from "$bad" --to 26049810 > "$TMP/o401" 2>&1 )
+    check "backtest.sh --from '$bad' is refused (a block NUMBER, decimal)" 1 $? "$TMP/o401"
+    grep -q "takes a block number in decimal" "$TMP/o401" || { echo "  FAIL  --from '$bad' was not refused AS a block number"; fails=$((fails + 1)); }
+  done
+  ( unset RPC_URL; bt "$BTP" --pool "$BTID" --from 26049810 --to 26049810 > "$TMP/o402" 2>&1 )
+  check "backtest.sh --to not after --from is refused" 1 $? "$TMP/o402"
+  grep -q "must be after --from" "$TMP/o402" || { echo "  FAIL  --to not after --from was not refused for that"; fails=$((fails + 1)); }
+  for bad in 0x1234 "0x${BTID:4}zz" "${BTID:2}"; do
+    ( unset RPC_URL; bt "$BTP" --pool "$bad" --from 26049800 --to 26049810 > "$TMP/o403" 2>&1 )
+    check "backtest.sh --pool '${bad:0:12}...' is refused (0x and 64 hex digits)" 1 $? "$TMP/o403"
+    grep -q "takes a v4 pool id" "$TMP/o403" || { echo "  FAIL  --pool '${bad:0:12}...' was not refused AS a pool id"; fails=$((fails + 1)); }
+  done
+  ( unset RPC_URL; bt "$BTP" --pool "https://example.invalid/v2/SECRET" --from 26049800 --to 26049810 > "$TMP/o404" 2>&1 )
+  check "backtest.sh: an endpoint passed as the pool is refused" 1 $? "$TMP/o404"
+  if grep -q "SECRET" "$TMP/o404" || ! grep -q "is an endpoint" "$TMP/o404"; then echo "  FAIL  the endpoint was echoed back, or not refused AS an endpoint"; fails=$((fails + 1)); else
+    echo "  ok    refused as an endpoint, and not echoed back"; fi
+  ( unset RPC_URL; btw --hook 'My;Hook' > "$TMP/o405" 2>&1 ); check "backtest.sh --hook that is not a contract name is refused" 1 $? "$TMP/o405"
+  mkdir -p "$TMP/btnotoml/.gauntlet"
+  ( unset RPC_URL; bt "$TMP/btnotoml" --pool "$BTID" --from 26049800 --to 26049810 > "$TMP/o406" 2>&1 )
+  check "backtest.sh on a directory with no foundry.toml is refused" 1 $? "$TMP/o406"
+  mkdir -p "$TMP/btowner"; : > "$TMP/btowner/foundry.toml"
+  ( unset RPC_URL; bt "$TMP/btowner" --pool "$BTID" --from 26049800 --to 26049810 > "$TMP/o407" 2>&1 )
+  check "backtest.sh in a tree without .gauntlet/ (someone else's): nothing run, exit 2" 2 $? "$TMP/o407"
+  if [ -e "$TMP/btowner/.gauntlet" ]; then echo "  FAIL  it created .gauntlet/ in that tree"; fails=$((fails + 1)); else
+    echo "  ok    and it created nothing there"; fi
+  # the fixture's own directory is held to the same rule when the report goes elsewhere (OUT_DIR outside the tree)
+  OUT_DIR="$TMP/btout" RPC_URL="http://127.0.0.1:9" bt "$TMP/btowner" --pool "$BTID" --from 26049800 --to 26049810 --fetch-only > "$TMP/o407b" 2>&1
+  check "backtest.sh in someone else's tree with OUT_DIR outside it: the fixture is not written there either, exit 2" 2 $? "$TMP/o407b"
+  if [ -e "$TMP/btowner/.gauntlet" ] || [ -s "$TMP/btcast.log" ]; then echo "  FAIL  it wrote into that tree or asked the chain"; fails=$((fails + 1)); else
+    echo "  ok    nothing written in that tree, nothing asked of the chain"; fi
+  ( unset RPC_URL; btw > "$TMP/o408" 2>&1 ); check "backtest.sh with no fixture and no RPC_URL is refused" 1 $? "$TMP/o408"
+  if [ -s "$TMP/btcast.log" ] || [ -e "$BTP/.gauntlet/backtests" ]; then
+    echo "  FAIL  a refused call asked the chain or wrote something: $(tr '\n' ';' < "$TMP/btcast.log")"; fails=$((fails + 1)); else
+    echo "  ok    no refused call asked the chain or wrote a fixture"; fi
+  # a key that does not hash to the pool id, the PositionManager not knowing the pool, another chain: refused, nothing written
+  RPC_URL="http://127.0.0.1:9" btw --key 0x0000000000000000000000000000000000000000,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,3000,60,0x0000000000000000000000000000000000000000 --fetch-only > "$TMP/o409" 2>&1
+  check "backtest.sh: a --key that does not hash to the pool id is refused" 1 $? "$TMP/o409"
+  STUB_NOKEY=1 RPC_URL="http://127.0.0.1:9" btw --fetch-only > "$TMP/o410" 2>&1
+  check "backtest.sh: a pool the PositionManager does not know, and no --key, is refused" 1 $? "$TMP/o410"
+  STUB_CHAIN=5 RPC_URL="http://127.0.0.1:9" btw --fetch-only > "$TMP/o411" 2>&1
+  check "backtest.sh: an endpoint of another chain is refused" 1 $? "$TMP/o411"
+  if ls "$BTP/.gauntlet/backtests/"* > /dev/null 2>&1; then echo "  FAIL  a refused fetch wrote a fixture"; fails=$((fails + 1)); else
+    echo "  ok    no refused fetch wrote a fixture"; fi
+  # a rate limit twice: stopped, nothing written, the endpoint scrubbed from the error shown
+  rm -f "$TMP/bt429"
+  STUB_429="$TMP/bt429" STUB_429_ALWAYS=1 RPC_URL="http://127.0.0.1:9" btw --fetch-only > "$TMP/o412" 2>&1
+  check "backtest.sh: HTTP 429 twice on the same call stops the fetch" 1 $? "$TMP/o412"
+  if [ ! -e "$BTF.tsv" ] && grep -q "retrying once" "$TMP/o412" && ! grep -q SECRET "$TMP/o412"; then
+    echo "  ok    it waited, retried once, wrote nothing, and the error shown is scrubbed"; else
+    echo "  FAIL  429 twice: fixture $([ -e "$BTF.tsv" ] && echo WRITTEN || echo absent), retry line $(grep -c 'retrying once' "$TMP/o412"), endpoint $(grep -c SECRET "$TMP/o412")"; fails=$((fails + 1)); fi
+  # the fetch: one 429 waited out, then the real Swap written as the fixture's line, and a sidecar that names it
+  rm -f "$TMP/bt429"; : > "$TMP/btcast.log"
+  STUB_429="$TMP/bt429" RPC_URL="http://127.0.0.1:9" btw --fetch-only > "$TMP/o413" 2>&1
+  check "backtest.sh --fetch-only with a stub chain (one 429 waited out): fixture written" 0 $? "$TMP/o413"
+  want="$(printf '26049804\t1790282963\t198\t474\t0x23617e59a5925b2a4bf75d73ff6711cd0b29de85\t29154854076950637\t-78448606\t4108496466221074272367801\t171357403690873183\t-197351\t625')"
+  if [ "$(sed -n 3p "$BTF.tsv" 2> /dev/null)" = "$want" ] && [ "$(awk 'END { print NR }' "$BTF.tsv")" = 3 ]; then
+    echo "  ok    the fixture holds the real Swap, decoded: block, timestamp, indices, sender, the six numbers"; else
+    echo "  FAIL  the fixture's line: '$(sed -n 3p "$BTF.tsv" 2> /dev/null)'"; fails=$((fails + 1)); fi
+  if grep -q '"swaps": 1,' "$BTF.json" && grep -q '"toBlockHash": "0x42890220' "$BTF.json" && grep -qx '  "castCalls": 5' "$BTF.json" \
+    && grep -q "\"tsvSha256\": \"0x$(hash_of "$BTF.tsv")\"" "$BTF.json" && grep -q '"fee": 500,' "$BTF.json" \
+    && grep -qx 'logs --json --from-block 26049801 --to-block 26049810 --address 0x000000000004444c5dc75cB358380D2e3dE08A90 0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f 0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27' "$TMP/btcast.log"; then
+    echo "  ok    the sidecar names 1 swap, block 26049810's hash, the .tsv's SHA-256, the key, 5 calls (the 429 counted); the logs were read from block 26049801"; else
+    echo "  FAIL  the sidecar or the calls: $(tr -d '\n' < "$BTF.json" | cut -c1-300) | $(tr '\n' ';' < "$TMP/btcast.log")"; fails=$((fails + 1)); fi
+  # reused: offline, nothing asked; with RPC_URL, block <to> re-checked, and another hash refused
+  : > "$TMP/btcast.log"
+  ( unset RPC_URL; btw --fetch-only > "$TMP/o414" 2>&1 ); check "backtest.sh: the fixture reused without RPC_URL (--fetch-only)" 0 $? "$TMP/o414"
+  if [ ! -s "$TMP/btcast.log" ] && grep -q "not re-checked (RPC_URL not set)" "$TMP/o414"; then
+    echo "  ok    and nothing was asked of the chain, and it says the block was not re-checked"; else
+    echo "  FAIL  reuse offline: calls $(tr '\n' ';' < "$TMP/btcast.log")"; fails=$((fails + 1)); fi
+  ( unset RPC_URL; btw > "$TMP/o415" 2>&1 ); check "backtest.sh: a fixture but no RPC_URL - the replay (a fork) refused, fixture kept" 1 $? "$TMP/o415"
+  STUB_HASH=0x00000000000000000000000000000000000000000000000000000000000000bb RPC_URL="http://127.0.0.1:9" btw --fetch-only > "$TMP/o416" 2>&1
+  check "backtest.sh: block <to> with another hash than the sidecar's (a reorg, another chain) is refused" 1 $? "$TMP/o416"
+  # the pair must agree: an edited .tsv, a sidecar's count, a fixture alone, a sidecar alone
+  cp "$BTF.tsv" "$TMP/bt.tsv"; cp "$BTF.json" "$TMP/bt.json"
+  sed -i '3s/-78448606/-78448607/' "$BTF.tsv"
+  ( unset RPC_URL; btw --fetch-only > "$TMP/o417" 2>&1 ); check "backtest.sh: a .tsv edited after its sidecar is refused" 1 $? "$TMP/o417"
+  grep -q "disagree on: tsvSha256" "$TMP/o417" && echo "  ok    and it names the hash" || { echo "  FAIL  the refusal does not name the hash"; fails=$((fails + 1)); }
+  cp "$TMP/bt.tsv" "$BTF.tsv"; sed -i 's/"swaps": 1,/"swaps": 2,/' "$BTF.json"
+  ( unset RPC_URL; btw --fetch-only > "$TMP/o418" 2>&1 ); check "backtest.sh: a sidecar whose count is not the .tsv's is refused" 1 $? "$TMP/o418"
+  cp "$TMP/bt.json" "$BTF.json"; rm -f "$BTF.json"
+  ( unset RPC_URL; btw --fetch-only > "$TMP/o419" 2>&1 ); check "backtest.sh: a fixture without its sidecar is refused" 1 $? "$TMP/o419"
+  grep -q "is there but its sidecar" "$TMP/o419" || { echo "  FAIL  a fixture without its sidecar was not refused for that"; fails=$((fails + 1)); }
+  cp "$TMP/bt.json" "$BTF.json"; rm -f "$BTF.tsv"
+  ( unset RPC_URL; btw --fetch-only > "$TMP/o420" 2>&1 ); check "backtest.sh: a sidecar without its fixture is refused" 1 $? "$TMP/o420"
+  grep -q "is there but its fixture" "$TMP/o420" || { echo "  FAIL  a sidecar without its fixture was not refused for that"; fails=$((fails + 1)); }
+  cp "$TMP/bt.tsv" "$BTF.tsv"
+  ( unset RPC_URL; btw --fetch-only > "$TMP/o421" 2>&1 ); check "backtest.sh: the pair restored reads again" 0 $? "$TMP/o421"
+else
+  echo "  SKIPPED - no cast on the PATH: backtest.sh's fetch and refusals are NOT proven on this machine."
+  skipped=1
+fi
+# the report's totals table, read by scripts/lib/parse.sh: a real report, and near misses that must be refused
+parse_backtest_totals "$FIX/backtest-report-real.txt" > "$TMP/o422"; rc=$?
+check "parse_backtest_totals: a real report's table is read" 0 $rc "$TMP/o422"
+if [ "$(awk 'END { print NR }' "$TMP/o422")" = 6 ] && grep -q '^DeltaFeeHook 44 44 0 0 ' "$TMP/o422"; then
+  echo "  ok    six runs, the DeltaFeeHook row as written"; else echo "  FAIL  rows read: $(tr '\n' ';' < "$TMP/o422")"; fails=$((fails + 1)); fi
+for nm in dash short header twice sum; do
+  out="$(parse_backtest_totals "$FIX/backtest-report-nm-$nm.txt")"; rc=$?
+  check "parse_backtest_totals refuses backtest-report-nm-$nm.txt (never a number read as 0)" 2 $rc
+  [ -z "$out" ] || { echo "  FAIL  and it printed rows: $out"; fails=$((fails + 1)); }
+done
+parse_backtest_totals "$FIX/backtest-report-nm-none.txt" > /dev/null; check "parse_backtest_totals: no totals table at all" 1 $?
 
 echo
 echo "selftest ran in $((SECONDS - started)) s"

@@ -126,3 +126,53 @@ the parameters that were read from the chain and the ones that were guessed, the
 line each number was compared against. Section 9 (what was NOT checked): the agents that were NOT written, by name,
 starting with the ones `HOOK-ATTACKS.md` suggests. In `LOG.md`, one ROUND line of type `simulation` with its cost
 (`state/README.md`).
+
+## 6. Backtests: real swaps, replayed through the hook
+
+A second instrument of the same judge (`scripts/backtest.sh`, `foundry-kit/v4/src/BacktestBase.sol`; how to run it:
+`foundry-kit/v4/README.md`, "Backtests"). It answers a narrower question than a scenario: **what would THIS hook have
+done in this window of real swaps on this pool** - the fees it took, the deltas it returned, the swaps it refused, the
+payouts it made, the LP fee it set, the gas - next to a control, the same replay on a pool with no hook. Its evidence
+label is the sandbox's: **SUPPORTED**, never PROVED; a green backtest means the replay ran and its books closed, not
+that the hook is right.
+
+**What a number means.** The real swaps' DIRECTION, SIZE and ORDER, from the pool's `Swap` events, pinned to their
+blocks in a committed fixture, driven through the hook on a fork at the window's first block, in a NEW pool (a hook is
+part of a pool's key: it cannot be attached to the pool that exists) seeded at the real pool's price with the real
+pool's in-range liquidity. Everything else is a substitution, and the report prints them:
+
+- **the LP set** - one full-range position of the active liquidity at the window's start, where the real pool has many
+  ranges; whatever they added or removed in the window is absent. A window that crosses a tick where the real
+  liquidity changes drifts from the real prices;
+- **the swaps** - every one exact-in, of what the real swapper paid in, with no price limit, through one router, by one
+  trader: exact-out swaps, limits, multi-hop routes, the real routers and senders are not replayed;
+- **the reactions** - the order is the chain's, but every real swap was placed against the REAL pool's price. A hook
+  that changes what a swap pays moves its pool under later swaps that were never placed against it: arbitrage, MEV,
+  and the hook's own effect on who trades, and how much, are not modelled. This is the substitution that matters most
+  for an economic promise, and the one the replay cannot remove;
+- **the fees** - a hook that needs a key of its own (a dynamic fee) gets it; the protocol fee is whatever the chain's
+  controller gives a NEW pool, which need not be the real pool's.
+
+**How it lies**, in the order it is likely to:
+
+- **Drift read as the hook.** Every deviation from the real prices is the replay's AND the hook's. The control splits
+  them: its deviations are the substitutions', the rest is the hook's. A report without its control row is not read.
+- **A quiet window.** 200 blocks of a liquid pool held 44 swaps; price-quiet, not liquidity-quiet - inside 7 of them
+  the active liquidity was another (a tick crossed, just-in-time liquidity of 0.124 % within a block), which the
+  replay's single position does not see and which here moved the price by at most 1 ppm (the kit's own window, measured). A hook that only misbehaves under stress, at a range edge, or with a crowded block says nothing in
+  a quiet window; the window is an input, like a scenario's volume, and the dossier says why this one.
+- **Amounts off events.** The pool's delta and the donations are read off the manager's events, and recorded logs keep
+  the logs of frames that reverted (section 4). The kit's three examples hold each measured total to the hook's own
+  ledger, and the books close by BALANCE per swap; a binding for another hook does the same in its `_checkBacktest`,
+  or its amounts are the meter's, not the hook's.
+- **Gas in a test.** The gas is the router call's, measured from the test, in one test transaction per run: compare a
+  hook with its control, never with the chain's.
+- **The pool's own hook.** A real pool that has a hook of its own emits the POOL's delta in `Swap`, not the swapper's;
+  the replay would drive other amounts than the real swappers paid. Not refused, not tested: choose a pool without
+  one, or say so.
+
+**What goes in the dossier.** Section 6, the sandbox row: the pool (id, key, chain), the window, the fixture's SHA-256,
+the totals per run next to the control's, the refusals by selector, and the substitutions - "backtest (SUPPORTED)".
+Section 9: what the replay cannot say - the reactions above by name, the LP set, the swap types not replayed, and the
+windows not run (stress, range edges, another pool). The RPC it took (the fetch's calls are in the fixture's sidecar;
+forge does not count the replay's) goes in the ROUND line with its cost.

@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "chainId": 1,
+  "poolManager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+  "poolId": "0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27",
+  "currency0": "0x0000000000000000000000000000000000000000",
+  "currency1": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  "fee": 500,
+  "tickSpacing": 10,
+  "hooks": "0x0000000000000000000000000000000000000000",
+  "keyFrom": "PositionManager.poolKeys at block 26050000",
+  "from": 26049800,
+  "to": 26050000,
+  "toBlockHash": "0x42890220c0576cfd58ac43f6f4418fed0a5eca1b1a39efe43a2b76567864f7a9",
+  "swaps": 44,
+  "tsvSha256": "0x61a89373fd28c666aa4c5490dd6cc54ddf77d5f9007fc100d45cf03d2ee2ba7a",
+  "fetchedAt": "2026-09-28T04:05:11Z",
+  "fetchedWith": "cast Version: 1.8.1",
+  "logsChunk": 10,
+  "timestampsFrom": "the logs' blockTimestamp",
+  "castCalls": 23
+}

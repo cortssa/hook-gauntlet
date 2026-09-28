@@ -2,7 +2,13 @@ out/
 cache/
 lib/
 broadcast/
-.gauntlet/
+# .gauntlet/ holds what the kit runs write here (reports, benches) and stays out of git - all but ONE directory: the
+# backtest fixtures (K19), public event data pinned to its blocks, committed so that the backtest replays without
+# fetching (scripts/backtest.sh; README "Backtests"). The directory itself has to be let back in first: the parent
+# .gitignore files ignore it by name.
+!.gauntlet/
+.gauntlet/*
+!.gauntlet/backtests/
 corpus/
 census/
 
