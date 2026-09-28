@@ -235,9 +235,14 @@ _forge_cache_file() { # forge's build record in the directory forge runs in: <ca
 # mutants (HostileERC20, HandlerBase) failed the same tests incrementally as from nothing. The root kit with `src/` a
 # symlink was not: BATTERY PASSED 107 over a mutant that fails 3 suites.
 # forge's own cache cannot tell: it records the new content of the file it recompiled. So the kit keeps its own record,
-# next to forge's (<cache_path>/gauntlet-sources.tsv, as git-ignored as forge's cache): the content (cksum) of every
-# source the build read that is not under the test or script directory - src, lib, remapped and linked files alike -
-# written after a build the kit trusts, from the contents as they were when that build started. Before judging, the
+# next to forge's (<cache_path>/gauntlet-sources.tsv, as git-ignored as forge's cache): the content (SHA-256, sha256_of
+# below) of every source the build read that is not under the test or script directory - src, lib, remapped and linked
+# files alike - written after a build the kit trusts, from the contents as they were when that build started. SHA-256,
+# not a CRC: the first record was POSIX cksum (CRC-32 and size, v0.2), and a mutant planted with twelve chosen
+# characters in a revert string and the bytes given back from indentation inside function bodies had the original's
+# cksum - BATTERY PASSED 107 over code that fails 3 suites from nothing (V28, 2026-09-27, the root kit with src/ a
+# symlink). A record in any other format than this kit writes - that one included - is read as no record: one build
+# from nothing, and one line says why. Before judging, the
 # battery, fuzz-long.sh, census.sh and assert-fresh-build.sh compare it with the files as they are: a file that changed
 # is left to forge's incremental build only when forge is measured right for it (a plain file under `src`, in a project
 # where no remapping reaches into `src` and no source outside it imports one); any other change, or no record at all,
@@ -271,11 +276,60 @@ _forge_sources_keys() {
   grep -oE '"([^"\\]|\\.)*":\{"lastModificationDate"' "$1" 2> /dev/null | sed 's/":{"lastModificationDate"$//; s/^"//' \
     | awk -v t="$FORGE_TEST_DIR/" -v p="$FORGE_SCRIPT_DIR/" 'index($0, t) != 1 && index($0, p) != 1' | LC_ALL=C sort -u
 }
-# _forge_sources_sums: keys on stdin -> "<cksum> <size><TAB><key>" for each one that is a file here (missing: no line)
-_forge_sources_sums() {
-  tr '\n' '\0' | xargs -0 cksum 2> /dev/null | awk '{ f = substr($0, length($1) + length($2) + 3); if (f != "") print $1 " " $2 "\t" f }'
-}
+# _forge_sources_sums: keys on stdin -> "<sha256><TAB><key>" for each one that is a file here (missing: no line)
+_forge_sources_sums() { sha256_of; }
 _forge_sources_record_file() { printf '%s\n' "$(dirname "$1")/gauntlet-sources.tsv"; }
+# the record's first line: it says what it is and how it hashes - a record whose first line is not this, or with a line
+# that is not "<64 hex digits><TAB><file>", is not one this kit wrote (v0.2's cksum record included): read as none
+FORGE_SOURCES_FORMAT="# hook-gauntlet sources record 2, sha256"
+_forge_sources_record_ok() {
+  local first
+  IFS= read -r first < "$1" 2> /dev/null || return 1
+  case "$first" in "$FORGE_SOURCES_FORMAT "*) ;; *) return 1 ;; esac
+  ! grep -v '^#' "$1" | LC_ALL=C grep -qvE "^[0-9a-f]{64}$(printf '\t')."
+}
+
+# sha256_of: file names on stdin, one per line -> "<sha256><TAB><name>" for each that is a readable regular file, in
+#   their order (a missing or unreadable one: no line). By the first of these that is here: sha256sum (GNU coreutils,
+#   Linux), `shasum -a 256` (Perl's, macOS - which has no sha256sum), `openssl dgst -sha256`; FORGE_SHA256_TOOL says
+#   which (the record's first line names it). None: returns 2 and one line on stderr naming the three - never a weaker
+#   hash in its place. The files are hashed in one call (xargs) and paired with the answers by order; when the count of
+#   answers is not the count of files (one vanished between the two), each is hashed alone.
+FORGE_SHA256_TOOL=""
+_sha256_tool() {
+  if command -v sha256sum > /dev/null 2>&1; then FORGE_SHA256_TOOL=sha256sum
+  elif command -v shasum > /dev/null 2>&1; then FORGE_SHA256_TOOL="shasum -a 256"
+  elif command -v openssl > /dev/null 2>&1; then FORGE_SHA256_TOOL="openssl dgst -sha256"
+  else FORGE_SHA256_TOOL=""; return 1; fi
+}
+FORGE_SHA256_MISSING="none of sha256sum, shasum or openssl is on this PATH: the kit hashes what a build read with SHA-256 (scripts/lib/forge-env.sh, sha256_of) and has nothing to hash with, so it cannot tell a build that runs old code - install one (coreutils' sha256sum, Perl's shasum, or openssl)"
+_sha256_hex() { # the tool's answers on stdin -> the hex digest alone, one per line (GNU's "\<hex>  <name>" for an escaped name too)
+  case "$FORGE_SHA256_TOOL" in
+    openssl*) LC_ALL=C sed -nE 's/^.*= ([0-9a-f]{64})$/\1/p' ;;
+    *) LC_ALL=C sed -nE 's/^\\?([0-9a-f]{64}) .*$/\1/p' ;;
+  esac
+}
+sha256_of() {
+  local f h n=0 hexes
+  local -a files=() args=()
+  _sha256_tool || { echo "$FORGE_SHA256_MISSING" >&2; return 2; }
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$f" ] && [ -r "$f" ] || continue
+    files+=("$f"); case "$f" in -*) args+=("./$f") ;; *) args+=("$f") ;; esac   # a name the tool would read as a flag
+  done
+  [ "${#files[@]}" -gt 0 ] || return 0
+  # shellcheck disable=SC2086   # FORGE_SHA256_TOOL is a command and its flags, on purpose
+  hexes="$(printf '%s\0' "${args[@]}" | xargs -0 $FORGE_SHA256_TOOL 2> /dev/null | _sha256_hex)"
+  if [ "$(printf '%s\n' "$hexes" | grep -c .)" -eq "${#files[@]}" ]; then
+    while IFS= read -r h; do printf '%s\t%s\n' "$h" "${files[$n]}"; n=$((n + 1)); done <<< "$hexes"
+    return 0
+  fi
+  for n in "${!files[@]}"; do
+    # shellcheck disable=SC2086
+    h="$($FORGE_SHA256_TOOL "${args[$n]}" 2> /dev/null | _sha256_hex)"
+    [ -z "$h" ] || printf '%s\t%s\n' "$h" "${files[$n]}"
+  done
+}
 
 # forge_sources_snapshot [<cache file>]: the sources as they are NOW (before a build), for forge_sources_record
 forge_sources_snapshot() {
@@ -294,12 +348,14 @@ forge_sources_record() {
   [ -n "$cache" ] || cache="$(_forge_cache_file)"
   [ -f "$cache" ] || return 0
   rec="$(_forge_sources_record_file "$cache")"
+  # nothing to hash with: no record (forge_sources_stale refuses on it, naming the three tools)
+  _sha256_tool || { rm -f -- "$rec"; return 0; }
   _forge_layout
   now="$(_forge_sources_keys "$cache" | _forge_sources_sums)"
   # nothing readable (another forge's cache shape): no record, and forge_sources_stale says so on every run
   [ -n "$now" ] || { rm -f -- "$rec"; return 0; }
   {
-    echo "# hook-gauntlet: the sources forge's build here read (not test/ or script/), and their content (cksum) when it started."
+    echo "$FORGE_SOURCES_FORMAT ($FORGE_SHA256_TOOL): the sources forge's build here read (not test/ or script/), and their content when it started."
     echo "# Written by the kit after a build it trusts (scripts/lib/forge-env.sh, forge_sources_record); compared before the next."
     if [ -n "$pre" ]; then
       awk -F '\t' 'NR == FNR { pre[$2] = $1; next } { print (($2 in pre) ? pre[$2] : $1) "\t" $2 }' <(printf '%s\n' "$pre") <(printf '%s\n' "$now")
@@ -316,12 +372,16 @@ forge_sources_record() {
 #   existed). With --no-record-ok (assert-fresh-build.sh standalone: forge's answer decides, as it always has) no record
 #   returns 1 and sets FORGE_SOURCES_NOTE instead. Returns 1 otherwise: no cache (nothing to distrust), nothing changed,
 #   only plain files under `src` in a project where forge follows them - or a cache in a shape this forge (1.8.1) does not
-#   write (FORGE_SOURCES_NOTE says so: nothing is recorded, nothing is seen). Cost: one `forge config`, one grep over the
-#   cache and one cksum over the recorded files (plus one `forge remappings` when only `src` changed).
+#   write (FORGE_SOURCES_NOTE says so: nothing is recorded, nothing is seen). A record not in this kit's format (v0.2's
+#   cksum one, or anything else: _forge_sources_record_ok) is no record, and FORGE_SOURCES_WHY says which it was. Returns
+#   2 - FORGE_SOURCES_WHY naming the three tools - when there is nothing to hash with (sha256_of): refused, never a
+#   weaker check. Cost: one `forge config`, one grep over the cache and one SHA-256 over the recorded files (plus one
+#   `forge remappings` when only `src` changed).
 # shellcheck disable=SC2034   # FORGE_SOURCES_NOTE is read by the scripts that call this
 forge_sources_stale() {
   local cache="${1:-}" rec changed k first="" n=0 why="" root d tgt canon srcc m
   FORGE_SOURCES_WHY=""; FORGE_SOURCES_SHORT=""; FORGE_SOURCES_NOTE=""
+  if ! _sha256_tool; then FORGE_SOURCES_WHY="$FORGE_SHA256_MISSING"; FORGE_SOURCES_SHORT="nothing to hash with"; return 2; fi
   [ -n "$cache" ] || cache="$(_forge_cache_file)"
   [ -f "$cache" ] || return 1
   rec="$(_forge_sources_record_file "$cache")"
@@ -330,8 +390,17 @@ forge_sources_stale() {
     FORGE_SOURCES_NOTE="forge's cache $cache lists no source in the shape this kit reads (another forge version?): what its build read is not checked"
     return 1
   fi
-  if [ ! -f "$rec" ]; then
+  if [ ! -f "$rec" ] || ! _forge_sources_record_ok "$rec"; then
     FORGE_SOURCES_WHY="there is no record of what forge's last build here read ($rec, written by the kit after each build it trusts), so a source changed since then would not be seen"; FORGE_SOURCES_SHORT="no record of what the last build read"
+    if [ -f "$rec" ]; then
+      if head -n 2 "$rec" 2> /dev/null | grep -qF '(cksum)'; then
+        FORGE_SOURCES_WHY="the record of what forge's last build here read ($rec) was written by an older kit with cksum, a CRC that a deliberate edit can match (V28: BATTERY PASSED over a forged mutant); this kit compares SHA-256 only, so it is read as no record, and a source changed since then would not be seen"
+        FORGE_SOURCES_SHORT="the record of what the last build read is an older kit's (cksum), read as none"
+      else
+        FORGE_SOURCES_WHY="the record of what forge's last build here read ($rec) is not in the format this kit writes ('$FORGE_SOURCES_FORMAT ...', a SHA-256 per file), so it is read as no record, and a source changed since then would not be seen"
+        FORGE_SOURCES_SHORT="the record of what the last build read is not this kit's format, read as none"
+      fi
+    fi
     if [ "${2:-}" = --no-record-ok ]; then
       FORGE_SOURCES_NOTE="$FORGE_SOURCES_WHY - a change outside src/ that forge's incremental build does not follow (scripts/lib/forge-env.sh) is not seen by this run; the battery records one"
       FORGE_SOURCES_WHY=""; FORGE_SOURCES_SHORT=""; return 1
@@ -391,10 +460,12 @@ forge_sources_stale() {
 #   persisted, which replay first - a counterexample), cache/test-failures and the corpus directory (measured, forge
 #   1.8.1), and nothing here deletes those. Without its record forge compiles every source (measured: 27 files of 27 on
 #   the root kit, 2.5 s against 0.14 s for a no-op build; 228 s on the v4 module) and writes the paths of this place.
-#   Returns 0 when it removed the record, 1 when there was nothing to do, 2 when the record could not be removed (said).
+#   Returns 0 when it removed the record, 1 when there was nothing to do, 2 when the record could not be removed, or
+#   there is nothing to hash what the build reads with (sha256_of) - said, and the caller runs nothing.
 forge_cache_rehome() {
-  local tag="$1" cache="${2:-}" elsewhere
+  local tag="$1" cache="${2:-}" elsewhere rc
   FORGE_REHOME_WHY=""
+  if ! _sha256_tool; then echo "$tag: $FORGE_SHA256_MISSING. Refused: nothing built."; return 2; fi
   [ -n "$cache" ] || cache="$(_forge_cache_file)"
   if elsewhere="$(forge_cache_elsewhere "$cache")"; then
     if ! rm -f -- "$cache" 2> /dev/null || [ -e "$cache" ]; then
@@ -405,7 +476,9 @@ forge_cache_rehome() {
     echo "$tag: forge's cache was written at another path ($elsewhere): its record $cache is removed, so this build is from nothing (an incremental one leaves tests running the old code)"
     return 0
   fi
-  forge_sources_stale "$cache" || return 1
+  forge_sources_stale "$cache"; rc=$?
+  if [ "$rc" -eq 2 ]; then echo "$tag: $FORGE_SOURCES_WHY. Refused: nothing built."; return 2; fi
+  [ "$rc" -eq 0 ] || return 1
   if ! rm -f -- "$cache" 2> /dev/null || [ -e "$cache" ]; then
     echo "$tag: $FORGE_SOURCES_WHY - and forge's record $cache cannot be removed. Remove it, or run forge build --force."
     return 2

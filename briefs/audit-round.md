@@ -22,6 +22,10 @@ of the deliverables*), `{{SPEC}}` (the contract this code claims to honour, and 
 weapon), then every file in `{{SRC_DIR}}` and `{{TEST_DIR}}`. Method and vocabulary: `doctrine/LOOP.md`,
 `doctrine/TRIAGE.md`, `doctrine/SEVERITY.md`.
 
+Open before this round, from phase 3 (`pending/`, provisional severity): {{PENDING_IDS}} - they are known: confirm
+each briefly and spend the round on what they do not cover; a round that only rediscovers this list has a thin ROUND
+line (`AGENTS.md` §6c, 5, a lazy round). *No `pending:` finding: delete this paragraph.*
+
 ## What changed since the last round, and is therefore your target
 
 *One short paragraph per change. Be specific: name the function, say what the new behaviour is, and say what you

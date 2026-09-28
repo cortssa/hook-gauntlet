@@ -1304,9 +1304,11 @@ done
 # id, one high spelled twice...), as fixtures (state-v26b-*.md, the same first line): with open_findings naming the open
 # highs (K28) each is REFUSED (an id recorded to tell that is not an open high) or ASKED - never quiet, never a STOP. And
 # the same file with the ids taken out of open_findings (as V26b wrote it: `high=1`, no ids) is refused: a count needs
-# its ids.
+# its ids. V28's probes (state-v28-*.md: the same non-id on BOTH sides - `high=1 (all)` and `high all - to tell`, `TBA`,
+# `pending`, `1`, `TBD.`, `None.` - quieted row 1: STOP rc 0) are run the same way: an id has at least one letter and one
+# digit, and a word that is not one is refused where it stands (`refused=not-an-id` in the first line, K29).
 nn=840
-for f in "$FIX"/state-v26b-*.md; do
+for f in "$FIX"/state-v26b-*.md "$FIX"/state-v28-*.md; do
   nn=$((nn + 1)); j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
   a=(); [ "$j" = "none" ] || a=(--judge "$j")
   "$NX" "$f" "${a[@]}" > "$TMP/o$nn" 2>&1; nrc=$?
@@ -1315,8 +1317,13 @@ for f in "$FIX"/state-v26b-*.md; do
   if [ "$got" != "$want" ]; then echo "  FAIL  and it named rows '$got', not '$want'"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); fi
   if grep -qE '^next: STOP|row 1 is quiet' "$TMP/o$nn"; then echo "  FAIL  and row 1 was quiet, or the pause was given"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); fi
   case "$wrc" in
-    2) grep -qF "is not an open high in open_findings" "$TMP/o$nn" && grep -qF "a recorded high is no longer open: remove it" "$TMP/o$nn" \
-         || { echo "  FAIL  and not refused as a recorded high that is not open: $(head -1 "$TMP/o$nn")"; fails=$((fails + 1)); } ;;
+    2) if [ "$(nx_meta "$f" refused)" = not-an-id ]; then
+         grep -qE "'[^']*' is not an id: an id has at least one letter and one digit" "$TMP/o$nn" \
+           || { echo "  FAIL  and not refused as a word that is not an id: $(head -1 "$TMP/o$nn")"; fails=$((fails + 1)); }
+       else
+         grep -qF "is not an open high in open_findings" "$TMP/o$nn" && grep -qF "a recorded high is no longer open: remove it" "$TMP/o$nn" \
+           || { echo "  FAIL  and not refused as a recorded high that is not open: $(head -1 "$TMP/o$nn")"; fails=$((fails + 1)); }
+       fi ;;
     3) [ "$(sed -n 1p "$TMP/o$nn" | cut -c1-24)" = "needs judgement: row 1 -" ] \
          || { echo "  FAIL  and row 1 is not the first question"; sed "s/^/        | /" "$TMP/o$nn"; fails=$((fails + 1)); } ;;
     *) echo "  FAIL  $(basename "$f"): rc=$wrc in its first line is neither 2 (refused) nor 3 (asked)"; fails=$((fails + 1)) ;;
@@ -1327,7 +1334,7 @@ for f in "$FIX"/state-v26b-*.md; do
   check "next.sh: the same, open_findings without its ids (as V26b wrote it): refused" 2 $? "$TMP/o${nn}n"
   grep -qF "names no ids" "$TMP/o${nn}n" || { echo "  FAIL  and not for a count with no ids: $(head -1 "$TMP/o${nn}n")"; fails=$((fails + 1)); }
 done
-[ "$nn" -ge 851 ] || { echo "  FAIL  fewer V26b fixtures than written (state-v26b-*.md): $((nn - 840)) of 11"; fails=$((fails + 1)); }
+[ "$nn" -ge 857 ] || { echo "  FAIL  fewer V26b and V28 fixtures than written (state-v26b-*.md, state-v28-*.md): $((nn - 840)) of 17"; fails=$((fails + 1)); }
 nx_variant 449 "full mode at the ceiling, the black-box STALE, the owner wants to freeze: row 16" \
   state-case-ceiling-full-blackbox-never.md 's/^blackbox: .*/blackbox: stale (an event changed since it ran)/' \
   5=false,8=false,10=false,16=true 0 "2,14,16"
@@ -1649,6 +1656,32 @@ nx_refused "a medium's id recorded as a high to tell (V26b a6)" "a recorded high
   "${OFH}high=1 (F-1) medium=1 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, M-1 - to tell/"
 nx_refused "a complete dossier with a finding open" "a dossier with an open finding is a skeleton" \
   "${OFH}high=0 medium=1 low=0 reasoned_high_or_medium=0/; s/^dossier: .*/dossier: complete (0 judges not done)/"
+# K29: an id is an id - at least one letter and one digit - on either side, alone (V28's non-ids on both sides are the
+# state-v28-*.md fixtures above); and the ids the real walks wrote pass
+nn=880
+nx_refused "a word that is not an id among the open highs (high=1 (all))" "'all' is not an id: an id has at least one letter and one digit" "${OFH}high=1 (all) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "a number that is not an id among the open highs (high=2 (F-1, 2))" "'2' is not an id" "${OFH}high=2 (F-1, 2) medium=0 low=0 reasoned_high_or_medium=0/"
+nx_refused "a word that is not an id recorded to tell (high TBA - to tell)" "'TBA' is not an id" \
+  "${OFH}high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high TBA - to tell/"
+nx_refused "an id with a full stop and no digit (None.)" "'None.' is not an id" "${OFH}high=1 (None.) medium=0 low=0 reasoned_high_or_medium=0/"
+sed "${OFH}high=4 (F-1, P-02, r01-A1, R01-3) medium=0 low=0 reasoned_high_or_medium=0/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1, P-02 - to tell · high r01-A1 R01-3 - to tell/" "$NP" > "$TMP/state-885.md"
+"$NX" "$TMP/state-885.md" > "$TMP/o885" 2>&1; check "next.sh: ids of every shape the walks wrote (F-1, P-02, r01-A1, R01-3) are ids, and quiet row 1 when all are recorded" 0 $? "$TMP/o885"
+grep -q '^because: .*row 1 is quiet: the 4 highs open are recorded to tell in waiting_on_owner (F-1, P-02, r01-A1, R01-3)$' "$TMP/o885" \
+  || { echo "  FAIL  and the because: line does not name the four:"; sed "s/^/        | /" "$TMP/o885"; fails=$((fails + 1)); }
+# K29: row 9b by the flags after the skeleton - a skeleton naming the number open decides it false, never asked; with
+# `dossier: none` or a stale K the question is the owner's presence, and it says what the dossier flag shows
+"$NX" "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/o886" 2>&1
+if grep -q '^needs judgement: ' "$TMP/o886" && ! grep -q '^needs judgement: row 9b ' "$TMP/o886"; then
+  echo "  ok    a skeleton naming the number open: row 9b is not asked (the flags decide it)"; else
+  echo "  FAIL  a skeleton naming the number open, and row 9b is asked (or nothing is):"; sed "s/^/        | /" "$TMP/o886"; fails=$((fails + 1)); fi
+"$NX" "$FIX/state-case-skeleton-stale.md" --judge 5=false,8=false,9=false > "$TMP/o887" 2>&1
+if grep -q '^needs judgement: row 9b - .*the dossier does not name them yet (the skeleton names 2, open_findings has 3 open): is the owner unavailable to triage them now' "$TMP/o887"; then
+  echo "  ok    a stale skeleton: row 9b asks for the owner's presence, and says what the skeleton names"; else
+  echo "  FAIL  a stale skeleton: row 9b's question does not say what the skeleton names and ask for the owner's presence:"; sed "s/^/        | /" "$TMP/o887"; fails=$((fails + 1)); fi
+sed 's/^dossier: .*/dossier: none/' "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-888.md"
+"$NX" "$TMP/state-888.md" --judge 5=false,8=false,9=false > "$TMP/o888" 2>&1
+grep -q '^needs judgement: row 9b - .*the dossier does not name them yet (dossier: none): is the owner unavailable' "$TMP/o888" \
+  || { echo "  FAIL  dossier: none, and row 9b's question does not say so and ask for the owner's presence:"; sed "s/^/        | /" "$TMP/o888"; fails=$((fails + 1)); }
 # ... and a told: note is a note like any other: not read, not refused (row 1 is asked while a high is open, owner present)
 sed 's/^open_findings: .*/open_findings: high=1 (F-1) medium=0 low=0 reasoned_high_or_medium=0/; s/^notes:.*/notes: told: F-1 and F-2 (by mail)/' "$NP" > "$TMP/state-677.md"
 "$NX" "$TMP/state-677.md" > "$TMP/o677" 2>&1; check "next.sh: a told: note in any shape is not refused (it is not read)" 3 $? "$TMP/o677"
@@ -2148,6 +2181,88 @@ EOF
     echo "  ok    and without a build from nothing"; else
     echo "  FAIL  it rebuilt from nothing, or ran the old code:"; grep -a -e '^battery:' -e '^test ' "$TMP/o838" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   rm -rf "$RK"
+  # (e) the record hashes with SHA-256 (K29). It was POSIX cksum - a CRC and a size - and a mutant with twelve chosen
+  # characters in a revert string had the original's cksum: BATTERY PASSED over code that fails (V28, the root kit with
+  # src/ a symlink). The pair below has one cksum (checked here, or the case proves nothing)
+  rk_rs() { printf 'pragma solidity ^0.8.26;\ncontract B { uint256 public x; function add() external { x += %s; require(x < 1000000, "%s"); } }\n' "$2" "$3" > "$1"; }
+  RK="$TMP/rk-crc"; mkdir -p "$RK/shared"; rk_toy "$RK/p" ../src/B.sol; rmdir "$RK/p/src"; ln -s "$RK/shared" "$RK/p/src"
+  rk_rs "$RK/shared/B.sol" 2 '@@@@@@@@@@@@'; cp "$RK/shared/B.sol" "$RK/good.sol"
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o890" 2>&1; check "battery on a project whose src/ is a symlink (before the CRC forgery)" 0 $? "$TMP/o890"
+  rk_rs "$RK/shared/B.sol" 3 'HJMNIHF@A@@@'
+  if [ "$(cksum < "$RK/good.sol")" = "$(cksum < "$RK/shared/B.sol")" ] && ! cmp -s "$RK/good.sol" "$RK/shared/B.sol"; then
+    echo "  ok    the forged B.sol has the good one's cksum (CRC and size), and other bytes"; else
+    echo "  FAIL  the forged B.sol does not have the good one's cksum: the next check proves nothing"; fails=$((fails + 1)); fi
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o891" 2>&1; check "the same battery over the CRC-forged B.sol (V28: BATTERY PASSED on a cksum record): BATTERY FAILED" 1 $? "$TMP/o891"
+  if grep -q '^battery: .*B\.sol changed since the last build the kit recorded' "$TMP/o891" && grep -Eq '^test +rc=1 +\(passed [0-9]+, failed [1-9]' "$TMP/o891"; then
+    echo "  ok    and it says which file, builds from nothing, and the tests see the forged code"; else
+    echo "  FAIL  the battery ran the old code over the forgery, or did not say why:"; grep -a -e '^battery:' -e '^test ' "$TMP/o891" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # a record written by an older kit (v0.2's cksum record), or in no format this kit writes, is read as none: one build
+  # from nothing, one line saying why - then the record is this kit's, and the next run builds nothing from scratch
+  cp "$RK/good.sol" "$RK/shared/B.sol"; "$HERE/battery.sh" "$RK/p" > /dev/null 2>&1
+  REC="$RK/p/cache/gauntlet-sources.tsv"
+  if head -1 "$REC" 2> /dev/null | grep -q '^# hook-gauntlet sources record 2, sha256 (' && ! grep -v '^#' "$REC" | grep -qvE "^[0-9a-f]{64}$(printf '\t')."; then
+    echo "  ok    the record says what it is and how it hashes, and holds a SHA-256 per file"; else
+    echo "  FAIL  the record is not '# hook-gauntlet sources record 2, sha256 (...)' with a SHA-256 per file:"; sed "s/^/        | /" "$REC"; fails=$((fails + 1)); fi
+  { echo "# hook-gauntlet: the sources forge's build here read (not test/ or script/), and their content (cksum) when it started."
+    echo "# Written by the kit after a build it trusts (scripts/lib/forge-env.sh, forge_sources_record); compared before the next."
+    grep -v '^#' "$REC" | cut -f2 | (cd "$RK/p" && while IFS= read -r k; do printf '%s\t%s\n' "$(cksum < "$k")" "$k"; done); } > "$RK/old.tsv"
+  cp "$RK/old.tsv" "$REC"
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o892" 2>&1; check "battery with a record an older kit wrote (cksum)" 0 $? "$TMP/o892"
+  if grep -q "^battery: the record of what forge's last build here read (.*) was written by an older kit with cksum, a CRC that a deliberate edit can match .*read as no record.* Its record cache/solidity-files-cache\.json is removed, so this build is from nothing\.$" "$TMP/o892" \
+    && [ "$(grep -c '^battery: ' "$TMP/o892")" -ge 1 ] && head -1 "$REC" | grep -q '^# hook-gauntlet sources record 2, sha256 ('; then
+    echo "  ok    one build from nothing, one line saying why, and the record rewritten in SHA-256"; else
+    echo "  FAIL  an older kit's cksum record was trusted, or the rebuild did not say why:"; grep -a -e '^battery:' -e '^cache ' "$TMP/o892" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  "$HERE/battery.sh" "$RK/p" > "$TMP/o893" 2>&1; check "and the next battery, nothing changed" 0 $? "$TMP/o893"
+  grep -q 'changed since the last build\|no record\|read as no record' "$TMP/o893" && { echo "  FAIL  and it built from nothing again"; fails=$((fails + 1)); }
+  printf 'a record of no known shape\n' > "$REC"
+  "$HERE/assert-fresh-build.sh" "$RK/p" > "$TMP/o894" 2>&1; check "the freshness check alone with a record in no format this kit writes (read as none: forge decides)" 0 $? "$TMP/o894"
+  grep -q "^evidence: the record of what forge's last build here read (.*) is not in the format this kit writes" "$TMP/o894" \
+    || { echo "  FAIL  and it does not say the record was read as none:"; grep -a '^evidence:' "$TMP/o894" | sed "s/^/        | /"; fails=$((fails + 1)); }
+  # sha256_of: sha256sum, else `shasum -a 256`, else `openssl dgst -sha256` - the same digests, in the order given, a
+  # missing file skipped - else refused, naming the three (never a weaker hash). Each tool alone on a PATH of its own
+  SD="$TMP/sha-files"; mkdir -p "$SD"; printf 'one\n' > "$SD/a.sol"; printf 'two\n' > "$SD/b c.sol"; printf 'three\n' > "$SD/-d.sol"
+  printf 'four\n' > "$SD/e\\f.sol"
+  sha_list() { printf '%s\n' "$SD/a.sol" "$SD/missing.sol" "$SD/b c.sol" "-d.sol" "$SD/e\\f.sol"; }
+  for tool in sha256sum shasum openssl none; do
+    TB="$TMP/sha-path-$tool"; mkdir -p "$TB"
+    for t in xargs sed grep env perl "$tool"; do
+      [ "$t" != none ] || continue; p="$(command -v "$t" 2> /dev/null)" || continue; case "$p" in /*) ln -sf "$p" "$TB/$t" ;; esac
+    done
+    if [ "$tool" != none ] && [ ! -e "$TB/$tool" ]; then echo "  --    $tool is not here: sha256_of with $tool alone NOT run on this machine"; continue; fi
+    (cd "$SD" && sha_list | PATH="$TB" "$BASH" -c '. "$1"; sha256_of; echo "rc=$?"; echo "tool=$FORGE_SHA256_TOOL"' _ "$HERE/lib/forge-env.sh") > "$TMP/o895-$tool" 2>&1
+  done
+  sed -n '/^rc=/!p' "$TMP/o895-sha256sum" | grep -v '^tool=' > "$TMP/o895-ref"
+  if [ "$(wc -l < "$TMP/o895-ref" | tr -d ' ')" = 4 ] && grep -q '^rc=0$' "$TMP/o895-sha256sum" \
+    && [ "$(cut -f2 "$TMP/o895-ref" | tr '\n' '|')" = "$SD/a.sol|$SD/b c.sol|-d.sol|$SD/e\\f.sol|" ] \
+    && [ "$(cut -f1 "$TMP/o895-ref" | sed -n 1p)" = "$(sha256sum < "$SD/a.sol" | cut -c1-64)" ]; then
+    echo "  ok    sha256_of with sha256sum: a SHA-256 per file, in order, the missing one skipped"; else
+    echo "  FAIL  sha256_of with sha256sum:"; sed "s/^/        | /" "$TMP/o895-sha256sum"; fails=$((fails + 1)); fi
+  for tool in shasum openssl; do
+    [ -f "$TMP/o895-$tool" ] || continue
+    if grep -q '^rc=0$' "$TMP/o895-$tool" && grep -q "^tool=$tool" "$TMP/o895-$tool" && [ "$(grep -v '^rc=\|^tool=' "$TMP/o895-$tool")" = "$(cat "$TMP/o895-ref")" ]; then
+      echo "  ok    sha256_of with $tool alone: the same lines as sha256sum's"; else
+      echo "  FAIL  sha256_of with $tool alone does not give sha256sum's lines:"; sed "s/^/        | /" "$TMP/o895-$tool"; fails=$((fails + 1)); fi
+  done
+  if grep -q '^rc=2$' "$TMP/o895-none" && grep -q '^none of sha256sum, shasum or openssl is on this PATH' "$TMP/o895-none" && ! grep -qE '^[0-9a-f]{64}' "$TMP/o895-none"; then
+    echo "  ok    sha256_of with none of the three: refused (rc 2), naming them"; else
+    echo "  FAIL  sha256_of with none of the three was not refused naming them:"; sed "s/^/        | /" "$TMP/o895-none"; fails=$((fails + 1)); fi
+  # ... and the judging scripts refuse to run without one: every command on PATH but the three
+  NH="$TMP/nohash-bin"; mkdir -p "$NH"
+  IFS=':' read -ra pdirs <<< "$PATH"
+  for d in "${pdirs[@]}"; do
+    case "$d" in /mnt/*|'') continue ;; esac
+    for p in "$d"/*; do
+      t="${p##*/}"; case "$t" in sha256sum|shasum|openssl) continue ;; esac
+      [ -x "$p" ] && [ ! -e "$NH/$t" ] && ln -s "$p" "$NH/$t" 2> /dev/null
+    done
+  done
+  PATH="$NH" "$HERE/battery.sh" "$RK/p" > "$TMP/o896" 2>&1; check "battery with none of sha256sum, shasum, openssl on PATH: refused" 1 $? "$TMP/o896"
+  if grep -q '^battery: none of sha256sum, shasum or openssl is on this PATH.*Refused: nothing built\.$' "$TMP/o896" && ! grep -q '^== test' "$TMP/o896"; then
+    echo "  ok    and it names the three, and builds and tests nothing"; else
+    echo "  FAIL  and it does not name the three, or it ran:"; sed "s/^/        | /" "$TMP/o896" | head -20; fails=$((fails + 1)); fi
+  PATH="$NH" "$HERE/assert-fresh-build.sh" "$RK/p" > "$TMP/o897" 2>&1; check "the freshness check with none of the three: nothing decided" 2 $? "$TMP/o897"
+  grep -q '^CANNOT CHECK: none of sha256sum, shasum or openssl' "$TMP/o897" || { echo "  FAIL  and it does not name them"; fails=$((fails + 1)); }
+  rm -rf "$RK" "$SD" "$NH" "$TMP"/sha-path-*
   # ~/.foundry/foundry.toml, the machine's configuration forge merges into every project's (a temporary HOME, never the
   # real one; the compilers linked from the real one). V24b: `skip` there, BATTERY PASSED on 86 of 107 with "filter:
   # none"; `match_test` there, "long fuzz passed" over 1 invariant of 6 and "VARIANT PASSED" over a variant that breaks 8

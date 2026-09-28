@@ -48,19 +48,21 @@
 #     16 and 18b take it;
 #   - row 1 goes quiet only by the flags' record of the owner absent, BY ID (K28): open_findings names the open highs,
 #     `high=N (<ids>)` - the parentheses exactly when N > 0, one id per high, each once (case aside), ids between commas
-#     or spaces; a count without its ids, ids with N = 0, a count that is not the number of ids, a placeholder (none, TBD,
-#     nobody, n/a, ?) or a word between the ids is refused. The row is quiet when EVERY one of those ids is among the ids
-#     of the items `high <id>[, <id>...] - to tell` of waiting_on_owner (compared case-insensitively, the same rules for
-#     the ids there); an id recorded there that is not an open high is refused (a recorded high is no longer open: remove
-#     it - V26b: `high all`, `high 1`, a medium's id, one high spelled twice quieted the row by their number alone). Then
-#     the row is false, and the because: line of whatever is given names those ids - a quiet row 1 always leaves a trace.
-#     Otherwise, with a high open, it is a question naming the highs not recorded (the owner present: answered 1=false
-#     once told); a `told:` note is not read. A provisional high from phase 3 counts in open_findings high like any
-#     other (NEXT.md row 6b);
+#     or spaces; a count without its ids, ids with N = 0, a count that is not the number of ids, a placeholder (none,
+#     TBD, nobody, n/a, ?), a word between the ids, or a word that is not an id - an id has a letter and a digit (F-1,
+#     r01-A1; `all`, `TBA`, `pending`, `1`, `None.` are not: V28, the same non-id on both sides quieted the row) - is
+#     refused. The row is quiet when EVERY one of those ids is among the ids of the items `high <id>[, <id>...] - to
+#     tell` of waiting_on_owner (compared case-insensitively, the same rules for the ids there); an id recorded there
+#     that is not an open high is refused (a recorded high is no longer open: remove it - V26b: `high all`, `high 1`, a
+#     medium's id, one high spelled twice quieted the row by their number alone). Then the row is false, and the
+#     because: line of whatever is given names those ids - a quiet row 1 always leaves a trace. Otherwise, with a high
+#     open, it is a question naming the highs not recorded (the owner present: answered 1=false once told); a `told:`
+#     note is not read. A provisional high from phase 3 counts in open_findings high like any other (NEXT.md row 6b);
 #   - row 9b is quiet once the dossier names the open findings: `dossier: skeleton (<K> open, ...)` with K the number
-#     open (high + medium + low; informational findings are not counted); `none`, or a skeleton naming another number
-#     (stale), keeps it standing. `dossier: complete` with a finding open is refused: a dossier with an open finding is a
-#     skeleton (K28, NEXT.md's `dossier:` flag);
+#     open (high + medium + low; informational findings are not counted) decides it false by the flags, unasked; `none`,
+#     or a skeleton naming another number (stale), keeps it standing, and the owner's presence is what is asked.
+#     `dossier: complete` with a finding open is refused: a dossier with an open finding is a skeleton (K28, NEXT.md's
+#     `dossier:` flag);
 #   - row 3 ends the route with the owner absent: when waiting_on_owner is not `none` and no row below stands on the flags
 #     and none is left to judge, the answer is `next: STOP - paused, waiting on the owner: <items>` (exit 0) - decided
 #     by the flags, never asked, and never answered: `--judge 3=...` is REFUSED (V26b: `3=true` gave that STOP over row
@@ -130,7 +132,7 @@ ROWS='
 7b  | 4135edaa | act  | -                   | real_manager.owed=yes waiting_on_owner.real_manager=no | -
 8   | c328f377 | act  | -                   | any_round=yes | is there an ACCEPTED or FIXED finding (triaged in row 9) from outside the fuzzer with no rule for it yet (an invariant or action, or a unit test and a not fuzzable: note)?
 9   | 6d5b5f55 | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | is a finding from any round still open (not fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name - one triaged fix at the cause whose fix is not written yet is still open; a phase-3 pending: finding is one too, now that round 1 has run or the ceiling is reached), and is the owner there to answer, or is it already triaged fix at the cause?
-9b  | d97c97e8 | act  | -                   | last_audit_round!=none open_findings.total>0 dossier.lists_open=no ; ceiling=reached open_findings.total>0 dossier.lists_open=no | do open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached), which the dossier does not name yet, wait on the owner'"'"'s triage while the owner is not available?
+9b  | 3fac6ddc | act  | -                   | last_audit_round!=none open_findings.total>0 dossier.lists_open=no ; ceiling=reached open_findings.total>0 dossier.lists_open=no | open findings from any round (a phase-3 pending: finding too, now that round 1 has run or the ceiling is reached) wait on the owner'"'"'s triage, and the dossier does not name them yet ({dossier_names}): is the owner unavailable to triage them now (an exercise, or away)?
 10  | 75485129 | act  | -                   | any_round=yes bytecode_changed_since.last_audit_round=no | did only documents, comments, scripts or tests change since the last round, making claims about the code?
 11b | 39b95289 | act  | -                   | - | was a model round STOPPED by the environment (the harness, the provider'"'"'s classifier) before delivering, and not yet retried - or stopped again, and not yet recorded (notes: round <id> stopped; a black-box round also blackbox: stopped (<id>))?
 11  | 29326122 | act  | -                   | last_audit_round=none battery=green | -
@@ -236,6 +238,10 @@ finding_id() {
     and | or | '&' | plus) refuse "$where, '$id' is a word, not a finding id (ids between commas or spaces: $form)." ;;
   esac
   [[ $id =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || refuse "$where, '$id' is not one finding id ($form)."
+  # an id is an id: a letter and a digit at least (F-1, P-02, r01-A1, R01-3). The same non-id written on both sides -
+  # `high=1 (all)` and `high all - to tell`, `TBA`, `pending`, the count `1`, `None.` - quieted row 1 (V28)
+  [[ $id =~ [A-Za-z] && $id =~ [0-9] ]] \
+    || refuse "$where, '$id' is not an id: an id has at least one letter and one digit (F-1, r01-A1; $form)."
 }
 
 # enum <flag> <allowed...>: the value's first word is one of them, and anything after it is a comment in parentheses
@@ -619,6 +625,7 @@ for id in "${IDS[@]}"; do
   why="$COND_WHY"
   if [ "${ASK[$id]}" != "-" ]; then
     q="${ASK[$id]//\{waiting_on_owner\}/${V[waiting_on_owner]}}"; q="${q//\{highs_not_recorded\}/$HIGHS_NOT_RECORDED}"
+    q="${q//\{dossier_names\}/${SHOW_NOTE[dossier.lists_open]:-dossier: ${V[dossier]}}}"
     case "${JUDGE[$id]:-}" in
       false) continue ;;
       true) why="${why:+$why; }judged true: $q" ;;

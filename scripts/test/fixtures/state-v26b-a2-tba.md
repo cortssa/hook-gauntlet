@@ -1,5 +1,5 @@
-<!-- selftest: judge=5=false,8=false,9=false,10=false rows=none rc=2 -->
-# STATE - next.sh fixture: V26b's probe a2 (row 1 was quiet by an id that is not an open high): 'high TBA - to tell', F-1 the open high: 'TBA' is not an open high - refused
+<!-- selftest: judge=5=false,8=false,9=false,10=false rows=none rc=2 refused=not-an-id -->
+# STATE - next.sh fixture: V26b's probe a2 (row 1 was quiet by an id that is not an open high): 'high TBA - to tell', F-1 the open high: refused - not an id (an id has a letter and a digit, K29; before K29, refused as a recorded high that is not open)
 
 *A fixture for scripts/next.sh (scripts/selftest.sh). The first line says how it is run and what it must give. The
 selftest runs it a second time with the ids after `high=N` taken out of `open_findings`: refused (a count needs its ids).*

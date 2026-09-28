@@ -65,7 +65,8 @@
 #          1 STALE: forge compiled - the artifacts were older than the sources or the settings; they are rebuilt now.
 #            Or the cache was written at another path: rebuilt from nothing, and what was measured before is not vouched for
 #          2 nothing can be decided: no artifacts or no cache (never built), no forge, --force, a build that failed
-#            (its error is printed), an answer from forge this check does not know, or a line break in FORGE_FLAGS
+#            (its error is printed), an answer from forge this check does not know, a line break in FORGE_FLAGS, or
+#            none of sha256sum, shasum, openssl to hash what the build read with
 
 set -uo pipefail
 
@@ -167,6 +168,10 @@ LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
 cmd="forge build $offline $(forge_flags_shown "$FORGE_FLAGS")"
 
+# ---- nothing to hash what a build read with (scripts/lib/forge-env.sh, sha256_of): the record below can be neither
+# read nor written, and this check is not made without it
+if ! _sha256_tool; then echo "CANNOT CHECK: $FORGE_SHA256_MISSING. Nothing decided."; exit 2; fi
+
 # ---- a cache written at another path: forge's answer is not asked (see the header); built from nothing, STALE
 if elsewhere="$(forge_cache_elsewhere "$CACHE_FILE")"; then
   echo "evidence: forge's cache records $elsewhere, which is not under $(pwd -P): it was written at another path"
@@ -194,7 +199,9 @@ fi
 # tests run the old code. Built from nothing, recorded, STALE
 # (standalone, with no record - a build forge made alone - forge's answer decides as it always has, and a line says what
 # that leaves unseen; the battery records what its build read before it calls this check)
-if forge_sources_stale "$CACHE_FILE" --no-record-ok; then
+forge_sources_stale "$CACHE_FILE" --no-record-ok; rc_src=$?
+[ "$rc_src" -ne 2 ] || { echo "CANNOT CHECK: $FORGE_SOURCES_WHY. Nothing decided."; exit 2; }
+if [ "$rc_src" -eq 0 ]; then
   echo "evidence: $FORGE_SOURCES_WHY"
   if ! rm -f -- "$CACHE_FILE" 2> /dev/null || [ -e "$CACHE_FILE" ]; then
     echo "CANNOT CHECK: $CACHE_FILE cannot be removed, and forge's incremental answer is not true here. Nothing decided."; exit 2

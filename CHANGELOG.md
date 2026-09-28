@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.2.1 - 2026-09-28 - four small things the last verifiers and the thirteenth fresh reader left
+
+- The source record the judging scripts keep (a change forge's incremental build misses: a remapping, a symlink)
+  hashes with SHA-256 (`sha256sum`, else `shasum -a 256`, else `openssl`; none: refused, never a pass); a v0.2
+  record (cksum) is read as no record, one rebuild. A file edited to keep its CRC and size is seen now.
+- A finding id must contain a letter and a digit, in `open_findings` and in `high <ids> - to tell`: `all`, `TBA`,
+  `pending`, `1` are refused as ids and can no longer quiet row 1.
+- Row 9b is decided by the flags once the skeleton names every open finding; it is asked only when the dossier does
+  not, and then only about the owner's availability.
+- The round brief names phase-3 pending findings as known: a round confirms them briefly and spends itself on what
+  they do not cover.
+
+Known gaps: a hashing tool that is present but broken makes every run a rebuild from scratch (honest, slow); a
+non-id that carries a letter and a digit (`TBD1`, `Q3`) still passes as an id.
+
 ## v0.2 - 2026-09-28 - the kit against the chain that exists, and against itself
 
 - **A mainnet fork at a pinned block** (`V4_MANAGER=fork`, `FOUNDRY_PROFILE=fork`): the deployed PoolManager, real
@@ -28,9 +43,10 @@
   no script writes into an owner's tree without the convention installed.
 - `scripts/doctor.sh` (checks, never installs), a one-page entry to the dossier, the forbidden words, issue forms for a
   stuck step and for what the kit missed; the v4 clean build measured at about 200 s and 9 GB, not 26 s and 1.3 GB.
-- Known gaps, each written where it lives: the source record is a CRC; the black-box bench refusal reads the word
-  `src`; a non-id written as an open high and as told still quiets row 1; the "through the periphery" check can be
-  fooled by a handler that pranks as the router; a treasury skim below 3 wei per donation passes the campaign.
+- Known gaps, each written where it lives (the first two closed in v0.2.1): the source record is a CRC; a non-id
+  written as an open high and as told still quiets row 1; the black-box bench refusal reads the word `src`; the
+  "through the periphery" check can be fooled by a handler that pranks as the router; a treasury skim below 3 wei per
+  donation passes the campaign.
 
 ## v0.1.1 - 2026-09-25 - the dossier as a PDF, and what a handoff must be
 
