@@ -51,7 +51,7 @@ From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to 
 - a report came back and you are about to act on it: `{{KIT}}/doctrine/VERIFY.md`
 - a verifier pass (row 10): `{{KIT}}/briefs/verifier.md`
 - rating a finding on the scale: `{{KIT}}/doctrine/SEVERITY.md`
-- sections 5 and 6c: a severity argued down, the closing round on another vendor, a clean round is a stop rule and not a safety claim: `{{KIT}}/AGENTS.md`
+- section 1: a severity is never argued down by the round that would like to close, and passing every gate does not mean secure; section 6c: the closing round on another vendor: `{{KIT}}/AGENTS.md`
 - models, benches, what the environment refuses, a stopped round: `{{KIT}}/doctrine/ORCHESTRATION.md`
 
 ## Done when

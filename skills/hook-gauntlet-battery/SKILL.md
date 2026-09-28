@@ -46,7 +46,7 @@ From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to 
 ## Read when
 
 - a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory: `{{KIT}}/doctrine/UPSTREAM.md`
-- before a long campaign or a mutation pass: say how long and how much (section 4): `{{KIT}}/doctrine/COST.md`
+- section 5, Cost: before a long fuzz campaign, say how long and how much: `{{KIT}}/AGENTS.md`
 
 ## Done when
 

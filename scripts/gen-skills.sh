@@ -108,14 +108,14 @@ hook-gauntlet-spec      | when  | doctrine/UPSTREAM.md          | a fact about t
 hook-gauntlet-battery   | entry | doctrine/JUDGES.md            | the question each judge answers, and how each one lies
 hook-gauntlet-battery   | entry | QUICKSTART.md                 | steps 7b (the harness) and 8 (one command per judge)
 hook-gauntlet-battery   | when  | doctrine/UPSTREAM.md          | a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory
-hook-gauntlet-battery   | when  | doctrine/COST.md              | before a long campaign or a mutation pass: say how long and how much (section 4)
+hook-gauntlet-battery   | when  | AGENTS.md                     | section 5, Cost: before a long fuzz campaign, say how long and how much
 hook-gauntlet-round     | entry | doctrine/LOOP.md              | -
 hook-gauntlet-round     | entry | briefs/audit-round.md         | the round'"'"'s brief; fill the placeholders, do not rewrite the rules
 hook-gauntlet-round     | when  | doctrine/TRIAGE.md            | a finding to triage
 hook-gauntlet-round     | when  | doctrine/VERIFY.md            | a report came back and you are about to act on it
 hook-gauntlet-round     | when  | briefs/verifier.md            | a verifier pass (row 10)
 hook-gauntlet-round     | when  | doctrine/SEVERITY.md          | rating a finding on the scale
-hook-gauntlet-round     | when  | AGENTS.md                     | sections 5 and 6c: a severity argued down, the closing round on another vendor, a clean round is a stop rule and not a safety claim
+hook-gauntlet-round     | when  | AGENTS.md                     | section 1: a severity is never argued down by the round that would like to close, and passing every gate does not mean secure; section 6c: the closing round on another vendor
 hook-gauntlet-round     | when  | doctrine/ORCHESTRATION.md     | models, benches, what the environment refuses, a stopped round
 hook-gauntlet-blackbox  | entry | briefs/black-box.md           | the black-box brief; fill the placeholders, do not rewrite the rules
 hook-gauntlet-blackbox  | when  | doctrine/ORCHESTRATION.md     | the harness or the provider stops the round (section 4)

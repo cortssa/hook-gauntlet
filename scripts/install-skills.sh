@@ -89,8 +89,16 @@ else
   # a --project that resolves to the user-level directory (HOME itself, or a .claude that is a link into it) is a
   # user-level install, and that takes --user on purpose
   case "$HARNESS" in devin) UDEST="${XDG_CONFIG_HOME:-$HOME/.config}/devin/skills" ;; *) UDEST="$HOME/$SUB" ;; esac
-  rp() { ( cd "$(dirname "$1")" 2> /dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$1")" ); }
-  if [ -n "$(rp "$DEST")" ] && [ "$(rp "$DEST")" = "$(rp "$UDEST")" ]; then refuse "--project '$PROJECT' resolves to the user-level directory $UDEST: that is --user, on purpose."; fi
+  # resolve as far as the path exists: HOME always exists, so a DEST under it resolves to the same string as UDEST
+  # whether or not the skills directory exists yet; a symlinked skills/ or .claude/ resolves through the link
+  rp() {
+    local p="$1" rest=""
+    while [ ! -d "$p" ] && [ "$p" != / ] && [ "$p" != . ]; do rest="/$(basename "$p")$rest"; p="$(dirname "$p")"; done
+    ( cd "$p" 2> /dev/null && printf '%s%s' "$(pwd -P)" "$rest" )
+  }
+  same_dir() { [ -n "$1" ] && [ "$1" = "$2" ]; }
+  if same_dir "$(rp "$DEST")" "$(rp "$UDEST")" || { [ -L "$DEST" ] && same_dir "$(rp "$(readlink -f "$DEST" 2> /dev/null)")" "$(rp "$UDEST")"; }; then
+    refuse "--project '$PROJECT' resolves to the user-level directory $UDEST: that is --user, on purpose."; fi
 fi
 
 # the gate first: skills that are not what the doctrine generates today are not installed
