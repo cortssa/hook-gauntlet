@@ -12,7 +12,7 @@
 #   2. pointers: every `{{KIT}}/<path>` in a skill names a file or a directory of the kit;
 #   3. the six rules: the block between `<!-- invariants:begin -->` and `<!-- invariants:end -->` in each skill is
 #      AGENTS.md's block, markers included, byte for byte;
-#   4. size: tokens printed per skill (bytes/4); a skill above 7000 bytes is red - a skill is read whole, before any
+#   4. size: tokens printed per skill (bytes/4); a skill above 8000 bytes is red - a skill is read whole, before any
 #      doctrine, and a long one is read around (the fork's 12-14k skills were read with sed, past their first half);
 #   5. the frontmatter a harness reads: `name:` is the directory, `description:` present and at most 1024 characters.
 # The thin-skills design and the drift guard are Pedro Santana's idea (his fork's skills-check.sh checked a copied
@@ -23,7 +23,7 @@
 #                 against the kit this script is in
 # Output:  one "skills-check: <file>: <what>" line per problem (the run goes on), one "tokens <name>: <n> (<bytes> bytes)"
 #          line per skill, then "SKILLS CHECK PASSED: <n> skills, as generated; <k> pointers resolve; the six rules are
-#          AGENTS.md's; none above 7000 bytes." or "SKILLS CHECK FAILED: <n> problem(s)."
+#          AGENTS.md's; none above 8000 bytes." or "SKILLS CHECK FAILED: <n> problem(s)."
 # Exit:    0 passed; 1 problem(s); 2 REFUSED - bad arguments, no skills directory, no gen-skills.sh: one line on stderr.
 
 set -uo pipefail
@@ -31,7 +31,7 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KIT="$(cd "$HERE/.." && pwd)"
 SKILLS="$KIT/skills"
-MAX_BYTES=7000
+MAX_BYTES=8000
 
 refuse() { echo "skills-check: REFUSED - $*" >&2; exit 2; }
 

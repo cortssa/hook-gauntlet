@@ -1,7 +1,7 @@
 # AGENTS.md - hook-gauntlet
 
 If you were asked to take a Uniswap v4 hook from an idea to audit-ready, or to test an existing one hard, start here.
-An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after this file; without
+An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after `AGENTS.md`; without
 them -> phase 0, the code as the sketch to specify. With skills (`skills/README.md`): invoke `hook-gauntlet` first and
 let each skill name the sections you need. Without skills: read this file to the end before you touch anything. It is
 written for an agent with no prior context.
@@ -255,7 +255,7 @@ You may **not** diverge on these, whatever the hook, whatever the owner says in 
 - read the whole report before touching code;
 - the dossier says honestly what was NOT checked.
 
-Every skill in `skills/` carries the five rules below, quoted byte for byte by `scripts/gen-skills.sh` and held to this
+Every skill in `skills/` carries the six rules below, quoted byte for byte by `scripts/gen-skills.sh` and held to this
 block by `scripts/skills-check.sh`. Edit them here, never in a skill:
 
 <!-- invariants:begin -->
@@ -267,8 +267,9 @@ block by `scripts/skills-check.sh`. Edit them here, never in a skill:
 - **Words you never write about a hook this route has touched**: "safe", "secure", "battle-tested", "fully verified",
   and "audited" as a claim about the hook.
 - **Nothing becomes a recommendation to the owner without a verifier that is not its author.**
-- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner` and the route pauses
-  there; never choose for them, and never fix a bug of theirs while they are absent.
+- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner`; the route continues
+  with what does not depend on the answer and pauses only when nothing does (`doctrine/NEXT.md` row 3). Never choose
+  for them; a bug found before round 1 with the owner absent is a finding, not a fix (row 6b).
 <!-- invariants:end -->
 
 If following the kit literally would make the work worse for this hook, that is a finding about the kit. Diverge, write

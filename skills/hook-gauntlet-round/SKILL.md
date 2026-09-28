@@ -15,25 +15,26 @@ description: Phase 4 (Adversarial loop) of hook-gauntlet, the route that takes a
 - **Words you never write about a hook this route has touched**: "safe", "secure", "battle-tested", "fully verified",
   and "audited" as a claim about the hook.
 - **Nothing becomes a recommendation to the owner without a verifier that is not its author.**
-- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner` and the route pauses
-  there; never choose for them, and never fix a bug of theirs while they are absent.
+- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner`; the route continues
+  with what does not depend on the answer and pauses only when nothing does (`doctrine/NEXT.md` row 3). Never choose
+  for them; a bug found before round 1 with the owner absent is a finding, not a fix (row 6b).
 <!-- invariants:end -->
 
-Everything else is in `{{KIT}}/AGENTS.md`; where any file and it disagree, it wins.
+Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. This skill adds no rule of its own: a sentence here that they do not have is a bug in `scripts/gen-skills.sh`, not a rule.
 
 ## This phase
 
 From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to do:
 
-- **Row 2** - **a gate, not a stop: no more model rounds.** Rows 11, 11b, 12, 13, 13b and 15 are off (a retry is a model round; a black-box that never ran, or is stale, does not run now - rows 16 and 18b take it, and the dossier says `black-box: not run - ceiling reached` on its status line and in sections 8 and 9: it is a round, not a judge of section 6). Report what was bought, what is open and what the next unit would cost. Then the route CONTINUES without rounds: every open finding is triaged (row 9) or, the owner absent, listed by name in the skeleton (row 9b - it stays open, and the route pauses at row 3, until the owner triages it); then, nothing open, rows 16-18b with `ceiling_reached: yes` on the dossier's status line. The owner may raise the ceiling in writing instead
-- **Row 8** - add the invariant and/or the action that would have caught it; show it fails on the old code. A finding no fuzz action can reach (constructor arguments, deployment) gets a unit test instead and the line `not fuzzable: <id> - <why>` in `STATE.md` `notes:`; the row is then quiet for it
-- **Row 9** - triage each: fix at the cause / refuse in writing / accept with a number (the owner accepts); a fix already decided: write it. Then rows 6-8
-- **Row 10** - a **verifier pass**: one agent, short brief, "falsify these sentences"
-- **Row 11b** - retry ONCE, a fresh agent, the same brief; stopped again: the round counts as spent, dossier section 9 gets `not run: stopped at <step>` and `STATE.md` `notes:` gets `round <id> stopped`, then the skeleton (row 9b's file, phase-3 pending findings ride in it). A black-box round stopped again also sets `blackbox: stopped (<round id>)`: it does not run again (rows 12 and 15 stay quiet, rows 16 and 18b take it), and the dossier's status line and section 8 say `black-box: stopped at <step>`, section 9 what it would have added
+- **Row 2** - **a gate, not a stop: no more model rounds.** Rows 11, 11b, 12, 13, 13b and 15 are off (a retry is a model round; a black-box that never ran, or is stale, does not run now - rows 16 and 18b take it, and the dossier says `black-box: not run - ceiling reached` on its status line and in sections 8 and 9: it is a round, not a judge of section 6). Report what was bought, what is open and what the next unit would cost. Then the route CONTINUES without rounds: every open finding is triaged (row 9) or, the owner absent, listed by name in the skeleton (row 9b - it stays open, and the route pauses at row 3, until the owner triages it); then, nothing open, rows 16-18b with `ceiling_reached: yes` on the dossier's status line. The owner may raise the ceiling in writing instead *(why: a route without a ceiling does not end - and a route that stops dead at the ceiling never delivers the dossier, which is the one thing it exists to produce)*
+- **Row 8** - add the invariant and/or the action that would have caught it; show it fails on the old code. A finding no fuzz action can reach (constructor arguments, deployment) gets a unit test instead and the line `not fuzzable: <id> - <why>` in `STATE.md` `notes:`; the row is then quiet for it *(why: the growth rule (`{{KIT}}/AGENTS.md` 6.7); an untriaged finding is row 9's, not this row's)*
+- **Row 9** - triage each: fix at the cause / refuse in writing / accept with a number (the owner accepts); a fix already decided: write it. Then rows 6-8 *(why: `{{KIT}}/doctrine/TRIAGE.md`)*
+- **Row 10** - a **verifier pass**: one agent, short brief, "falsify these sentences" *(why: no bytecode, no adversarial round)*
+- **Row 11b** - retry ONCE, a fresh agent, the same brief; stopped again: the round counts as spent, dossier section 9 gets `not run: stopped at <step>` and `STATE.md` `notes:` gets `round <id> stopped`, then the skeleton (row 9b's file, phase-3 pending findings ride in it). A black-box round stopped again also sets `blackbox: stopped (<round id>)`: it does not run again (rows 12 and 15 stay quiet, rows 16 and 18b take it), and the dossier's status line and section 8 say `black-box: stopped at <step>`, section 9 what it would have added *(why: a stopped round is neither clean nor finding-free (`{{KIT}}/doctrine/ORCHESTRATION.md` §4))*
 - **Row 11** - round 1: a DISCOVERY round, reads everything
 - **Row 13** - a REGRESSION round, **aimed at the diff** and at the two or three places trusted least
-- **Row 13b** - close what is REASONED (test it, ask the owner, or hand it to the human audit by name); then a DISCOVERY round: no earlier reports, pointed also at the "does not apply" list and the spec's assumptions
-- **Row 14** - **a gate, not a stop:** the loop is over - rows 11, 12, 13 and 13b are off, although they stand above this row (11b is not: a round the environment stopped, the closing black-box included, still gets its one retry) - and the reading continues below: row 15 is the next row that can apply
+- **Row 13b** - close what is REASONED (test it, ask the owner, or hand it to the human audit by name); then a DISCOVERY round: no earlier reports, pointed also at the "does not apply" list and the spec's assumptions *(why: a regression round inherits the blind spots of the rounds it read; only an independent look can close the loop)*
+- **Row 14** - **a gate, not a stop:** the loop is over - rows 11, 12, 13 and 13b are off, although they stand above this row (11b is not: a round the environment stopped, the closing black-box included, still gets its one retry) - and the reading continues below: row 15 is the next row that can apply *(why: the exit criterion is a STOP RULE for spending, not a security claim: zero findings from one model family is not evidence of absence, and the dossier says so. In full mode the closing discovery round runs on a different vendor when one is available; "none available" is a declared limit in the dossier)*
 
 ## Gate (`{{KIT}}/AGENTS.md` section 3: all of it, measured)
 
@@ -49,7 +50,8 @@ From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to 
 - a finding to triage: `{{KIT}}/doctrine/TRIAGE.md`
 - a report came back and you are about to act on it: `{{KIT}}/doctrine/VERIFY.md`
 - a verifier pass (row 10): `{{KIT}}/briefs/verifier.md`
-- rating a finding, or a round that argues one down: `{{KIT}}/doctrine/SEVERITY.md`
+- rating a finding on the scale: `{{KIT}}/doctrine/SEVERITY.md`
+- sections 5 and 6c: a severity argued down, the closing round on another vendor, a clean round is a stop rule and not a safety claim: `{{KIT}}/AGENTS.md`
 - models, benches, what the environment refuses, a stopped round: `{{KIT}}/doctrine/ORCHESTRATION.md`
 
 ## Done when

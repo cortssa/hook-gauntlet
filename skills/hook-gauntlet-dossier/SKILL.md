@@ -15,19 +15,20 @@ description: Phase 8 (Handoff) of hook-gauntlet, the route that takes a Uniswap 
 - **Words you never write about a hook this route has touched**: "safe", "secure", "battle-tested", "fully verified",
   and "audited" as a claim about the hook.
 - **Nothing becomes a recommendation to the owner without a verifier that is not its author.**
-- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner` and the route pauses
-  there; never choose for them, and never fix a bug of theirs while they are absent.
+- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner`; the route continues
+  with what does not depend on the answer and pauses only when nothing does (`doctrine/NEXT.md` row 3). Never choose
+  for them; a bug found before round 1 with the owner absent is a finding, not a fix (row 6b).
 <!-- invariants:end -->
 
-Everything else is in `{{KIT}}/AGENTS.md`; where any file and it disagree, it wins.
+Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. This skill adds no rule of its own: a sentence here that they do not have is a bug in `scripts/gen-skills.sh`, not a rule.
 
 ## This phase
 
 From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to do:
 
-- **Row 9b** - write the dossier skeleton anyway: each open finding listed by id in section 4 with status `open - owner triage pending`, sections 0, 4, 5, 6, 7, 8, 9 honest; then set `dossier: skeleton (K open, N judges not done)` and `waiting_on_owner: triage of <ids>` in `STATE.md` (row 3 now holds the table), STOP and wait. Nothing moves to promotion
-- **Row 18** - the handoff dossier (phase 8). **STOP. This is the end of the route.**
-- **Row 18b** - the handoff dossier (phase 8), with promotion and rehearsal (phases 6-7, rows 16-17: phases, not judges) counted in the status line's `skipped` and written in section 8 as "not done: light mode" or "not done: the owner's decision in writing", and section 9 saying what promotion would have added. **STOP.**
+- **Row 9b** - write the dossier skeleton anyway: each open finding listed by id in section 4 with status `open - owner triage pending`, sections 0, 4, 5, 6, 7, 8, 9 honest; then set `dossier: skeleton (K open, N judges not done)` and `waiting_on_owner: triage of <ids>` in `STATE.md` (row 3 now holds the table), STOP and wait. Nothing moves to promotion *(why: a dossier with open findings is a status report, not a handoff)*
+- **Row 18** - the handoff dossier (phase 8). **STOP. This is the end of the route.** *(why: the next step is human)*
+- **Row 18b** - the handoff dossier (phase 8), with promotion and rehearsal (phases 6-7, rows 16-17: phases, not judges) counted in the status line's `skipped` and written in section 8 as "not done: light mode" or "not done: the owner's decision in writing", and section 9 saying what promotion would have added. **STOP.** *(why: the next step is human)*
 
 ## Gate (`{{KIT}}/AGENTS.md` section 3: all of it, measured)
 
@@ -43,6 +44,7 @@ From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to 
 - the ceiling, and whose it was (section 1): `{{KIT}}/doctrine/COST.md`
 - the reading copy (PDF) of the dossier: `{{KIT}}/scripts/dossier-pdf.py`
 - the ROUND lines section 7 is assembled from: `{{KIT}}/state/README.md`
+- section 1: the words never written about a hook, and the phrase to use instead: `{{KIT}}/AGENTS.md`
 
 ## Done when
 

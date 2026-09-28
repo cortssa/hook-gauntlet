@@ -78,7 +78,7 @@ TRIGGERS='
 hook-gauntlet           | starting or resuming work on a v4 hook'"'"'s route to audit-ready, a project with a .gauntlet/ directory, an owner asking to test an existing hook hard, or not knowing which hook-gauntlet skill comes next. Invoke it first
 hook-gauntlet-interview | an owner bringing a new v4 hook idea, an existing hook with no tests and no history (phase 0 from the code), the owner interview, sizing the route (light or full) and agreeing a ceiling, or sketch mode while the design still moves
 hook-gauntlet-spec      | writing or revising the falsifiable SPEC.md of a v4 hook, deciding each attack class, the hostile-actor table, the invariants in words
-hook-gauntlet-battery   | writing Foundry tests for a v4 hook, the harness recipe (QUICKSTART 7b), running the battery, the long fuzz or a mutation, a fuzzer violation to turn into a test, the real pool manager'"'"'s bytecode, or any change to the bytecode
+hook-gauntlet-battery   | writing Foundry tests for a v4 hook, the harness recipe (QUICKSTART 7b), a fork test, running the battery, the long fuzz, coverage, static triage (Slither or forge lint), a mutation, a backtest or the simulation sandbox, a fuzzer violation to turn into a test, the real pool manager'"'"'s bytecode, or any change to the bytecode
 hook-gauntlet-round     | briefing an audit round, reading and triaging a round'"'"'s report, the invariant or action that would have caught a finding, a verifier pass, a round the environment stopped, the ceiling, or the loop'"'"'s exit
 hook-gauntlet-blackbox  | the black-box round - a source-free bench, the spec'"'"'s promises attacked from outside
 hook-gauntlet-release   | freezing a release candidate (promotion, a hash manifest, reproducible bytecode) or rehearsing a deployment runbook on a fork, simulated and never broadcast
@@ -104,14 +104,18 @@ hook-gauntlet-spec      | when  | doctrine/V4-ACCOUNTING.md     | the hook moves
 hook-gauntlet-spec      | when  | doctrine/INVARIANTS.md        | writing the invariants in words
 hook-gauntlet-spec      | when  | doctrine/EVIDENCE.md          | a class you want to call "does not apply"
 hook-gauntlet-spec      | when  | doctrine/FUZZ-ACTIONS.md      | the fuzz actions in words (the five questions)
+hook-gauntlet-spec      | when  | doctrine/UPSTREAM.md          | a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory
 hook-gauntlet-battery   | entry | doctrine/JUDGES.md            | the question each judge answers, and how each one lies
 hook-gauntlet-battery   | entry | QUICKSTART.md                 | steps 7b (the harness) and 8 (one command per judge)
+hook-gauntlet-battery   | when  | doctrine/UPSTREAM.md          | a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory
+hook-gauntlet-battery   | when  | doctrine/COST.md              | before a long campaign or a mutation pass: say how long and how much (section 4)
 hook-gauntlet-round     | entry | doctrine/LOOP.md              | -
 hook-gauntlet-round     | entry | briefs/audit-round.md         | the round'"'"'s brief; fill the placeholders, do not rewrite the rules
 hook-gauntlet-round     | when  | doctrine/TRIAGE.md            | a finding to triage
 hook-gauntlet-round     | when  | doctrine/VERIFY.md            | a report came back and you are about to act on it
 hook-gauntlet-round     | when  | briefs/verifier.md            | a verifier pass (row 10)
-hook-gauntlet-round     | when  | doctrine/SEVERITY.md          | rating a finding, or a round that argues one down
+hook-gauntlet-round     | when  | doctrine/SEVERITY.md          | rating a finding on the scale
+hook-gauntlet-round     | when  | AGENTS.md                     | sections 5 and 6c: a severity argued down, the closing round on another vendor, a clean round is a stop rule and not a safety claim
 hook-gauntlet-round     | when  | doctrine/ORCHESTRATION.md     | models, benches, what the environment refuses, a stopped round
 hook-gauntlet-blackbox  | entry | briefs/black-box.md           | the black-box brief; fill the placeholders, do not rewrite the rules
 hook-gauntlet-blackbox  | when  | doctrine/ORCHESTRATION.md     | the harness or the provider stops the round (section 4)
@@ -125,6 +129,7 @@ hook-gauntlet-dossier   | entry | doctrine/EVIDENCE.md          | -
 hook-gauntlet-dossier   | when  | doctrine/COST.md              | the ceiling, and whose it was (section 1)
 hook-gauntlet-dossier   | when  | scripts/dossier-pdf.py        | the reading copy (PDF) of the dossier
 hook-gauntlet-dossier   | when  | state/README.md               | the ROUND lines section 7 is assembled from
+hook-gauntlet-dossier   | when  | AGENTS.md                     | section 1: the words never written about a hook, and the phrase to use instead
 hook-gauntlet-doctor    | entry | QUICKSTART.md                 | steps 0 and 1: what you need, and proving the scripts before trusting them
 hook-gauntlet-doctor    | when  | state/README.md               | next.sh refused a STATE.md, or named no row
 hook-gauntlet-doctor    | when  | doctrine/JUDGES.md            | a verdict looks wrong (how each judge lies)
@@ -135,7 +140,7 @@ DOCTOR_SCRIPTS='doctor.sh selftest.sh install-v4.sh next.sh skills-check.sh'
 # the entry skill's four steps (Pedro Santana's): a label of this script's, then a sentence of AGENTS.md, quoted - each is
 # checked to be in AGENTS.md (whitespace aside) before anything is written
 STEPS='
-A hook that already exists | An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after this file; without them -> phase 0, the code as the sketch to specify.
+A hook that already exists | An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after `AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
 A new project | Before phase 0, install the state convention in the owner'"'"'s project: copy the three files from `state/` into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook
 Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`) | Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
 Where next | `scripts/next.sh <STATE.md>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first
@@ -153,7 +158,9 @@ BT='`'
 KP_RE="^([^${BT}]*)${BT}([^${BT}]*)${BT}(.*)\$"
 kitword() {
   local w="$1"
-  if [[ $w =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]] && [[ $w == */* || $w =~ \.[a-z]+$ ]] && [ -e "$KIT/$w" ]; then
+  if [[ $w =~ ^(scripts|doctrine|briefs|state|foundry-kit|adapters|skills)/[A-Za-z0-9._/-]+$ ]]; then
+    printf '{{KIT}}/%s' "$w"
+  elif [[ $w =~ ^[A-Za-z0-9_][A-Za-z0-9._/-]*$ ]] && [[ $w == */* || $w =~ \.[a-z]+$ ]] && [ -e "$KIT/$w" ]; then
     printf '{{KIT}}/%s' "$w"
   elif [[ $w =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*\.md$ ]] && [ -f "$KIT/doctrine/$w" ]; then
     printf '{{KIT}}/doctrine/%s' "$w"
@@ -187,10 +194,10 @@ INVARIANTS="$(sed -n "${lb},${le}p" "$AGENTS")"
 
 # NEXT.md's table: "id US action" per row, as next.sh reads it (every line of the table is a row of four cells)
 declare -a TIDS=()
-declare -A ACTION=()
-while IFS=$'\037' read -r t_id t_act; do
+declare -A ACTION=() WHY=()
+while IFS=$'\037' read -r t_id t_act t_why; do
   [ "$t_id" = BAD ] && refuse "doctrine/NEXT.md, line $t_act of the table is not a row of four cells."
-  TIDS+=("$t_id"); ACTION[$t_id]="$t_act"
+  TIDS+=("$t_id"); ACTION[$t_id]="$t_act"; WHY[$t_id]="$t_why"
 done < <(LC_ALL=C awk '
   { sub(/\r$/, "") }
   /^## / { intable = ($0 ~ /^## The table/); started = 0; ended = 0; next }
@@ -206,7 +213,8 @@ done < <(LC_ALL=C awk '
     if ($0 !~ /^\|/ || n != 5 || id == "" || id ~ /[ \t]/) { print "BAD\037" NR; next }
     if (id == "#") next
     act = c[4]; gsub(/^[ \t]+|[ \t]+$/, "", act)
-    print id "\037" act
+    why = c[5]; gsub(/^[ \t]+|[ \t]+$/, "", why)
+    print id "\037" act "\037" why
   }' "$NEXTMD")
 [ "${#TIDS[@]}" -gt 0 ] || refuse "doctrine/NEXT.md has no table under '## The table'."
 
@@ -325,7 +333,7 @@ render() {
   echo
   printf '%s\n' "$INVARIANTS"
   echo
-  echo 'Everything else is in `{{KIT}}/AGENTS.md`; where any file and it disagree, it wins.'
+  echo 'Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. This skill adds no rule of its own: a sentence here that they do not have is a bug in `scripts/gen-skills.sh`, not a rule.'
   echo
 
   if [ "$s" = hook-gauntlet ]; then
@@ -367,7 +375,8 @@ render() {
           lim="$CUT"; [ "$pc" = "$id" ] || lim="${pc#*:}"
           text="$(partcell "$text" "$lim") [...] (the rest: \`{{KIT}}/doctrine/NEXT.md\`, row $id)"
         done
-        printf -- '- **%s** - %s\n' "$label" "$(kitpaths "$text")"
+        if [ -n "${WHY[$id]}" ]; then printf -- '- **%s** - %s *(why: %s)*\n' "$label" "$(kitpaths "$text")" "$(kitpaths "${WHY[$id]}")"
+        else printf -- '- **%s** - %s\n' "$label" "$(kitpaths "$text")"; fi
       done
     done
     echo

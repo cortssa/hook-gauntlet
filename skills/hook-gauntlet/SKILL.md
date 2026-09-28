@@ -15,15 +15,16 @@ description: The entry to hook-gauntlet, the route that takes a Uniswap v4 hook 
 - **Words you never write about a hook this route has touched**: "safe", "secure", "battle-tested", "fully verified",
   and "audited" as a claim about the hook.
 - **Nothing becomes a recommendation to the owner without a verifier that is not its author.**
-- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner` and the route pauses
-  there; never choose for them, and never fix a bug of theirs while they are absent.
+- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner`; the route continues
+  with what does not depend on the answer and pauses only when nothing does (`doctrine/NEXT.md` row 3). Never choose
+  for them; a bug found before round 1 with the owner absent is a finding, not a fix (row 6b).
 <!-- invariants:end -->
 
-Everything else is in `{{KIT}}/AGENTS.md`; where any file and it disagree, it wins.
+Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. This skill adds no rule of its own: a sentence here that they do not have is a bug in `scripts/gen-skills.sh`, not a rule.
 
 ## This skill
 
-1. **A hook that already exists.** An existing hook with tests or a history (audits, reports, a log) -> `{{KIT}}/doctrine/RETROFIT.md` after this file; without them -> phase 0, the code as the sketch to specify.
+1. **A hook that already exists.** An existing hook with tests or a history (audits, reports, a log) -> `{{KIT}}/doctrine/RETROFIT.md` after `{{KIT}}/AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
 2. **A new project.** Before phase 0, install the state convention in the owner's project: copy the three files from `{{KIT}}/state/` into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook.
 3. **Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`).** Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
 4. **Where next.** `{{KIT}}/scripts/next.sh <STATE.md>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first.
@@ -32,8 +33,8 @@ Everything else is in `{{KIT}}/AGENTS.md`; where any file and it disagree, it wi
 
 From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to do:
 
-- **Row 1** - tell them now, with the test, before anything else in this table. Absent: write `waiting_on_owner: high <id>[, <id>...] - to tell`, every open high named, and the same on the skeleton's status line; the route continues; when a high closes, take its id out
-- **Row 3** - skip every row below whose action depends on the answer (row 7b turns itself off while the endpoint or the chain is what is asked), take the first that does not. None standing, and none left to judge: **pause** - `STOP - paused, waiting on the owner: <items>` - and change nothing until they answer. This is where the route ENDS with the owner absent: after row 9b's skeleton, this row holds the table (a pause, not a hole: the STOP rule below). An undecided light/full mode does not block round 1: the mode is READ from `{{KIT}}/doctrine/COST.md` §1's table by the hook's own facts (immutable, or third-party funds without a cap: full; the heavier row wins; light only when no row decides), with its ceiling - light: 3 model rounds + 1 black-box = 4; full: `undecided`, so row 2 cannot fire until the owner sets one, or the OPERATOR sets one in writing (`{{KIT}}/doctrine/COST.md` §1: `ceiling: N model rounds, set by the operator (owner absent); M used`, the decision in `DECISIONS.md` with `source: operator (owner absent)`; the dossier says whose ceiling it was) - the mode itself written in `DECISIONS.md` with `source: assumed, owner absent`
+- **Row 1** - tell them now, with the test, before anything else in this table. Absent: write `waiting_on_owner: high <id>[, <id>...] - to tell`, every open high named, and the same on the skeleton's status line; the route continues; when a high closes, take its id out *(why: never batch a high; nothing outranks it, not even the ceiling)*
+- **Row 3** - skip every row below whose action depends on the answer (row 7b turns itself off while the endpoint or the chain is what is asked), take the first that does not. None standing, and none left to judge: **pause** - `STOP - paused, waiting on the owner: <items>` - and change nothing until they answer. This is where the route ENDS with the owner absent: after row 9b's skeleton, this row holds the table (a pause, not a hole: the STOP rule below). An undecided light/full mode does not block round 1: the mode is READ from `{{KIT}}/doctrine/COST.md` §1's table by the hook's own facts (immutable, or third-party funds without a cap: full; the heavier row wins; light only when no row decides), with its ceiling - light: 3 model rounds + 1 black-box = 4; full: `undecided`, so row 2 cannot fire until the owner sets one, or the OPERATOR sets one in writing (`{{KIT}}/doctrine/COST.md` §1: `ceiling: N model rounds, set by the operator (owner absent); M used`, the decision in `DECISIONS.md` with `source: operator (owner absent)`; the dossier says whose ceiling it was) - the mode itself written in `DECISIONS.md` with `source: assumed, owner absent` *(why: the owner's decisions are the owner's)*
 
 ## Read on entry
 

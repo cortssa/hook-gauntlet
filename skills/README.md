@@ -2,7 +2,7 @@
 
 Nine skills: `hook-gauntlet`, the entry, and one per stretch of the route - `hook-gauntlet-interview`, `-spec`,
 `-battery`, `-round`, `-blackbox`, `-release`, `-dossier` - plus `hook-gauntlet-doctor` for the deterministic checks.
-Each is short (under 7,000 bytes) and holds only what an agent needs to start that stretch: the six rules that hold in
+Each is short (under 8,000 bytes) and holds only what an agent needs to start that stretch: the six rules that hold in
 every phase, the rows of `doctrine/NEXT.md` it owns with what each says to do, the gate of its phase from `AGENTS.md`
 section 3, two to five files to read, and "run `scripts/next.sh`, load the skill its row names". Everything else stays
 where it is - `AGENTS.md`, `doctrine/`, `briefs/`, `state/` - and wins where a skill and it disagree.
@@ -12,7 +12,7 @@ where it is - `AGENTS.md`, `doctrine/`, `briefs/`, `state/` - and wins where a s
 `AGENTS.md`, byte for byte; the rows and the gates are read from the tables; what is not in the doctrine (which skill
 owns which rows, the trigger words, the reading lists) is data at the top of the generator. `scripts/skills-check.sh`
 regenerates them and compares, resolves every path they name, checks the six rules against `AGENTS.md`, and refuses
-a skill over 6,000 bytes; the selftest makes each of those go red. To change a skill, change the doctrine or the
+a skill over 8,000 bytes; the selftest makes each of those go red. To change a skill, change the doctrine or the
 generator's data, then run `scripts/gen-skills.sh`.
 
 ## Install them into your project

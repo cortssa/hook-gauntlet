@@ -15,18 +15,19 @@ description: Phase 5 (Black-box) of hook-gauntlet, the route that takes a Uniswa
 - **Words you never write about a hook this route has touched**: "safe", "secure", "battle-tested", "fully verified",
   and "audited" as a claim about the hook.
 - **Nothing becomes a recommendation to the owner without a verifier that is not its author.**
-- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner` and the route pauses
-  there; never choose for them, and never fix a bug of theirs while they are absent.
+- **The owner's decisions are the owner's.** What you cannot decide goes to `waiting_on_owner`; the route continues
+  with what does not depend on the answer and pauses only when nothing does (`doctrine/NEXT.md` row 3). Never choose
+  for them; a bug found before round 1 with the owner absent is a finding, not a fix (row 6b).
 <!-- invariants:end -->
 
-Everything else is in `{{KIT}}/AGENTS.md`; where any file and it disagree, it wins.
+Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. This skill adds no rule of its own: a sentence here that they do not have is a bug in `scripts/gen-skills.sh`, not a rule.
 
 ## This phase
 
 From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to do:
 
-- **Row 12** - the black-box round, on a source-free bench
-- **Row 15** - the black-box round (a second one, if it is `stale`)
+- **Row 12** - the black-box round, on a source-free bench *(why: it finds what reading cannot, and it re-aims every later round - so it goes EARLY)*
+- **Row 15** - the black-box round (a second one, if it is `stale`) *(why: the first one attacked a spec that no longer exists - or row 12 never fired, because the promises kept changing until the end)*
 
 ## Gate (`{{KIT}}/AGENTS.md` section 3: all of it, measured)
 

@@ -86,6 +86,11 @@ else
   PROJECT="$(cd "$PROJECT" && pwd)"
   DEST="$PROJECT/$SUB"
   case "$KITP" in /*) KITABS="$KITP" ;; *) KITABS="$PROJECT/$KITP" ;; esac
+  # a --project that resolves to the user-level directory (HOME itself, or a .claude that is a link into it) is a
+  # user-level install, and that takes --user on purpose
+  case "$HARNESS" in devin) UDEST="${XDG_CONFIG_HOME:-$HOME/.config}/devin/skills" ;; *) UDEST="$HOME/$SUB" ;; esac
+  rp() { ( cd "$(dirname "$1")" 2> /dev/null && printf '%s/%s' "$(pwd -P)" "$(basename "$1")" ); }
+  if [ -n "$(rp "$DEST")" ] && [ "$(rp "$DEST")" = "$(rp "$UDEST")" ]; then refuse "--project '$PROJECT' resolves to the user-level directory $UDEST: that is --user, on purpose."; fi
 fi
 
 # the gate first: skills that are not what the doctrine generates today are not installed
