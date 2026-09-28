@@ -539,7 +539,7 @@ grep -a '^  BT|' "$FORGE_LOG" | sed 's/^  //' > "$WORK/bt"
     }' "$WORK/bt"
   echo
   echo "== the control's fidelity (what its _checkControl held on THIS window) =="
-  awk -F'|' '$2 == "fidelity" { t = $4; for (i = 5; i <= NF; i++) t = t "|" $i; if (!($3 in f)) f[$3] = t }
+  awk -F'|' '$2 == "fidelity" { t = $4; for (i = 5; i <= NF; i++) t = t "|" $i; f[$3] = t }
     $2 == "total" && $3 ~ /^control\(/ && !($3 in seen) { seen[$3] = 1; c[++n] = $3 }
     END { for (i = 1; i <= n; i++) print c[i] ": " (c[i] in f ? f[c[i]] : "no line - its _checkControl printed none (BacktestBase._fidelity says what one held)")
       if (n == 0) print "none (no control run in the log)" }' "$WORK/bt"

@@ -2175,7 +2175,7 @@ forge 1.8.1, solc 0.8.26, `evm_version = cancun`. Numbers, not adjectives:
 | native mutation on the example hook | in `src/examples/MUTANTS.md`, which is the only place that number lives |
 | `forge coverage --ir-minimum`, whole module, `src/HostileHook.sol` | **90.76 % of lines** (108/119), 12/13 branches (2026-09-24, after the file grew; the 11 lines at 0 are mapping errors, see the coverage paragraph above). From `test/HostileHook.t.sol` alone 63.87 %; the 86.67 % given here before was that measurement on the smaller file, and the 72.97 % before it was taken without `--ir-minimum` and mapped the wrong build |
 | invariant campaign | 64 runs × 64 depth, 4 096 calls; the census, not `reverts:` — see the root README |
-| clean build | about 200 s and a 7.6 GB peak (2026-09-26, root `README.md`, *What you need*) |
+| clean build | about 250 s and a 9.5 GB peak (2026-09-28, root `README.md`, *What you need*) |
 | `PoolManager` from source | **24 050 B**, 526 under the EIP-170 limit |
 | `PoolManager` etched from mainnet | **24 009 B**, keccak `0x785f1014…c7ce1293`, chain id 1 |
 | `CappedDynamicFeeHook` (one-block-late rule, 2026-09-23) | runtime **4 881 B** / initcode **5 636 B** in the default-profile build, **4 697 B** / **5 360 B** in the build the tests deploy (`address(hook).code.length` and `creationCode.length` in a test) - margins 19 695 / 43 516 and 19 879 / 43 792, `scripts/size.sh`. See below |

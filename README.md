@@ -201,7 +201,7 @@ peak above idle:
 | step | time | memory |
 |---|---|---|
 | base kit: clean build / its test suite | 1.9 s / 1.2 s | 0.3 GB / 0.1 GB |
-| v4 module: clean build of the WHOLE module, which compiles Uniswap's `PoolManager` with `via_ir` (re-measured 2026-09-26, below) | 197 s | **7.6 GB** |
+| v4 module: clean build of the WHOLE module, which compiles Uniswap's `PoolManager` with `via_ir` (re-measured 2026-09-28 alone on the machine; the paragraph below has the 2026-09-26 and 2026-09-27 numbers) | 248 s | **9.5 GB** |
 | v4 module: a backtest's replay (`scripts/backtest.sh`), which compiles only what its tests import - not `PoolManager`: from nothing / after an edit of your backtest file (2026-09-28) | 26 s / 23 s | 0.9 GB |
 | v4 module: its test suite, either manager | 3 s | 0.1 GB |
 | v4 module: coverage | 29 s | 1.3 GB |
@@ -214,7 +214,8 @@ nothing else running): `/usr/bin/time -v forge build` in `foundry-kit/v4` with `
 wall at about one core busy, with a peak resident set of 7 742 720 KB, and the machine's memory in use (`free -m`,
 sampled every second) peaked 7 590 MB above idle. Timing the whole battery the same way gave 203-210 s and 7.6-7.7 GB. The 26 s / 1.3 GB this row said before does not match; where it came from was not
 investigated, and the other rows were not re-measured. With the fourth example (2026-09-27) the whole battery from clean
-took 236 s with a peak resident set of 8 955 748 KB (`/usr/bin/time -v`): the build grew with it. So: plan on about 10 GB free to build the v4 module from clean; the root kit needs well under 1 GB; mutation is the step
+took 236 s with a peak resident set of 8 955 748 KB (`/usr/bin/time -v`): the build grew with it; with the backtest
+base (2026-09-28, a verifier, alone on the machine) `forge build` from nothing took 248 s and 9.53 GB. So: plan on about 10 GB free to build the v4 module from clean; the root kit needs well under 1 GB; mutation is the step
 that trades memory for time almost linearly. The expensive part of this kit is not your machine, it is the model behind your
 agent. On Windows, WSL sees half of the machine's memory by default.
 
