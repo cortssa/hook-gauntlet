@@ -9,7 +9,8 @@
 #
 # What it does NOT exercise, because it needs the network: a SUCCESSFUL fetch-bytecode.sh against a real endpoint (its
 # block and metadata are exercised against a stub `cast`, K16), the fork suites (foundry-kit/v4, FOUNDRY_PROFILE=fork), the
-# backtest's replay (a fork; its fetch, refusals and report shape are here against a stub `cast`, K19) and a
+# backtest's replay (a fork; its fetch, refusals and report are here against a stub `cast` and a stub `forge` that prints
+# a real replay's log, K19/K19b) and a
 # successful install-v4.sh (GitHub). Their refusals are here; their success is the CI's `battery` job, which runs
 # install-v4.sh on every push, and the fetch is run by hand (foundry-kit/v4/README.md). The OFFLINE install is here,
 # success included, from fake local clones - with V4_WITH_PERIPHERY=1 too (K17b: the periphery's pin, its permit2,
@@ -2917,11 +2918,14 @@ if grep -q '"blockHash": "0x0*bb"' "$TMP/xb.json"; then echo "  ok    and the bl
   echo "  FAIL  no blockHash in the metadata"; fails=$((fails + 1)); fi
 
 # ================================================================= backtest.sh (K19: the fixture, its refusals, the report's shape; no network)
-# A stub `cast` answers for the chain - chain id, block hash, the PositionManager's key, the logs (one real Swap of the
-# chain's ETH / USDC 0.05 % pool, scripts/test/fixtures/backtest-logs-real.json) - and hands everything that needs no
-# network (abi-encode, keccak, abi-decode, --version) to the real cast. Without a real cast the section is SKIPPED. The
-# replay itself forks the chain and is not here: it is the fork battery's (foundry-kit/v4/test/backtest/, README
-# "Backtests").
+# A stub `cast` answers for the chain - chain id, block hash, the PositionManager's key, the manager's state of the pool
+# at <from> (extsload: the real slot0 and liquidity of block 26049800), the logs (one real Swap of the chain's ETH / USDC
+# 0.05 % pool, in block 26049804, scripts/test/fixtures/backtest-logs-real.json, returned to any range that holds that
+# block) - and hands everything that needs no network (abi-encode, keccak, abi-decode, index, to-dec, --version) to the
+# real cast. A stub `forge` prints a REAL replay's log of that one swap (DeltaFeeHookBacktest and its control, forge
+# 1.8.1: scripts/test/fixtures/backtest-forge-real-1swap.txt), so the report is built from what forge prints (K19b).
+# Without a real cast the section is SKIPPED. The replay itself forks the chain and is not here: it is the fork
+# battery's (foundry-kit/v4/test/backtest/, README "Backtests").
 echo "== backtest.sh =="
 REALCAST="$(command -v cast 2> /dev/null)"
 if [ -n "$REALCAST" ]; then
@@ -2936,21 +2940,41 @@ case "$1" in
       *) echo "${STUB_HASH:-0x42890220c0576cfd58ac43f6f4418fed0a5eca1b1a39efe43a2b76567864f7a9}" ;;
     esac ;;
   call)
-    if [ -n "${STUB_NOKEY:-}" ]; then z=0x0000000000000000000000000000000000000000; printf '%s\n%s\n0\n0\n%s\n' "$z" "$z" "$z"
-    else printf '0x0000000000000000000000000000000000000000\n0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n500 [5e2]\n10\n0x0000000000000000000000000000000000000000\n'; fi ;;
+    case "$*" in
+      *extsload*) # the pool's state at block 26049800 as the chain holds it: slot0, two fee growths, the liquidity
+        printf '[%s, 0x%064d, 0x%064d, %s]\n' "0x0000000001f407d07dfcfd19000000000000000000036600131e3164b4640b8f" 0 0 \
+          "${STUB_LIQW:-0x0000000000000000000000000000000000000000000000000260c8a698a0b15f}" ;;
+      *)
+        if [ -n "${STUB_NOKEY:-}" ]; then z=0x0000000000000000000000000000000000000000; printf '%s\n%s\n0\n0\n%s\n' "$z" "$z" "$z"
+        else printf '0x0000000000000000000000000000000000000000\n0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n500 [5e2]\n10\n0x0000000000000000000000000000000000000000\n'; fi ;;
+    esac ;;
   logs)
     if [ -n "${STUB_429:-}" ] && { [ -n "${STUB_429_ALWAYS:-}" ] || [ ! -e "$STUB_429" ]; }; then
       : > "$STUB_429"; echo "Error: HTTP error 429 with body: {\"error\":\"too many requests\"} from https://example.invalid/v2/SECRET" >&2; exit 1
     fi
-    case "$*" in *"--from-block 26049801 "*) cat "$STUB_LOGS" ;; *) echo "[]" ;; esac ;;
+    # the stub chain's one Swap is in block 26049804: any range that holds it gets it
+    f=""; t=""; p=""
+    for w in "$@"; do case "$p" in --from-block) f="$w" ;; --to-block) t="$w" ;; esac; p="$w"; done
+    if [ -n "$f" ] && [ -n "$t" ] && [ "$f" -le 26049804 ] && [ "$t" -ge 26049804 ]; then cat "$STUB_LOGS"; else echo "[]"; fi ;;
   *) exec "$REALCAST" "$@" ;;
 esac
 STUB
   sed -i "s#\"\$REALCAST\"#$REALCAST#" "$BB/cast"; chmod +x "$BB/cast"
+  # the stub forge: `forge test` prints a real replay's log (STUB_FORGE_OUT) and exits STUB_FORGE_RC; every call is logged
+  cat > "$BB/forge" <<'STUB'
+#!/bin/sh
+echo "$*" >> "$STUB_FORGE_CALLS"
+case "$1" in
+  test) cat "${STUB_FORGE_OUT:?}"; exit "${STUB_FORGE_RC:-0}" ;;
+  *) exit 0 ;;
+esac
+STUB
+  chmod +x "$BB/forge"
   BTP="$TMP/btp"; mkdir -p "$BTP/.gauntlet"; : > "$BTP/foundry.toml"
   BTID=0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27
   BTF="$BTP/.gauntlet/backtests/21c67e77-26049800-26049810"
-  bt() { PATH="$BB:$PATH" CAST_LOG="$TMP/btcast.log" STUB_LOGS="$FIX/backtest-logs-real.json" "$HERE/backtest.sh" "$@"; }
+  bt() { PATH="$BB:$PATH" CAST_LOG="$TMP/btcast.log" STUB_FORGE_CALLS="$TMP/btforge.log" STUB_LOGS="$FIX/backtest-logs-real.json" \
+    STUB_FORGE_OUT="${STUB_FORGE_OUT:-$FIX/backtest-forge-real-1swap.txt}" "${BT_SCRIPT:-$HERE/backtest.sh}" "$@"; }
   btw() { bt "$BTP" --pool "$BTID" --from 26049800 --to 26049810 "$@"; }
   : > "$TMP/btcast.log"
   ( unset RPC_URL; bt > "$TMP/o400" 2>&1 ); check "backtest.sh with no arguments: the usage, refused" 1 $? "$TMP/o400"
@@ -3018,6 +3042,13 @@ STUB
     && grep -qx 'logs --json --from-block 26049801 --to-block 26049810 --address 0x000000000004444c5dc75cB358380D2e3dE08A90 0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f 0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27' "$TMP/btcast.log"; then
     echo "  ok    the sidecar names 1 swap, block 26049810's hash, the .tsv's SHA-256, the key, 5 calls (the 429 counted); the logs were read from block 26049801"; else
     echo "  FAIL  the sidecar or the calls: $(tr -d '\n' < "$BTF.json" | cut -c1-300) | $(tr '\n' ';' < "$TMP/btcast.log")"; fails=$((fails + 1)); fi
+  # K19b, decision 1: after the fetch, the window's swap count and the pool's in-range liquidity at <from>, said
+  if grep -qx 'swaps     1 swap in blocks 26049801 .. 26049810' "$TMP/o413" \
+    && grep -q '^liquidity 171357403690873183 at the end of block 26049800 (thin below ' "$TMP/o413" \
+    && grep -qx 'call --block 26049800 0x000000000004444c5dc75cB358380D2e3dE08A90 extsload(bytes32,uint256)(bytes32\[\]) 0xda8cac368d67cd2f2d8aaa5cc531768e0fa3b1d205c5c5de60da078e1f59bdfc 4' "$TMP/btcast.log" \
+    && ! grep -q 'WARNING' "$TMP/o413"; then
+    echo "  ok    after the fetch: '1 swap', and the liquidity at block 26049800 read from the manager's state (one extsload), not thin"; else
+    echo "  FAIL  no swap count or liquidity after the fetch: $(grep -E '^(swaps|liquidity|backtest: WARNING)' "$TMP/o413" | tr '\n' ';')"; fails=$((fails + 1)); fi
   # reused: offline, nothing asked; with RPC_URL, block <to> re-checked, and another hash refused
   : > "$TMP/btcast.log"
   ( unset RPC_URL; btw --fetch-only > "$TMP/o414" 2>&1 ); check "backtest.sh: the fixture reused without RPC_URL (--fetch-only)" 0 $? "$TMP/o414"
@@ -3042,6 +3073,103 @@ STUB
   grep -q "is there but its fixture" "$TMP/o420" || { echo "  FAIL  a sidecar without its fixture was not refused for that"; fails=$((fails + 1)); }
   cp "$TMP/bt.tsv" "$BTF.tsv"
   ( unset RPC_URL; btw --fetch-only > "$TMP/o421" 2>&1 ); check "backtest.sh: the pair restored reads again" 0 $? "$TMP/o421"
+
+  # ---- K19b, decision 1: a window with NO swap is said, loudly, and never replayed; a thin one is a warning
+  : > "$TMP/btcast.log"; : > "$TMP/btforge.log"
+  bw0() { bt "$BTP" --pool "$BTID" --from 26049810 --to 26049820 "$@"; } # the stub chain has no swap in 26049811 .. 26049820
+  RPC_URL="http://127.0.0.1:9" bw0 --fetch-only > "$TMP/o430" 2>&1
+  check "backtest.sh --fetch-only on a window with no swap: the fixture is written, FIXTURE READY (0 swaps)" 0 $? "$TMP/o430"
+  if grep -q '^backtest: FIXTURE READY (0 swaps) - ' "$TMP/o430" \
+    && grep -qx 'backtest: no swap in this window: pick another; the pool had 1 swap in the 1 000 blocks before 26049810 (blocks 26048810 .. 26049809)' "$TMP/o430" \
+    && grep -qx 'liquidity 171357403690873183 at the end of block 26049810 (no swap in the window: nothing to measure it against)' "$TMP/o430" \
+    && [ "$(grep -c '^logs ' "$TMP/btcast.log")" = 101 ] && grep -qx 'logs --json --from-block 26049800 --to-block 26049809 .*' "$TMP/btcast.log"; then
+    echo "  ok    it says 0 swaps, and the 1 swap of the 1 000 blocks before 26049810 (100 more eth_getLogs, in the fetch's chunks of 10)"; else
+    echo "  FAIL  0 swaps not said, or the count before <from> is not the stub chain's: $(grep '^backtest:' "$TMP/o430" | tr '\n' ';') logs calls $(grep -c '^logs ' "$TMP/btcast.log")"; fails=$((fails + 1)); fi
+  : > "$TMP/btforge.log"
+  RPC_URL="http://127.0.0.1:9" bw0 > "$TMP/o431" 2>&1
+  check "backtest.sh: the replay of a window with no swap is refused" 1 $? "$TMP/o431"
+  if grep -q '^backtest: no swap in this window: pick another; the pool had 1 swap in the 1 000 blocks before 26049810' "$TMP/o431" \
+    && [ ! -s "$TMP/btforge.log" ] && ! ls "$BTP/.gauntlet/reports/"*26049810-26049820* > /dev/null 2>&1; then
+    echo "  ok    and forge was never run, no report written"; else
+    echo "  FAIL  a window with no swap reached forge ($(tr '\n' ';' < "$TMP/btforge.log")) or wrote a report"; fails=$((fails + 1)); fi
+  : > "$TMP/btcast.log"
+  ( unset RPC_URL; bw0 --fetch-only > "$TMP/o432" 2>&1 ); check "backtest.sh: a fixture with no swap, reused offline: FIXTURE READY (0 swaps)" 0 $? "$TMP/o432"
+  if grep -q '^backtest: FIXTURE READY (0 swaps) - ' "$TMP/o432" && grep -q 'before 26049810 was not counted (RPC_URL not set)' "$TMP/o432" \
+    && [ ! -s "$TMP/btcast.log" ]; then echo "  ok    and offline it says the count before <from> was not made, asking nothing"; else
+    echo "  FAIL  offline, 0 swaps: $(grep '^backtest:' "$TMP/o432" | tr '\n' ';') calls $(tr '\n' ';' < "$TMP/btcast.log")"; fails=$((fails + 1)); fi
+  # thin: 10^12 in range, where the window's one swap (78.4 USDC in) calls for 3.0e14 - a WARNING, and the fixture ready
+  STUB_LIQW=0x000000000000000000000000000000000000000000000000000000e8d4a51000 RPC_URL="http://127.0.0.1:9" btw --fetch-only > "$TMP/o433" 2>&1
+  check "backtest.sh: a liquidity thin for the window is a warning, not a refusal" 0 $? "$TMP/o433"
+  if grep -q '^backtest: WARNING: thin for this window - 1000000000000 in range at block 26049800 is below 302562934815562' "$TMP/o433" \
+    && grep -q '^backtest: FIXTURE READY - ' "$TMP/o433"; then echo "  ok    it warns with both numbers, and goes on"; else
+    echo "  FAIL  no thin warning: $(grep -E '^(liquidity|backtest:)' "$TMP/o433" | tr '\n' ';')"; fails=$((fails + 1)); fi
+  STUB_LIQW=0x0000000000000000000000000000000000000000000000000000000000000000 RPC_URL="http://127.0.0.1:9" btw --fetch-only > "$TMP/o433b" 2>&1
+  check "backtest.sh: no liquidity in range at <from> is a warning that names the replay's stop" 0 $? "$TMP/o433b"
+  grep -q '^backtest: WARNING: the pool has NO liquidity in range at the end of block 26049800' "$TMP/o433b" \
+    && echo "  ok    it says so" || { echo "  FAIL  no warning for 0 in range"; fails=$((fails + 1)); }
+
+  # ---- K19b, decisions 4 and 5: one report per pool, window and hook; the report's words and its hook-minus-control
+  : > "$TMP/btforge.log"
+  RPC_URL="http://127.0.0.1:9" btw > "$TMP/o434" 2>&1
+  check "backtest.sh: the replay (stub forge, a real log) writes its report" 0 $? "$TMP/o434"
+  BTR="$BTP/.gauntlet/reports/07-backtest-21c67e77-26049800-26049810"
+  if [ -f "$BTR-all.txt" ] && [ -f "$BTR-all-forge.txt" ] && [ ! -e "$BTP/.gauntlet/reports/07-backtest.txt" ] \
+    && grep -qx "backtest: REPORT WRITTEN - $BTR-all.txt (DeltaFeeHook; passed 2)" "$TMP/o434" \
+    && grep -q "^test --match-contract Backtest\$ -vv" "$TMP/btforge.log"; then
+    echo "  ok    the report is 07-backtest-<id8>-<from>-<to>-all.txt (no --hook), forge's log next to it"; else
+    echo "  FAIL  the report's name: $(ls "$BTP/.gauntlet/reports/" 2> /dev/null | tr '\n' ' ') | $(tail -1 "$TMP/o434")"; fails=$((fails + 1)); fi
+  cp "$BTR-all.txt" "$TMP/bt-all.txt" 2> /dev/null
+  sed -i 's/"castCalls": 5/"castCalls": 1/' "$BTF.json" # castCalls is not in the pair's check: the report's plural is
+  RPC_URL="http://127.0.0.1:9" btw --hook DeltaFeeHook > "$TMP/o435" 2>&1
+  check "backtest.sh --hook DeltaFeeHook: a report of its own" 0 $? "$TMP/o435"
+  sed -i 's/"castCalls": 1/"castCalls": 5/' "$BTF.json"
+  if [ -f "$BTR-DeltaFeeHook.txt" ] && [ -f "$BTR-DeltaFeeHook-forge.txt" ] && cmp -s "$BTR-all.txt" "$TMP/bt-all.txt"; then
+    echo "  ok    07-backtest-<id8>-<from>-<to>-DeltaFeeHook.txt, and the -all report of the run before is untouched"; else
+    echo "  FAIL  --hook's report: $(ls "$BTP/.gauntlet/reports/" 2> /dev/null | tr '\n' ' ')"; fails=$((fails + 1)); fi
+  if grep -q '^fixture      .gauntlet/backtests/21c67e77-26049800-26049810.tsv: 1 swap, sha256 ' "$BTR-all.txt" \
+    && grep -q '^rpc          fetch: 5 calls to the endpoint' "$BTR-all.txt" && grep -q '^rpc          fetch: 1 call to the endpoint' "$BTR-DeltaFeeHook.txt" \
+    && grep -q '^             this run, this script: 2 calls (the re-check of block 26049810 and the liquidity at block 26049800' "$BTR-all.txt" \
+    && grep -q "^             the replay: forge's own requests (its fork at block 26049800), and UNCOUNTED" "$BTR-all.txt" \
+    && grep -q '^liquidity    in range: 171357403690873183 at the end of block 26049800' "$BTR-all.txt"; then
+    echo "  ok    the report: '1 swap', '5 calls' / '1 call', the replay's requests forge's and uncounted, the liquidity at <from>"; else
+    echo "  FAIL  the report's words: $(grep -E '^(fixture|rpc|liquidity|  +this run|  +the replay)' "$BTR-all.txt" | tr '\n' ';' | cut -c1-600)"; fails=$((fails + 1)); fi
+  if sed -n '/^== each hook minus its control, per total/,/^$/p' "$BTR-all.txt" \
+    | grep -qx 'DeltaFeeHook 0 0 0 0 87475501957618 0 0 0 0 0 0 0 0 0 122294 122294 0 0'; then
+    echo "  ok    the hook minus its control, per total: took0 87475501957618, gas +122294"; else
+    echo "  FAIL  hook minus control: $(sed -n '/^== each hook minus/,/^$/p' "$BTR-all.txt" | tr '\n' ';')"; fails=$((fails + 1)); fi
+  if grep -q "^control(DeltaFeeHook): NOT asserted: this window (26049800 .. 26049810) is not the kit's committed one" "$BTR-all.txt"; then
+    echo "  ok    the control's fidelity: NOT asserted on a window that is not the kit's, said in the report"; else
+    echo "  FAIL  no fidelity line: $(sed -n '/^== the control.s fidelity/,/^$/p' "$BTR-all.txt" | tr '\n' ';')"; fails=$((fails + 1)); fi
+  # exact on amounts a double cannot hold: lpFees0 10^24 + 1 against 10^24 - 1, and a negative (lpFees1 39224 - 39226)
+  awk -F'|' -v OFS='|' '$2 == "total" && $3 == "DeltaFeeHook" { $14 = "1000000000000000000000001" }
+    $2 == "total" && $3 == "control(DeltaFeeHook)" { $14 = "999999999999999999999999"; $15 = "39226" } { print }' \
+    "$FIX/backtest-forge-real-1swap.txt" > "$TMP/btbig.txt"
+  STUB_FORGE_OUT="$TMP/btbig.txt" RPC_URL="http://127.0.0.1:9" btw > "$TMP/o436" 2>&1
+  check "backtest.sh: a log with 25-digit totals is reported" 0 $? "$TMP/o436"
+  if sed -n '/^== each hook minus its control, per total/,/^$/p' "$BTR-all.txt" \
+    | grep -qx 'DeltaFeeHook 0 0 0 0 87475501957618 0 0 0 0 0 2 -2 0 0 122294 122294 0 0'; then
+    echo "  ok    the difference is exact (2, not 0) and signed (-2)"; else
+    echo "  FAIL  25 digits: $(sed -n '/^== each hook minus/,/^$/p' "$BTR-all.txt" | tr '\n' ';')"; fails=$((fails + 1)); fi
+  grep -v 'BT|fidelity|' "$FIX/backtest-forge-real-1swap.txt" > "$TMP/btnofid.txt"
+  STUB_FORGE_OUT="$TMP/btnofid.txt" RPC_URL="http://127.0.0.1:9" btw > "$TMP/o437" 2>&1
+  check "backtest.sh: a log whose control printed no fidelity line is reported" 0 $? "$TMP/o437"
+  grep -q '^control(DeltaFeeHook): no line - its _checkControl printed none' "$BTR-all.txt" \
+    && echo "  ok    and the report says the control's _checkControl printed nothing" \
+    || { echo "  FAIL  a control with no fidelity line is not said"; fails=$((fails + 1)); }
+
+  # ---- K19b, decision 4: the kit's own module takes no fixture a user fetches, unless --allow-kit-fixtures
+  BTK="$TMP/btkit"; mkdir -p "$BTK/scripts/lib" "$BTK/foundry-kit/v4/.gauntlet"
+  cp "$HERE/backtest.sh" "$BTK/scripts/"; cp "$HERE/lib/"*.sh "$BTK/scripts/lib/"; : > "$BTK/foundry-kit/v4/foundry.toml"
+  : > "$TMP/btcast.log"
+  BT_SCRIPT="$BTK/scripts/backtest.sh" RPC_URL="http://127.0.0.1:9" bt "$BTK/foundry-kit/v4" --pool "$BTID" --from 26049800 --to 26049810 --fetch-only > "$TMP/o438" 2>&1
+  check "backtest.sh: a fetch into the kit's own v4 module is refused" 1 $? "$TMP/o438"
+  if grep -q "is the kit's own v4 module" "$TMP/o438" && [ ! -e "$BTK/foundry-kit/v4/.gauntlet/backtests" ] && [ ! -s "$TMP/btcast.log" ]; then
+    echo "  ok    nothing asked of the chain, nothing written there"; else
+    echo "  FAIL  the kit's module: $(ls -R "$BTK/foundry-kit/v4/.gauntlet" | tr '\n' ' ') calls $(tr '\n' ';' < "$TMP/btcast.log")"; fails=$((fails + 1)); fi
+  BT_SCRIPT="$BTK/scripts/backtest.sh" RPC_URL="http://127.0.0.1:9" bt "$BTK/foundry-kit/v4" --pool "$BTID" --from 26049800 --to 26049810 --fetch-only --allow-kit-fixtures > "$TMP/o439" 2>&1
+  check "backtest.sh --allow-kit-fixtures: the fetch into the kit's module goes ahead" 0 $? "$TMP/o439"
+  ( unset RPC_URL; BT_SCRIPT="$BTK/scripts/backtest.sh" bt "$BTK/foundry-kit/v4" --pool "$BTID" --from 26049800 --to 26049810 --fetch-only > "$TMP/o440" 2>&1 )
+  check "backtest.sh: a fixture already in the kit's module (its committed window) is reused without the flag" 0 $? "$TMP/o440"
 else
   echo "  SKIPPED - no cast on the PATH: backtest.sh's fetch and refusals are NOT proven on this machine."
   skipped=1

@@ -161,6 +161,15 @@ pool's in-range liquidity. Everything else is a substitution, and the report pri
   the active liquidity was another (a tick crossed, just-in-time liquidity of 0.124 % within a block), which the
   replay's single position does not see and which here moved the price by at most 1 ppm (the kit's own window, measured). A hook that only misbehaves under stress, at a range edge, or with a crowded block says nothing in
   a quiet window; the window is an input, like a scenario's volume, and the dossier says why this one.
+- **An empty or thin window.** A pool that exists is not a pool that trades: a window with no swap replays nothing, and
+  a hook that "took nothing" there says nothing. The script refuses such a replay and says how many swaps the pool had
+  in the 1 000 blocks before the window; a window whose largest swap alone would move a full-range position of the
+  pool's liquidity by more than about 1 % is warned THIN - there the single position stands in for ranges the real
+  price crossed.
+- **A bound from another window.** The replay's fidelity is measured per window: the kit's control stays within 10 ppm
+  of the real prices on its committed window (1 measured), and drifted 131 ppm over the 500 blocks before it. A bound
+  held on one window is not evidence on another: the kit's example hooks assert theirs on the committed window only,
+  and every report says, per control, what its `_checkControl` held on THIS window, or `NOT asserted`.
 - **Amounts off events.** The pool's delta and the donations are read off the manager's events, and recorded logs keep
   the logs of frames that reverted (section 4). The kit's three examples hold each measured total to the hook's own
   ledger, and the books close by BALANCE per swap; a binding for another hook does the same in its `_checkBacktest`,
@@ -171,8 +180,10 @@ pool's in-range liquidity. Everything else is a substitution, and the report pri
   the replay would drive other amounts than the real swappers paid. Not refused, not tested: choose a pool without
   one, or say so.
 
-**What goes in the dossier.** Section 6, the sandbox row: the pool (id, key, chain), the window, the fixture's SHA-256,
-the totals per run next to the control's, the refusals by selector, and the substitutions - "backtest (SUPPORTED)".
+**What goes in the dossier.** Section 6, the sandbox row: WHICH report, by name (one per pool, window and hook:
+`07-backtest-<id8>-<from>-<to>-<Hook>.txt`), the pool (id, key, chain), the window and the liquidity at its start, the
+fixture's SHA-256, the totals per run next to the control's and the hook minus its control, the control's fidelity line,
+the refusals by selector, and the substitutions - "backtest (SUPPORTED)".
 Section 9: what the replay cannot say - the reactions above by name, the LP set, the swap types not replayed, and the
 windows not run (stress, range edges, another pool). The RPC it took (the fetch's calls are in the fixture's sidecar;
-forge does not count the replay's) goes in the ROUND line with its cost.
+the replay's requests are forge's own, and nothing counts them) goes in the ROUND line with its cost.

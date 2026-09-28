@@ -716,11 +716,34 @@ export RPC_URL='https://<a read-only ARCHIVE mainnet endpoint>'   # in YOUR OWN 
 scripts/backtest.sh foundry-kit/v4 --pool 0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27 --from 26049800 --to 26050000
 ```
 
-It reuses the committed fixture, re-checks the hash of block 26 050 000 against the endpoint (one request), runs every
-contract of the project whose name ends in `Backtest` on a fork at block 26 049 800, and writes
-`foundry-kit/v4/.gauntlet/reports/07-backtest.txt` (forge's own log next to it, `07-backtest-forge.txt`). The last line
-is `backtest: REPORT WRITTEN - ...` or `backtest: FAILED - ...`. The fork battery (`FOUNDRY_PROFILE=fork V4_MANAGER=fork
-scripts/battery.sh foundry-kit/v4`, "The fork") runs the same suites as tests, without the report.
+It reuses the committed fixture, re-checks the hash of block 26 050 000 against the endpoint (one request), prints the
+window's swap count and the pool's in-range liquidity at the end of block 26 049 800 (one more request: the manager's
+state of the pool, `extsload`), runs every contract of the project whose name ends in `Backtest` on a fork at block
+26 049 800, and writes `foundry-kit/v4/.gauntlet/reports/07-backtest-21c67e77-26049800-26050000-all.txt` - one report per
+pool, window and hook: `07-backtest-<the id's first 8 hex digits>-<from>-<to>-<Hook>.txt`, where `<Hook>` is `--hook`'s
+value or `all`, so a second run on another window or hook never overwrites the first (forge's own log next to it, the
+same name ending `-forge.txt`). The last line is `backtest: REPORT WRITTEN - ...` or `backtest: FAILED - ...`. The fork
+battery (`FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4`, "The fork") runs the same suites as
+tests, without the report.
+
+**An empty or thin window is said before anything is replayed.** After the fetch (or the reuse) the script prints
+`swaps     <n> swaps in blocks ...` and `liquidity <L> at the end of block <from> (thin below <T>: ...)`:
+
+* **No swap in the window**: the replay is refused (exit 1, forge never runs, the fixture is kept) with `backtest: no
+  swap in this window: pick another; the pool had <N> swaps in the 1 000 blocks before <from> (blocks ...)`. That count
+  is one more `eth_getLogs` pass over those 1 000 blocks, in the fetch's chunks (100 requests at 10 blocks a request),
+  made only when `RPC_URL` is set; without it the line says it was not counted. `--fetch-only` on such a window writes
+  the fixture and says `backtest: FIXTURE READY (0 swaps) - ...`, with the same line.
+* **Thin liquidity**: a `backtest: WARNING: thin for this window - ...` line, never a refusal, when the liquidity in
+  range at `<from>` is below **200 x the window's largest swap in liquidity units** (amount0 x sqrtP when token0 goes in,
+  amount1 / sqrtP when token1 does; sqrtP = sqrtPriceX96 / 2^96): the liquidity under which that one swap alone moves a
+  full-range position of it by about 1 % of the price. Why that and not one number: a liquidity is in the square root
+  of the two currencies' smallest units, so a fixed threshold means a different depth for every pair of decimals; this
+  one is in the window's own units and says what matters to the replay - above it, the largest swap stays within about
+  1 % of the seeded price, where the one full-range position stands in for few ranges; below it, the real price crossed
+  ranges that position does not have, and the control's drift says by how much. The kit's window: 1.71e17 in range,
+  threshold 3.07e16. No liquidity in range at all (or a pool not initialised at `<from>`) is also a warning, which says
+  the replay's seed will stop at `RealPoolEmptyAtFrom`.
 
 **Your hook, your pool.** In your project (the 7b layout, `QUICKSTART.md`), a contract whose name is `<YourHook>Backtest`:
 
@@ -742,10 +765,42 @@ contract MyHookBacktest is BacktestBase {
 then, from the kit's root, `scripts/backtest.sh <proj> --pool <poolId> --from <block> --to <block> --hook MyHook`. Your
 `foundry.toml` needs, in the profile the replay runs under (`fork` if you have one, else your default; `FOUNDRY_PROFILE`
 chooses), `[rpc_endpoints] mainnet = "${RPC_URL}"` and `fs_permissions = [{ access = "read", path = "./.gauntlet/backtests" }]`;
-and the test must not be excluded by a `no_match_path`. The pool is any v4 pool on Ethereum mainnet (the harness knows
-mainnet's addresses only): its id is on any explorer's `Initialize` event, and its key is read from the chain's
-PositionManager (`poolKeys`) or given with `--key <currency0>,<currency1>,<fee>,<tickSpacing>,<hooks>` - either way it
-must hash to the id, or nothing is written.
+and the test must not be excluded by a `no_match_path`. The fixture goes under YOUR project's `.gauntlet/backtests/`:
+the kit's own module (`foundry-kit/v4`) refuses a fetch - its `.gauntlet/backtests/` is committed, the kit's window -
+unless you pass `--allow-kit-fixtures` (to replay the kit's example hooks on a window of your own; do not commit what
+it writes there). Reusing the kit's committed fixture needs no flag.
+
+The pool is any v4 pool on Ethereum mainnet (the harness knows mainnet's addresses only). Its id is the keccak256 of
+its key's five fields, ABI-encoded in this order - currency0, currency1 (sorted: currency0 is the lower address, and
+native ETH is `0x0000000000000000000000000000000000000000`, so always currency0), the fee in pips, the tick spacing,
+the hook's address (zero for none):
+
+```sh
+cast keccak $(cast abi-encode "f(address,address,uint24,int24,address)" <currency0> <currency1> <fee> <tickSpacing> <hooks>)
+# the kit's pool: ETH, USDC, 0.05 %, spacing 10, no hook
+cast keccak $(cast abi-encode "f(address,address,uint24,int24,address)" 0x0000000000000000000000000000000000000000 \
+  0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 500 10 0x0000000000000000000000000000000000000000)
+# 0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27
+```
+
+(no endpoint: both commands are local). An explorer's `Initialize` event shows the same id. The script reads the key
+back from the chain's PositionManager (`poolKeys`) or takes it with `--key <currency0>,<currency1>,<fee>,<tickSpacing>,<hooks>`
+- either way it must hash to the id, or nothing is written. **Which pool:** a key that hashes is not a pool that
+trades. On v4, the USDC / ETH pools with real liquidity are the NATIVE-ETH ones (currency0 = 0x0): a fresh reader
+measured the ERC-20 WETH / USDC 0.30 % pool on 2026-09-28 - it exists, and had 0 swaps in the 120 blocks ending at
+26 040 000 and 31 736 258 886 (3.2e10) of liquidity in range, against the native ETH / USDC 0.05 % pool's 1.7e17 (re-measured by
+the script itself: 0 swaps in that window and 0 in the 1 000 blocks before it). The
+script says so before any replay ("An empty or thin window", above).
+
+**What your subclass asserts, and what it does not.** `BacktestBase` asserts, on every window: no swap of the fixture
+was lost, every replayed swap's books closed (swapper + hook + manager == 0, by balance), and the control refused no
+swap. It asserts NOTHING about your hook's economics (that is your `_checkBacktest`: hold the replay's totals to your
+hook's own ledger, as the kit's three do) and NOTHING about the control's drift from the real prices (that is your
+`_checkControl`, for a window you know; not overridden, the report's "the control's fidelity" says `NOT asserted`, and
+an override says what it held with `_fidelity("...")`). The kit's own bound - the control within 10 ppm of the real
+prices - is `KitBacktest`'s, measured on the committed window, and asserted on that window only: on any other (read
+from the fixture's sidecar) the kit's example hooks print `NOT asserted: this window ... is not the kit's committed
+one` and assert nothing about the drift. The 500 blocks before the committed window drift 131 ppm (K19b, measured).
 
 ### The fixture
 
@@ -768,7 +823,8 @@ endpoint, retries included).
 * **Refused before anything is asked of the chain** (as `fetch-bytecode.sh`): a block that is not a plain decimal
   number, `--to` not after `--from`, a pool id that is not 0x and 64 hex digits, an endpoint on the command line (never
   echoed), no fixture and no `RPC_URL`; a project with no `foundry.toml`, and a tree without `.gauntlet/` (someone
-  else's: exit 2, nothing written, `scripts/lib/owner-tree.sh`). Refused after asking, with nothing written: another
+  else's: exit 2, nothing written, `scripts/lib/owner-tree.sh`); a fetch into the kit's own module without
+  `--allow-kit-fixtures`. Refused after asking, with nothing written: another
   chain than mainnet, a block `to` the endpoint does not have, a pool the PositionManager does not know (give `--key`),
   a key that does not hash to the id, a log that is not this pool's `Swap` or was removed (a reorg while fetching).
 * **Rate limits.** An HTTP 429 is waited out ONCE (2 s) and the call retried; a second stops the fetch, nothing written.
@@ -803,7 +859,14 @@ else is yours to hold: `_checkBacktest` for the hook's run, `_checkControl` for 
 replay's measurement to each hook's own ledger (`DeltaFeeHook`: took = `feesBooked`, returned = `rebatesPaid`;
 `InRangeDonateHook`: took = `feesTaken`, donated = `donated`; `CappedDynamicFeeHook`: the lowest and highest fee
 applied are the ones its rule gives for the real blocks' swap counts, recomputed from the fixture), and the control to
-the committed window's measured fidelity (every price within 10 ppm of the real one; measured: 1).
+the committed window's measured fidelity (every price within 10 ppm of the real one; measured: 1) - on that window
+only: on another, `KitBacktest._checkControl` asserts nothing and says so ("What your subclass asserts", above).
+
+The report, per run: the header (pool, key, window, fixture, the liquidity at `from` and any warning, the requests), the
+substitutions, the runs, the totals per run, the refusals, the ten largest deviations, the hooks' own ledgers, **each
+hook minus its control, per total** (exact, signed: what the hook changed, with the replay's own drift taken out as far
+as a difference can), and **the control's fidelity** (the line each control's `_checkControl` printed: what it held on
+this window, or `NOT asserted`, or that it printed none).
 
 **The substitutions** (every report prints them): the LP set (one full-range position of the active liquidity at `from`,
 where the real pool has many ranges, and whatever they added or removed in the window is absent - a window that crosses
@@ -820,7 +883,7 @@ the real ones, the control's `outDevPpm` of +124 / +125).
 The chain's ETH / USDC 0.05 % pool (ETH, USDC, fee 500, spacing 10, no hook; the same pool the JIT actor met, "Paying
 whoever is in range"), the 200 blocks ending at the harness's pin: the state at the end of block 26 049 800 (tick
 -197 351, in-range liquidity 171 357 403 690 873 183), 44 swaps in blocks 26 049 801 .. 26 050 000. From the report
-(`07-backtest.txt`; amounts in wei and USDC units):
+(`07-backtest-21c67e77-26049800-26050000-all.txt`; amounts in wei and USDC units):
 
 | run | refused | took (ETH / USDC) | returned | donated | LP fees earned | swap fee min-max | gas avg / max |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -850,17 +913,21 @@ Measured on this machine (forge 1.8.1, WSL2), 2026-09-28, through a local relay 
 | --- | --- |
 | the fetch (`--fetch-only`, 200 blocks, chunks of 10) | **27 HTTP requests** for 23 `cast` calls (20 `eth_getLogs`, 3 `eth_chainId`, 2 `anvil_nodeInfo` - which the endpoint refuses - 1 `eth_getBlockByNumber`, 1 `eth_call`); 6 s; the timestamps came in the logs (`blockTimestamp`), so no request per block |
 | the replay, cold (`--no-storage-caching`: what a first run on a new machine asks) | **124 requests** (91 `eth_getStorageAt`, 15 `eth_getAccountInfo`, 6 `eth_chainId`, 6 `anvil_nodeInfo`, 3 `eth_getBlockByNumber`, 3 others) for the 9 tests of `test/backtest/` (3 hooks, 3 controls, 3 of the format), 11 s once built |
-| `scripts/backtest.sh` again, forge's storage cache for block 26 049 800 on disk | 16 requests (opening the six forks, and the re-check of block 26 050 000), 1 s once built |
-| the fork battery with the backtests in it (clean tree, the pinned fixture fetched first) | `passed 127, failed 0, skipped 0`, `suites test/backtest=4 test/examples=4 test/fork=7`, 253 s with the build |
+| `scripts/backtest.sh` again, forge's storage cache for block 26 049 800 on disk | 21 requests (opening the six forks; the re-check of block 26 050 000; the liquidity at block 26 049 800, one `eth_call`), 2 s once built (K19b; 16 before the liquidity line) |
+| the replay's BUILD (`forge test --match-contract` compiles what the matched tests import: 186 files, not the `via_ir` `PoolManager` of the module's own build) | from nothing (`out/`, `cache/` removed): **26 s, 0.9 GB** peak RSS; after an edit of `test/backtest/Backtest.t.sol`: 23 s, 0.9 GB; nothing changed: 3 s. A fresh reader's first replay on a new kit: about 24 s. The 197 s of the top README is the WHOLE module's clean build (`forge build`: the fork profile's took 250 s and 9.5 GB here) - a backtest does not wait for it |
+| the fork battery with the backtests in it (clean tree, the pinned fixture fetched first) | `passed 127, failed 0, skipped 0`, `suites test/backtest=4 test/examples=4 test/fork=7`, 253 s with the build (K19b: 336 s, 261 of its 1 111 requests answered HTTP 429 and retried by forge) |
+| a window with no swap (`--fetch-only`, the ERC-20 WETH / USDC 0.30 % pool, the 120 blocks ending at 26 040 000) | 15 `cast` calls for the fetch, then 1 for the liquidity and 100 `eth_getLogs` for the count of the 1 000 blocks before (0 there too), 20 s; the same again without `--fetch-only`, refused before the replay: 102 calls. Both runs: 230 HTTP requests (212 `eth_getLogs`) |
 | the fixture | 44 swaps, 7 248 B (.tsv) + 842 B (.json) |
 
 ### What is left
 
-Not run: a window where the real liquidity changes by more than the 0.124 % this one hides inside its JIT swaps (the
-LP-set substitution is then visible in the price, and the kit has not measured by how much), a pool with a hook of its own (its `Swap` event carries the POOL's delta, not the
-swapper's: the replay would drive the wrong amounts - not refused, not tested), a native pool other than ETH / USDC, a
-window longer than 200 blocks (the replay keeps the whole fixture in memory; the fetch is one request per 10 blocks on a
-free tier), any chain but mainnet, exact-out and multi-hop replays, the periphery's routers. The amounts the report takes
+Measured once, not studied: the 500 blocks before the committed window (the state at the end of block 26 049 300, 114
+swaps), `DeltaFeeHook` and its control - the control drifted **131 ppm** from the real prices (the LP-set substitution,
+visible: that is why the 10 ppm bound is the committed window's only), and the hook's totals held to its ledger as on the
+kit's window. Not run: a window where the real liquidity changes by much more, a pool with a hook of its own (its `Swap`
+event carries the POOL's delta, not the swapper's: the replay would drive the wrong amounts - not refused, not tested),
+a native pool other than ETH / USDC, a window longer than 500 blocks (the replay keeps the whole fixture in memory; the
+fetch is one request per 10 blocks on a free tier), any chain but mainnet, exact-out and multi-hop replays, the periphery's routers. The amounts the report takes
 from events (the pool's delta, the donations) follow `doctrine/SIMULATE.md`'s warning that recorded logs keep reverted
 frames: in the kit's three they are held equal to the hooks' own ledgers; for yours, `_checkBacktest` is where to do the
 same.
@@ -2514,7 +2581,8 @@ Written down because a list of gaps is the only honest end to a README.
   `donated` counter, at 1 wei per donation ("At the edges, and on the fork"); only the campaign's total reads the manager.
 
 * **What is left of the backtests** (new on 2026-09-28: "Backtests", above, which lists it): a window where the real
-  liquidity changes more than this one's (a tick crossed into +1.5 ppm, JIT of +0.124 % inside six swaps), a pool with a hook of its own, exact-out and multi-hop replays, the reactions of real
+  liquidity changes more than this one's (a tick crossed into +1.5 ppm, JIT of +0.124 % inside six swaps) studied - one
+  was run, the 500 blocks before it, and its control drifted 131 ppm -, a pool with a hook of its own, exact-out and multi-hop replays, the reactions of real
   traders to the hook (not modellable by a replay), any chain but mainnet.
 
 The attack list this module was written from — re-entrancy through `unlock`, hijacking `sync`, `hookData` as

@@ -205,7 +205,8 @@ library BacktestFixture {
 ///     doubled: the real pool's own key is taken), so that the report can say how much of a deviation is the replay's and
 ///     how much is the hook's. The base asserts only that no swap was lost, that the books closed and that the control
 ///     refused nothing; `_checkBacktest` and `_checkControl` are where a hook's own ledger and a window's fidelity are held.
-/// Everything is printed as `BT|...` lines that `scripts/backtest.sh` turns into `.gauntlet/reports/07-backtest.txt`.
+/// Everything is printed as `BT|...` lines that `scripts/backtest.sh` turns into a report of its own per run,
+/// `.gauntlet/reports/07-backtest-<id8>-<from>-<to>-<Hook>.txt`.
 ///
 /// The substitutions, named (they are what this report is NOT): the LP set (one full-range position of the active
 /// liquidity at `from`, where the real pool had many ranges, and whatever they added or removed in the window is absent);
@@ -297,8 +298,18 @@ abstract contract BacktestBase is V4Harness {
     function _checkBacktest(Totals memory) internal virtual {}
 
     /// @notice assertions of your own over the CONTROL's totals (optional): for a window you know, how far a replay with no
-    /// hook may drift from the real prices - the replay's own fidelity, held
-    function _checkControl(Totals memory) internal virtual {}
+    /// hook may drift from the real prices - the replay's own fidelity, held. Not overridden, nothing is held: this default
+    /// says so in the report (a `BT|fidelity|` line, "the control's fidelity"). An override says what it held with
+    /// `_fidelity("...")`, after its assertions - or the report says its `_checkControl` printed nothing
+    function _checkControl(Totals memory t) internal virtual {
+        _fidelity(
+            string.concat(
+                "NOT asserted: this backtest's _checkControl is the base's, which holds no bound on the replay's own drift (maxAbsDevPpm ",
+                vm.toString(t.maxAbsDevPpm),
+                " here, read in the totals)"
+            )
+        );
+    }
 
     // ------------------------------------------------------------------ set up: the fixture, then a fork AT `from`
     function setUp() public virtual {
@@ -665,5 +676,11 @@ abstract contract BacktestBase is V4Harness {
     /// @notice one `BT|note|<name>|<text>` line, for `_hookNotes`
     function _note(string memory text) internal view {
         console2.log(string.concat("BT|note|", _backtestName(), "|", text));
+    }
+
+    /// @notice one `BT|fidelity|control(<name>)|<text>` line, for `_checkControl`: what it held about the control's drift
+    /// on this window, or that it held nothing. The report prints it under "the control's fidelity"
+    function _fidelity(string memory text) internal view {
+        console2.log(string.concat("BT|fidelity|control(", _backtestName(), ")|", text));
     }
 }

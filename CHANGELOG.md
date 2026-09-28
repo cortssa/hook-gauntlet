@@ -6,7 +6,7 @@
   events (block-pinned fixture with a sidecar: blockHash, SHA-256, request count; refused when they disagree), replays
   them through the hook on a fork at the window's first block - the real pool's price and active liquidity in one
   full-range position, each swap at its real block and timestamp - next to a control without the hook, and writes
-  `07-backtest.txt`: what the hook took, returned, refused or paid, per swap and in total, the largest price
+  `07-backtest-<pool>-<from>-<to>-<hook>.txt`: what the hook took, returned, refused or paid, per swap and in total, the largest price
   deviations, the RPC requests. Measured on the chain's ETH/USDC 0.05 % pool, 200 blocks, 44 swaps, the three
   fee-taking examples: prices within 2 ppm of the real pool (control 1), DeltaFee's totals equal to its own counters
   to the wei; a cold replay costs ~124 requests, a warm one 16, the fetch 27. A replay is a sandbox report, not a proof

@@ -1,0 +1,41 @@
+No files changed, compilation skipped
+
+Ran 2 tests for test/backtest/Backtest.t.sol:DeltaFeeHookBacktest
+[PASS] test_backtest_replay_the_window_through_a_control_pool_with_no_hook() (gas: 1632124)
+Logs:
+  ---------------------------------------------------------------
+  V4 MANAGER: mainnet fork (the deployed manager, its storage, at a pinned block)
+    address      0x000000000004444c5dc75cB358380D2e3dE08A90
+    runtime size 24009
+    fork block   26049800
+    chain id     1
+    code hash    0x785f1014552b7ce7d5fb7d0c970ca60edee94fd00425d7ca21609acac7ce1293
+  ---------------------------------------------------------------
+  BT|window|0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27|26049800|26049810|1|.gauntlet/backtests/21c67e77-26049800-26049810.tsv
+  BT|seed|4108460217689435950812047|-197351|171357403690873183|500|512125
+  BT|run|control(DeltaFeeHook)|0x0000000000000000000000000000000000000000|500|20|0|171357403690873183
+  BT|swap|control(DeltaFeeHook)|0|26049804|1to0|78448606|replayed|-|137743|0|0|0|0|500|0|125|closed
+  BT|total|control(DeltaFeeHook)|1|1|0|0|0|0|0|0|0|0|0|39224|500|500|137743|137743|0|0
+  BT|fidelity|control(DeltaFeeHook)|NOT asserted: this window (26049800 .. 26049810) is not the kit's committed one (pool 0x21c67e77, 26049800 .. 26050000), where the 10 ppm bound was measured; the control drifted 0 ppm here, the replay's own, and nothing holds it
+
+[PASS] test_backtest_replay_the_window_through_the_hook() (gas: 51013539)
+Logs:
+  ---------------------------------------------------------------
+  V4 MANAGER: mainnet fork (the deployed manager, its storage, at a pinned block)
+    address      0x000000000004444c5dc75cB358380D2e3dE08A90
+    runtime size 24009
+    fork block   26049800
+    chain id     1
+    code hash    0x785f1014552b7ce7d5fb7d0c970ca60edee94fd00425d7ca21609acac7ce1293
+  ---------------------------------------------------------------
+  BT|window|0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27|26049800|26049810|1|.gauntlet/backtests/21c67e77-26049800-26049810.tsv
+  BT|seed|4108460217689435950812047|-197351|171357403690873183|500|512125
+  BT|run|DeltaFeeHook|0x55088BF158be73688964117495cfe4098A0600CC|500|10|0|171357403690873183
+  BT|swap|DeltaFeeHook|0|26049804|1to0|78448606|replayed|-|260037|87475501957618|0|0|0|500|0|-2875|closed
+  BT|total|DeltaFeeHook|1|1|0|0|87475501957618|0|0|0|0|0|0|39224|500|500|260037|260037|0|0
+  BT|note|DeltaFeeHook|currency0: feesBooked 87475501957618, rebatesPaid 0, reserveOf 87475501957618, held 87475501957618
+  BT|note|DeltaFeeHook|currency1: feesBooked 0, rebatesPaid 0, reserveOf 0, held 0
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 1.04s (31.99ms CPU time)
+
+Ran 1 test suite in 1.06s (1.04s CPU time): 2 tests passed, 0 failed, 0 skipped (2 total tests)

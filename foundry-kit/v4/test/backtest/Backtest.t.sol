@@ -21,16 +21,53 @@ import {InRangeDonateHook} from "../../src/examples/InRangeDonateHook.sol";
 /// `scripts/backtest.sh foundry-kit/v4 --pool 0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27 --from
 /// 26049800 --to 26050000`, which writes the report; the fork battery runs it as a test.
 abstract contract KitBacktest is BacktestBase {
+    /// @notice the kit's committed window - the only one whose fidelity was measured: the chain's ETH / USDC 0.05 % pool,
+    /// the state at the end of block 26 049 800, the swaps of blocks 26 049 801 .. 26 050 000
+    bytes32 internal constant KIT_POOL = 0x21c67e77068de97969ba93d4aab21826d33ca12bb9f565d8496e8fda8a82ca27;
+    uint256 internal constant KIT_FROM = 26049800;
+    uint256 internal constant KIT_TO = 26050000;
+    /// @notice how far the control may drift from the real prices on THAT window (measured: 1)
+    uint256 internal constant KIT_CONTROL_MAX_DEV_PPM = 10;
+
     function _defaultFixture() internal pure override returns (string memory) {
         return ".gauntlet/backtests/21c67e77-26049800-26050000.tsv";
     }
 
-    /// @notice the replay's fidelity on THIS window, held: with no hook, every post-swap price within 10 ppm of the real
-    /// pool's (measured: 1 at most; the window's real liquidity does change inside 7 swaps - a tick, JIT of 0.124 % - and the single-position substitution hides it at that cost), and every swap
-    /// replayed. A replay that swapped the wrong way, the wrong amount or the wrong kind (exact-out) fails here.
-    function _checkControl(Totals memory t) internal pure override {
+    /// @notice the replay's fidelity on the COMMITTED window only, held: with no hook, every post-swap price within 10 ppm
+    /// of the real pool's (measured: 1 at most; the window's real liquidity does change inside 7 swaps - a tick, JIT of
+    /// 0.124 % - and the single-position substitution hides it at that cost), and every swap replayed. A replay that
+    /// swapped the wrong way, the wrong amount or the wrong kind (exact-out) fails here. On any other window (the one in the
+    /// sidecar of `BACKTEST_FIXTURE`, read by `setUp`) nothing is asserted - the bound was measured on one window, and a
+    /// window that crosses ticks where the real liquidity changes drifts by more (measured, K19b: 131 ppm over the 500
+    /// blocks before it) - and the report's "control's fidelity" line says so.
+    function _checkControl(Totals memory t) internal view override {
+        if (window.poolId != KIT_POOL || window.from != KIT_FROM || window.to != KIT_TO) {
+            _fidelity(
+                string.concat(
+                    "NOT asserted: this window (",
+                    vm.toString(window.from),
+                    " .. ",
+                    vm.toString(window.to),
+                    ") is not the kit's committed one (pool 0x21c67e77, 26049800 .. 26050000), where the ",
+                    vm.toString(KIT_CONTROL_MAX_DEV_PPM),
+                    " ppm bound was measured; the control drifted ",
+                    vm.toString(t.maxAbsDevPpm),
+                    " ppm here, the replay's own, and nothing holds it"
+                )
+            );
+            return;
+        }
         assertEq(t.replayed, t.swaps, "control: a swap of the committed window was not replayed");
-        assertLe(t.maxAbsDevPpm, 10, "control: the replay drifted from the real prices on the committed window");
+        assertLe(t.maxAbsDevPpm, KIT_CONTROL_MAX_DEV_PPM, "control: the replay drifted from the real prices on the committed window");
+        _fidelity(
+            string.concat(
+                "asserted: every swap replayed and every post-swap price within ",
+                vm.toString(KIT_CONTROL_MAX_DEV_PPM),
+                " ppm of the real pool's (the kit's committed window; ",
+                vm.toString(t.maxAbsDevPpm),
+                " here)"
+            )
+        );
     }
 }
 

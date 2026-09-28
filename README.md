@@ -201,7 +201,8 @@ peak above idle:
 | step | time | memory |
 |---|---|---|
 | base kit: clean build / its test suite | 1.9 s / 1.2 s | 0.3 GB / 0.1 GB |
-| v4 module: clean build, which compiles Uniswap's `PoolManager` with `via_ir` (re-measured 2026-09-26, below) | 197 s | **7.6 GB** |
+| v4 module: clean build of the WHOLE module, which compiles Uniswap's `PoolManager` with `via_ir` (re-measured 2026-09-26, below) | 197 s | **7.6 GB** |
+| v4 module: a backtest's replay (`scripts/backtest.sh`), which compiles only what its tests import - not `PoolManager`: from nothing / after an edit of your backtest file (2026-09-28) | 26 s / 23 s | 0.9 GB |
 | v4 module: its test suite, either manager | 3 s | 0.1 GB |
 | v4 module: coverage | 29 s | 1.3 GB |
 | mutation of a 260-line hook, 16 parallel jobs | 1 min | **5.3 GB** |

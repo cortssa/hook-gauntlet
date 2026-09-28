@@ -10,12 +10,21 @@
 #     the pool's key, the window, the number of swaps, the SHA-256 of the .tsv, the hash of block <to>, when it was fetched
 #     and how many calls it took. A fixture that exists is REUSED (the events are not fetched again): its sidecar must be
 #     there and agree with it (window, pool, count, hash), and the hash of block <to> is re-checked against the chain when
-#     RPC_URL is set (one request) - never otherwise, and the report says which.
+#     RPC_URL is set (one request) - never otherwise, and the report says which. The fetch goes into YOUR project: into
+#     the kit's own module (foundry-kit/v4, whose .gauntlet/backtests/ git keeps) only with --allow-kit-fixtures.
+#     Then, fetched or reused, it prints the window's swap count and the pool's in-range liquidity at the end of <from>
+#     (one request, with RPC_URL). A window with NO swap is said and never replayed: "no swap in this window: pick
+#     another", with how many swaps the pool had in the 1 000 blocks before <from> (with RPC_URL: eth_getLogs in the same
+#     chunks as the fetch); --fetch-only then says FIXTURE READY (0 swaps). A liquidity THIN for the window - below 200 x
+#     its largest swap in liquidity units (amount0 x sqrtP, amount1 / sqrtP: the liquidity under which that one swap
+#     moves a full-range position about 1 % of the price) - is a WARNING line, never a refusal.
 #  2. THE REPLAY. `forge test` in <project>, on a fork AT block <from>: every contract whose name ends in `Backtest` (or
 #     exactly `<Contract>Backtest` with --hook) - each one a `BacktestBase` (foundry-kit/v4/src/BacktestBase.sol) that
 #     deploys a hook, seeds a NEW pool of the same currencies, fee and spacing at the real pool's price with one full-range
 #     position of its in-range liquidity, and drives every swap of the fixture through it, then through a control pool
-#     with no hook. The report goes to <OUT_DIR>/07-backtest.txt, forge's own log next to it (07-backtest-forge.txt).
+#     with no hook. The report goes to <OUT_DIR>/07-backtest-<id8>-<from>-<to>-<Hook>.txt (<Hook> is --hook's value, or
+#     `all`): one report per pool, window and hook, never overwritten by another's; forge's own log next to it (the same
+#     name, ending -forge.txt). The replay's own requests to the endpoint are forge's: nothing counts them here.
 #
 # The window: the state is the pool's at the END of block <from> (a fork at <from> reads exactly that), the swaps are
 # those of the <to> - <from> blocks after it. The key: the one the chain's PositionManager records for the pool
@@ -23,6 +32,7 @@
 #
 # Usage:   RPC_URL=... scripts/backtest.sh <project-dir> --pool <poolId> --from <block> --to <block> [--hook <Contract>]
 #                                          [--key <currency0>,<currency1>,<fee>,<tickSpacing>,<hooks>] [--fetch-only]
+#                                          [--allow-kit-fixtures]
 # Env:     RPC_URL      the endpoint: to fetch, to re-check block <to>, and for the replay's fork (an ARCHIVE endpoint:
 #                       the fork reads state at <from>). Never an argument, never printed; an error's text is scrubbed of
 #                       anything shaped like a URL before it is shown (fetch-bytecode.sh, "THE KEY RULE")
@@ -37,7 +47,8 @@
 # Rate:    an HTTP 429 (the endpoint's rate limit) is waited out ONCE, 2 s, and the call retried; a second one stops the
 #          fetch and nothing is written. Every call counts in the sidecar's `castCalls`, retries included.
 # Exit:    0 the report was written and every replay contract passed (or, with --fetch-only, the fixture is there and
-#          checked); 1 refused or failed - the reason printed, and with a refused fetch nothing written; 2 nothing run
+#          checked - 0 swaps included); 1 refused or failed - the reason printed, and with a refused fetch nothing written
+#          (a window with no swap: the fixture kept, the replay refused); 2 nothing run
 #          (OUT_DIR or the fixture's directory refused, or the environment could not be cleaned)
 
 set -uo pipefail
@@ -63,10 +74,11 @@ SWAP_TOPIC=0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f
 usage() {
   echo "usage: RPC_URL=... backtest.sh <project-dir> --pool <poolId> --from <block> --to <block> [--hook <Contract>]"
   echo "                               [--key <currency0>,<currency1>,<fee>,<tickSpacing>,<hooks>] [--fetch-only]"
+  echo "                               [--allow-kit-fixtures]"
   exit 1
 }
 
-PROJ=""; POOL=""; FROM=""; TO=""; HOOK=""; KEY=""; FETCH_ONLY=0
+PROJ=""; POOL=""; FROM=""; TO=""; HOOK=""; KEY=""; FETCH_ONLY=0; ALLOW_KIT=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --pool) [ "$#" -ge 2 ] || usage; POOL="$2"; shift 2 ;;
@@ -75,6 +87,7 @@ while [ "$#" -gt 0 ]; do
     --hook) [ "$#" -ge 2 ] || usage; HOOK="$2"; shift 2 ;;
     --key) [ "$#" -ge 2 ] || usage; KEY="$2"; shift 2 ;;
     --fetch-only) FETCH_ONLY=1; shift ;;
+    --allow-kit-fixtures) ALLOW_KIT=1; shift ;;
     -*) echo "backtest: unknown option (${#1} characters; not repeated here)"; usage ;;
     *) [ -z "$PROJ" ] || usage; PROJ="$1"; shift ;;
   esac
@@ -118,6 +131,10 @@ fi
 [ -d "$PROJ" ] || { echo "backtest: $PROJ is not a directory"; exit 1; }
 PROJ_ABS="$(cd "$PROJ" && pwd -P)"
 [ -f "$PROJ_ABS/foundry.toml" ] || { echo "backtest: $PROJ_ABS has no foundry.toml: the replay is a forge test in the project"; exit 1; }
+# the kit's own v4 module: its .gauntlet/backtests/ is COMMITTED (the kit's window). A fixture of another window fetched
+# there would be picked up by git - so a fetch into it is refused unless --allow-kit-fixtures; reusing one is not
+KIT_V4="$(cd "$HERE/../foundry-kit/v4" 2> /dev/null && pwd -P)"
+IS_KIT=0; if [ -n "$KIT_V4" ] && [ "$PROJ_ABS" = "$KIT_V4" ]; then IS_KIT=1; fi
 FIX_REL=".gauntlet/backtests"
 OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 report_dir_allowed backtest "$PROJ_ABS" "$FIX_REL" || { echo "backtest: nothing run."; exit 2; }
@@ -154,6 +171,7 @@ json_field() { # json_field <file> <name>: the value of "name": in the sidecar t
 }
 sha_of() { local h; h="$(printf '%s\n' "$1" | sha256_of | cut -f1)"; [ -n "$h" ] || return 1; printf '%s\n' "$h"; }
 count_swaps() { awk 'NR > 2 && length($0) > 0 { n++ } END { print n + 0 }' "$1"; }
+plural() { if [ "$1" = 1 ]; then printf '%s %s' "$1" "$2"; else printf '%s %ss' "$1" "$2"; fi; } # plural <n> <noun>
 
 if [ -n "${RPC_URL:-}" ]; then
   command -v cast > /dev/null 2>&1 || { echo "backtest: cast not found (install Foundry)"; exit 1; }
@@ -195,6 +213,16 @@ if [ -e "$TSV" ] || [ -e "$SIDE" ]; then
   echo "fixture   $TSV_REL - reused, $(count_swaps "$TSV") swaps, sidecar agrees; block $TO $RECHECK"
 else
   # ---------------------------------------------------------------- no fixture: fetch it
+  if [ "$IS_KIT" = 1 ] && [ "$ALLOW_KIT" != 1 ]; then
+    cat <<EOF
+backtest: $PROJ_ABS is the kit's own v4 module, and it has no fixture for this window. A fixture you fetch goes under
+          YOUR project's .gauntlet/backtests/ - run this on your project, with a <YourHook>Backtest in it
+          (foundry-kit/v4/README.md, "Your hook, your pool") - never into the kit's, which git keeps (its committed window).
+          To replay the kit's own examples on another window anyway, add --allow-kit-fixtures: the fixture then lands in
+          foundry-kit/v4/.gauntlet/backtests/ - do not commit it. Nothing asked of the chain, nothing written.
+EOF
+    exit 1
+  fi
   if [ -z "${RPC_URL:-}" ]; then
     cat <<EOF
 backtest: no fixture at $TSV_REL and RPC_URL is not set: nothing to replay.
@@ -305,11 +333,84 @@ EOF
 EOF
   mv "$WORK/out.tsv" "$TSV" && mv "$WORK/out.json" "$SIDE" || { echo "backtest: cannot write $TSV"; exit 1; }
   FETCHED_NOW=1
-  echo "fixture   $TSV_REL - fetched now: $n swaps, $CALLS calls to the endpoint (chunks of $CHUNK blocks; timestamps from $ts_from)"
+  echo "fixture   $TSV_REL - fetched now: $(plural "$n" swap), $(plural "$CALLS" call) to the endpoint (chunks of $CHUNK blocks; timestamps from $ts_from)"
+fi
+
+# ---------------------------------------------------------------- what the window holds: its swaps, and the pool's liquidity at <from>
+SWAPS="$(count_swaps "$TSV")"
+echo "swaps     $(plural "$SWAPS" swap) in blocks $((FROM + 1)) .. $TO"
+LIQ=""; SQRTP=""; THIN=""
+LIQ_LINE="not read (RPC_URL not set)"
+if [ -n "${RPC_URL:-}" ]; then
+  # StateLibrary: the pool's state is at keccak256(poolId . 6) (POOLS_SLOT), slot0 first (sqrtPriceX96 in its low 160
+  # bits), the in-range liquidity 3 slots on (its low 128 bits); one extsload of 4 slots, at block <from>
+  slot="$(cast index bytes32 "$POOL" 6 2> "$ERRF")"
+  if [[ ! "$slot" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+    LIQ_LINE="not read (cast index did not give the pool's state slot)"
+  elif ! net "$WORK/state" call --block "$FROM" "$POOL_MANAGER" "extsload(bytes32,uint256)(bytes32[])" "$slot" 4; then
+    LIQ_LINE="not read: the endpoint did not answer ($(scrub < "$ERRF" | head -1 | cut -c1-160))"
+  else
+    words="$(tr -d '[] \n' < "$WORK/state" | tr ',' '\n')"
+    w0="$(printf '%s\n' "$words" | sed -n 1p)"; w3="$(printf '%s\n' "$words" | sed -n 4p)"
+    if [[ "$w0" =~ ^0x[0-9a-fA-F]{64}$ ]] && [[ "$w3" =~ ^0x[0-9a-fA-F]{64}$ ]]; then
+      SQRTP="$(cast to-dec "0x${w0: -40}" 2> /dev/null)"; LIQ="$(cast to-dec "0x${w3: -32}" 2> /dev/null)"
+    fi
+    if [[ ! "$SQRTP" =~ ^[0-9]+$ ]] || [[ ! "$LIQ" =~ ^[0-9]+$ ]]; then
+      SQRTP=""; LIQ=""; LIQ_LINE="not read (the manager's answer was not four 32-byte words)"
+    elif [ "$LIQ" = 0 ] || [ "$SQRTP" = 0 ]; then
+      LIQ_LINE="$LIQ at the end of block $FROM"
+      THIN="WARNING: the pool has NO liquidity in range at the end of block $FROM (or is not initialised): the replay's seed will stop at RealPoolEmptyAtFrom"
+    elif [ "$SWAPS" -eq 0 ]; then
+      LIQ_LINE="$LIQ at the end of block $FROM (no swap in the window: nothing to measure it against)"
+    else
+      # the liquidity under which the window's largest swap alone moves a full-range position of it by about 1 % of the
+      # price: token0 in, a x sqrtP x 198.5; token1 in, a / sqrtP x 200.5 (sqrtP = sqrtPriceX96 / 2^96; the fee aside)
+      LMIN="$(awk -F'\t' -v p="$SQRTP" 'NR > 2 && NF == 11 { s = p / 79228162514264337593543950336; a = 0
+          if ($6 + 0 < 0) a = -$6 * s; else if ($7 + 0 < 0) a = -$7 / s; if (a > m) m = a }
+        END { printf "%.0f", 200 * m }' "$TSV")"
+      LIQ_LINE="$LIQ at the end of block $FROM (thin below $LMIN: 200 x the window's largest swap in liquidity units)"
+      if awk -v l="$LIQ" -v t="$LMIN" 'BEGIN { exit !(l + 0 < t + 0) }'; then
+        THIN="WARNING: thin for this window - $LIQ in range at block $FROM is below $LMIN: the window's largest swap alone moves a full-range position of it by more than about 1 % of the price, so the replay's one position stands in for ranges the real price crossed. Read the control's drift before the hook's numbers (a warning, not a refusal)"
+      fi
+    fi
+  fi
+fi
+echo "liquidity $LIQ_LINE"
+[ -z "$THIN" ] || echo "backtest: $THIN"
+
+if [ "$SWAPS" -eq 0 ]; then
+  # nothing to replay: said, with where the swaps were - the 1 000 blocks before <from>, in the fetch's chunks
+  hint="how many swaps it had in the 1 000 blocks before $FROM was not counted (RPC_URL not set)"
+  if [ -n "${RPC_URL:-}" ]; then
+    lb_from=$((FROM - 1000)); [ "$lb_from" -ge 0 ] || lb_from=0
+    lb_to=$((FROM - 1)); before=0; lb_ok=1; a="$lb_from"; b="$lb_to"
+    while [ "$a" -le "$lb_to" ]; do
+      b=$((a + CHUNK - 1)); [ "$b" -le "$lb_to" ] || b="$lb_to"
+      if ! net "$WORK/chunk" logs --json --from-block "$a" --to-block "$b" --address "$POOL_MANAGER" "$SWAP_TOPIC" "$POOL"; then
+        lb_ok=0; break
+      fi
+      k="$(tr -d '\n' < "$WORK/chunk" | tr '}' '\n' | grep -c '"blockNumber"')"
+      before=$((before + k)); a=$((b + 1))
+    done
+    if [ "$lb_to" -lt "$lb_from" ]; then
+      hint="there is no block before $FROM to count"
+    elif [ "$lb_ok" = 1 ]; then
+      hint="the pool had $(plural "$before" swap) in the 1 000 blocks before $FROM (blocks $lb_from .. $lb_to)"
+    else
+      hint="how many swaps it had in the 1 000 blocks before $FROM could not be counted (eth_getLogs for blocks $a .. $b: $(scrub < "$ERRF" | head -1 | cut -c1-160))"
+    fi
+  fi
+  echo "backtest: no swap in this window: pick another; $hint"
+  if [ "$FETCH_ONLY" = 1 ]; then
+    echo "backtest: FIXTURE READY (0 swaps) - $TSV_REL (--fetch-only: no replay)"
+    exit 0
+  fi
+  echo "backtest: the replay is refused: a window with no swap replays nothing (the fixture is kept: $TSV_REL). Nothing run."
+  exit 1
 fi
 
 if [ "$FETCH_ONLY" = 1 ]; then
-  echo "backtest: FIXTURE READY - $TSV_REL (--fetch-only: no replay)"
+  echo "backtest: FIXTURE READY - $TSV_REL ($(plural "$SWAPS" swap); --fetch-only: no replay)"
   exit 0
 fi
 
@@ -325,9 +426,12 @@ PROFILE="${FOUNDRY_PROFILE:-}"
 if [ -z "$PROFILE" ] && grep -q '^\[profile\.fork\]' foundry.toml; then PROFILE=fork; fi
 if [ -n "$HOOK" ]; then MATCH="^${HOOK}Backtest\$"; else MATCH="Backtest\$"; fi
 mkdir -p "$OUT_ABS"
-FORGE_LOG="$OUT_ABS/07-backtest-forge.txt"
-REPORT="$OUT_ABS/07-backtest.txt"
+# one report per pool, window and hook: another run's report is never overwritten by this one
+RUN_NAME="07-backtest-$NAME-${HOOK:-all}"
+FORGE_LOG="$OUT_ABS/$RUN_NAME-forge.txt"
+REPORT="$OUT_ABS/$RUN_NAME.txt"
 echo "replay    forge test --match-contract '$MATCH' -vv, profile ${PROFILE:-default}, V4_MANAGER=fork, forked at block $FROM"
+echo "report    $REPORT"
 started=$SECONDS
 if [ -n "$PROFILE" ]; then export FOUNDRY_PROFILE="$PROFILE"; else unset FOUNDRY_PROFILE; fi
 V4_MANAGER=fork BACKTEST_FIXTURE="$TSV_REL" forge test --match-contract "$MATCH" -vv 2>&1 | scrub > "$FORGE_LOG"
@@ -344,15 +448,18 @@ grep -a '^  BT|' "$FORGE_LOG" | sed 's/^  //' > "$WORK/bt"
   echo "project      $PROJ_ABS"
   echo "pool         $POOL (chain 1): $(json_field "$SIDE" currency0) / $(json_field "$SIDE" currency1), fee $(json_field "$SIDE" fee), spacing $(json_field "$SIDE" tickSpacing), hooks $(json_field "$SIDE" hooks) (key from $(json_field "$SIDE" keyFrom))"
   echo "window       the state at the end of block $FROM; the swaps of blocks $((FROM + 1)) .. $TO ($((TO - FROM)) blocks)"
-  echo "fixture      $TSV_REL: $(json_field "$SIDE" swaps) swaps, sha256 $(json_field "$SIDE" tsvSha256), fetched $(json_field "$SIDE" fetchedAt) with $(json_field "$SIDE" fetchedWith)"
+  echo "fixture      $TSV_REL: $(plural "$(json_field "$SIDE" swaps)" swap), sha256 $(json_field "$SIDE" tsvSha256), fetched $(json_field "$SIDE" fetchedAt) with $(json_field "$SIDE" fetchedWith)"
   if [ "$FETCHED_NOW" = 1 ]; then echo "             fetched in this run"; else echo "             reused (not fetched again); block $TO $RECHECK"; fi
   echo "replay       forge test --match-contract '$MATCH', profile ${PROFILE:-default}, V4_MANAGER=fork, a fork at block $FROM; $wall s"
   echo "forge        rc $rc_forge; passed $passed, failed $failed, skipped $skipped (log: $FORGE_LOG)"
-  echo "rpc          fetch: $(json_field "$SIDE" castCalls) calls to the endpoint when the fixture was fetched (sidecar castCalls: one per cast call,"
-  echo "             retries included; chunks of $(json_field "$SIDE" logsChunk) blocks; timestamps from $(json_field "$SIDE" timestampsFrom))"
-  if [ "$FETCHED_NOW" = 1 ]; then echo "             this run: $CALLS calls (the fetch)"; else echo "             this run: $CALLS calls (the fixture was reused)"; fi
-  echo "             replay: NOT counted here - forge does not report its requests (foundry-kit/v4/README.md, \"Backtests\", has the"
-  echo "             kit's window measured through a counting relay)"
+  echo "liquidity    in range: $LIQ_LINE"
+  [ -z "$THIN" ] || echo "             $THIN"
+  echo "rpc          fetch: $(plural "$(json_field "$SIDE" castCalls)" call) to the endpoint when the fixture was fetched (sidecar castCalls: one"
+  echo "             per cast call, retries included; chunks of $(json_field "$SIDE" logsChunk) blocks; timestamps from $(json_field "$SIDE" timestampsFrom))"
+  if [ "$FETCHED_NOW" = 1 ]; then what="the fetch, and the liquidity at block $FROM"; else what="the re-check of block $TO and the liquidity at block $FROM; the fixture was reused"; fi
+  echo "             this run, this script: $(plural "$CALLS" call) ($what)"
+  echo "             the replay: forge's own requests (its fork at block $FROM), and UNCOUNTED - neither this script nor forge counts"
+  echo "             them (foundry-kit/v4/README.md, \"What it cost\": the kit's window, counted through a relay)"
   # the protocol fee is two 12-bit values in one word: zeroForOne in the low bits, oneForZero in the high ones (v4-core)
   awk -F'|' '$2 == "seed" { printf "seed         the real pool at the end of block %s: sqrtPriceX96 %s, tick %s, in-range liquidity %s, lp fee %s, protocol fee %d / %d pips (0 to 1 / 1 to 0)\n", FROM, $3, $4, $5, $6, $7 % 4096, int($7 / 4096); exit }' FROM="$FROM" "$WORK/bt"
   echo
@@ -400,6 +507,42 @@ grep -a '^  BT|' "$FORGE_LOG" | sed 's/^  //' > "$WORK/bt"
   echo
   echo "== the hooks' own ledgers =="
   awk -F'|' '$2 == "note" { print $3 ": " $4 }' "$WORK/bt" | sort -u
+  echo
+  echo "== each hook minus its control, per total (what the hook changed; the replay's own drift is in both) =="
+  echo "run swaps replayed refused unreplayable took0 took1 returned0 returned1 donated0 donated1 lpFees0 lpFees1 swapFeeMin swapFeeMax gasAvg gasMax booksOpen maxAbsDevPpm"
+  # exact: whole numbers of any length, digit by digit (an amount in wei does not fit a double)
+  awk -F'|' '
+    function norm(x) { sub(/^0+/, "", x); return x == "" ? "0" : x }
+    function cmp(a, b) { a = norm(a); b = norm(b); if (length(a) != length(b)) return length(a) < length(b) ? -1 : 1
+      return ("x" a) < ("x" b) ? -1 : (("x" a) > ("x" b) ? 1 : 0) }
+    function bsub(a, b,   neg, t, r, i, d, borrow, la, lb) {
+      if (a !~ /^[0-9]+$/ || b !~ /^[0-9]+$/) return "?"
+      a = norm(a); b = norm(b); neg = 0
+      if (cmp(a, b) < 0) { t = a; a = b; b = t; neg = 1 }
+      r = ""; borrow = 0; la = length(a); lb = length(b)
+      for (i = 0; i < la; i++) {
+        d = substr(a, la - i, 1) - borrow - (i < lb ? substr(b, lb - i, 1) : 0)
+        if (d < 0) { d += 10; borrow = 1 } else borrow = 0
+        r = d r
+      }
+      r = norm(r); return (neg && r != "0" ? "-" : "") r }
+    $2 == "total" && !($3 in row) { row[$3] = $0; if ($3 !~ /^control\(/) hooks[++n] = $3 }
+    END {
+      for (i = 1; i <= n; i++) {
+        h = hooks[i]; c = "control(" h ")"
+        if (!(c in row)) { print h ": no " c " row - not computed"; continue }
+        split(row[h], x, "|"); split(row[c], y, "|"); s = h
+        for (j = 4; j <= 21; j++) s = s " " bsub(x[j], y[j])
+        print s
+      }
+      if (n == 0) print "none (no hook run in the log)"
+    }' "$WORK/bt"
+  echo
+  echo "== the control's fidelity (what its _checkControl held on THIS window) =="
+  awk -F'|' '$2 == "fidelity" { t = $4; for (i = 5; i <= NF; i++) t = t "|" $i; if (!($3 in f)) f[$3] = t }
+    $2 == "total" && $3 ~ /^control\(/ && !($3 in seen) { seen[$3] = 1; c[++n] = $3 }
+    END { for (i = 1; i <= n; i++) print c[i] ": " (c[i] in f ? f[c[i]] : "no line - its _checkControl printed none (BacktestBase._fidelity says what one held)")
+      if (n == 0) print "none (no control run in the log)" }' "$WORK/bt"
 } > "$REPORT"
 
 verdict=0
