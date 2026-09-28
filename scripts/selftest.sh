@@ -1961,6 +1961,105 @@ grep -qF "| 10 | only documents, comments, scripts or tests changed since the la
 if [ -s "$TMP/nx-silent" ]; then echo "  FAIL  next.sh ran with NEXT_SELFTEST=1 and did not say so:"; sed "s/^/        | /" "$TMP/nx-silent"; fails=$((fails + 1)); else
   echo "  ok    every run with NEXT_SELFTEST=1 said so, on the first line of its stderr"; fi
 
+# ================================================================= skills: gen-skills.sh, skills-check.sh, install-skills.sh (K30; no forge needed)
+# The skills are generated from AGENTS.md and doctrine/NEXT.md; skills-check.sh regenerates and compares. Each way a skill
+# can go wrong is made here, on a copy of the kit, and must be seen red: a hand edit in a SKILL.md, the invariants marker
+# moved in AGENTS.md (and doubled), a file a skill points at renamed, a skill grown past 9000 bytes (the skills
+# regenerated, so that size is the only red), a NEXT.md row no skill owns. Then the installer, into temporary projects
+# and a temporary HOME only: {{KIT}} written, the kit absent said so, a kit lacking a file named, its own skills replaced
+# only with --force, a directory that is not the kit's never replaced, user level only with --user.
+echo "== skills (gen-skills.sh, skills-check.sh, install-skills.sh) =="
+"$HERE/skills-check.sh" > "$TMP/o900" 2>&1; check "skills-check.sh on this kit: the skills are what the doctrine generates" 0 $? "$TMP/o900"
+SK="$TMP/skkit"; mkdir -p "$SK/foundry-kit/v4"
+for x in AGENTS.md QUICKSTART.md README.md doctrine briefs state scripts skills; do cp -R "$HERE/../$x" "$SK/"; done
+cp "$HERE/../foundry-kit/README.md" "$SK/foundry-kit/"; cp "$HERE/../foundry-kit/v4/README.md" "$SK/foundry-kit/v4/"
+sk_restore() { rm -rf "$SK/skills" "$SK/doctrine" "$SK/AGENTS.md"; cp -R "$HERE/../skills" "$HERE/../doctrine" "$HERE/../AGENTS.md" "$SK/"; }
+sk_says() { # sk_says <output file> <text>: the red names what it should
+  if grep -qF "$2" "$1"; then echo "  ok    and it says: $2"; else echo "  FAIL  it does not say: $2"; sed "s/^/        | /" "$1" | tail -n 5; fails=$((fails + 1)); fi
+}
+"$SK/scripts/skills-check.sh" > "$TMP/o901" 2>&1; check "skills-check.sh on a copy of the kit (every pointer is in the copy)" 0 $? "$TMP/o901"
+# a hand edit
+sed -i.bak 's/^- \*\*Row 13\*\* - a REGRESSION round/- **Row 13** - a regression round/' "$SK/skills/hook-gauntlet-round/SKILL.md"
+cmp -s "$SK/skills/hook-gauntlet-round/SKILL.md" "$HERE/../skills/hook-gauntlet-round/SKILL.md" && { echo "  FAIL  the hand edit did not land"; fails=$((fails + 1)); }
+rm -f "$SK/skills/hook-gauntlet-round/SKILL.md.bak"
+"$SK/scripts/skills-check.sh" > "$TMP/o902" 2>&1; check "a hand edit in a SKILL.md is red" 1 $? "$TMP/o902"
+sk_says "$TMP/o902" "skills/hook-gauntlet-round/SKILL.md: differs from what gen-skills.sh writes"
+sk_restore
+# the end marker moved up one line in AGENTS.md: the last rule falls out of the block
+awk '/^<!-- invariants:end -->$/ { next } { print } /^- \*\*Words you never write/ { w = 1 } w && /^  and "audited"/ { print "<!-- invariants:end -->"; w = 0 }' \
+  "$HERE/../AGENTS.md" > "$SK/AGENTS.md"
+"$SK/scripts/skills-check.sh" > "$TMP/o903" 2>&1; check "the invariants:end marker moved in AGENTS.md is red" 1 $? "$TMP/o903"
+sk_says "$TMP/o903" "skills/hook-gauntlet/SKILL.md: differs from what gen-skills.sh writes"
+sk_says "$TMP/o903" "skills/hook-gauntlet-battery/SKILL.md: its six rules are not AGENTS.md's block"
+awk '{ print } /^<!-- invariants:end -->$/ { print "<!-- invariants:begin -->" }' "$HERE/../AGENTS.md" > "$SK/AGENTS.md"
+"$SK/scripts/skills-check.sh" > "$TMP/o904" 2>&1; check "a second invariants:begin marker in AGENTS.md is red" 1 $? "$TMP/o904"
+sk_says "$TMP/o904" "refused to regenerate the skills: gen-skills: REFUSED - AGENTS.md has 2 '<!-- invariants:begin -->'"
+sk_restore
+# a file a skill points at, renamed
+mv "$SK/doctrine/JUDGES.md" "$SK/doctrine/JUDGES-renamed.md"
+"$SK/scripts/skills-check.sh" > "$TMP/o905" 2>&1; check "a file a skill points at, renamed, is red" 1 $? "$TMP/o905"
+sk_says "$TMP/o905" "skills/hook-gauntlet-battery/SKILL.md: points at '{{KIT}}/doctrine/JUDGES.md', which is not in the kit"
+sk_restore
+# a skill past 9000 bytes, regenerated so that nothing drifts: row 7's cell grown by 2000 bytes in NEXT.md
+pad="$(printf ' - padding%.0s' $(seq 1 200))"
+sed -i.bak "s/^\(| 7 | .*mutation (\`JUDGES.md\`)\) |/\1$pad |/" "$SK/doctrine/NEXT.md"; rm -f "$SK/doctrine/NEXT.md.bak"
+"$SK/scripts/gen-skills.sh" > "$TMP/o906" 2>&1; check "gen-skills.sh regenerates the copy's skills after row 7 grew" 0 $? "$TMP/o906"
+"$SK/scripts/skills-check.sh" > "$TMP/o907" 2>&1; check "a skill over 9000 bytes is red" 1 $? "$TMP/o907"
+sk_says "$TMP/o907" "skills/hook-gauntlet-battery/SKILL.md: is "
+sk_says "$TMP/o907" "bytes, over 9000"
+if grep -q 'differs from what gen-skills.sh writes' "$TMP/o907"; then echo "  FAIL  and it also reported drift: the size is not the only red"; fails=$((fails + 1)); else
+  echo "  ok    and the size is the only red (the skills were regenerated)"; fi
+sk_restore
+# a NEXT.md row no skill owns
+awk '{ print } /^\| 18b \|/ { print "| 19 | a row added to the table | do something | a reason |" }' "$HERE/../doctrine/NEXT.md" > "$SK/doctrine/NEXT.md"
+"$SK/scripts/gen-skills.sh" --out "$TMP/skgen19" > "$TMP/o908" 2>&1; check "gen-skills.sh refuses a NEXT.md row no skill owns" 2 $? "$TMP/o908"
+sk_says "$TMP/o908" "row 19 of doctrine/NEXT.md's table is owned by no skill"
+"$SK/scripts/skills-check.sh" > "$TMP/o909" 2>&1; check "and skills-check.sh is red on it" 1 $? "$TMP/o909"
+sk_restore
+# the generator never overwrites a SKILL.md it did not write
+mkdir -p "$TMP/skhand/hook-gauntlet"; printf -- '---\nname: hook-gauntlet\ndescription: mine\n---\nmine\n' > "$TMP/skhand/hook-gauntlet/SKILL.md"
+"$HERE/gen-skills.sh" --out "$TMP/skhand" > "$TMP/o910" 2>&1; check "gen-skills.sh refuses to overwrite a SKILL.md it did not write" 2 $? "$TMP/o910"
+if grep -qx 'mine' "$TMP/skhand/hook-gauntlet/SKILL.md"; then echo "  ok    and the file is untouched"; else echo "  FAIL  the file was changed"; fails=$((fails + 1)); fi
+# the installer: a project with no kit vendored yet
+mkdir -p "$TMP/skproj"; SP="$(cd "$TMP/skproj" && pwd)"   # as the installer resolves it (a /tmp behind a symlink)
+"$HERE/install-skills.sh" --harness claude --project "$SP" > "$TMP/o911" 2>&1; check "install-skills.sh --harness claude --project (no kit vendored)" 0 $? "$TMP/o911"
+sk_says "$TMP/o911" "pointers: NOT checked - no kit at $SP/lib/hook-gauntlet"
+sk_n="$(find "$SP/.claude/skills" -name SKILL.md | wc -l | tr -d ' ')"; sk_all="$(find "$SP/.claude/skills" -type f | wc -l | tr -d ' ')"
+if [ "$sk_n" = 9 ] && [ "$sk_all" = 9 ] && ! grep -rqF '{{KIT}}' "$SP/.claude/skills" && grep -qF '`lib/hook-gauntlet/doctrine/NEXT.md`' "$SP/.claude/skills/hook-gauntlet/SKILL.md"; then
+  echo "  ok    nine SKILL.md and nothing else, {{KIT}} written as lib/hook-gauntlet"; else
+  echo "  FAIL  installed: $sk_n SKILL.md, $sk_all files; {{KIT}} left: $(grep -rlF '{{KIT}}' "$SP/.claude/skills" | wc -l)"; fails=$((fails + 1)); fi
+"$HERE/install-skills.sh" --harness claude --project "$SP" > "$TMP/o912" 2>&1; check "installing again without --force is refused" 2 $? "$TMP/o912"
+sk_says "$TMP/o912" "rerun with --force"
+mkdir -p "$SP/lib"; ln -s "$(cd "$HERE/.." && pwd)" "$SP/lib/hook-gauntlet"
+"$HERE/install-skills.sh" --harness claude --project "$SP" --force > "$TMP/o913" 2>&1; check "with the kit vendored at lib/hook-gauntlet and --force, every pointer resolves" 0 $? "$TMP/o913"
+sk_says "$TMP/o913" "resolve under $SP/lib/hook-gauntlet"
+rm -f "$SK/doctrine/JUDGES.md"
+"$HERE/install-skills.sh" --harness codex --project "$SP" --kit "$SK" > "$TMP/o914" 2>&1; check "a kit at --kit that lacks a file a skill names is red, into .agents/skills" 1 $? "$TMP/o914"
+sk_says "$TMP/o914" "names $SK/doctrine/JUDGES.md, which the kit at $SK does not have"
+[ -f "$SP/.agents/skills/hook-gauntlet/SKILL.md" ] || { echo "  FAIL  --harness codex did not write .agents/skills"; fails=$((fails + 1)); }
+sk_restore
+# a directory that is not the kit's is never replaced, even with --force, and nothing else is written
+SQ="$TMP/skproj2"; mkdir -p "$SQ/.claude/skills/hook-gauntlet-battery"
+printf -- '---\nname: hook-gauntlet-battery\ndescription: somebody else'"'"'s\n---\ntheirs\n' > "$SQ/.claude/skills/hook-gauntlet-battery/SKILL.md"
+sk_h="$(hash_of "$SQ/.claude/skills/hook-gauntlet-battery/SKILL.md")"
+"$HERE/install-skills.sh" --harness claude --project "$SQ" --force > "$TMP/o915" 2>&1; check "a skills directory that is not this kit's is refused, even with --force" 2 $? "$TMP/o915"
+sk_says "$TMP/o915" "is not one of this kit's skills"
+if [ "$(hash_of "$SQ/.claude/skills/hook-gauntlet-battery/SKILL.md")" = "$sk_h" ] && [ "$(find "$SQ/.claude/skills" -type f | wc -l | tr -d ' ')" = 1 ]; then
+  echo "  ok    and it is untouched, and nothing else was written"; else echo "  FAIL  something was written"; fails=$((fails + 1)); fi
+# where: a project or, on purpose, the user level - never by default
+"$HERE/install-skills.sh" --harness claude > "$TMP/o916" 2>&1; check "neither --project nor --user is refused" 2 $? "$TMP/o916"
+sk_says "$TMP/o916" "say where: --project DIR"
+HOME="$TMP/skhome" "$HERE/install-skills.sh" --harness claude --user > "$TMP/o917" 2>&1; check "--user with the default (relative) --kit is refused" 2 $? "$TMP/o917"
+mkdir -p "$TMP/skhome"
+HOME="$TMP/skhome" "$HERE/install-skills.sh" --harness claude --user --kit "$(cd "$HERE/.." && pwd)" > "$TMP/o918" 2>&1; check "--user with an absolute --kit writes the user-level directory (a temporary HOME)" 0 $? "$TMP/o918"
+[ -f "$TMP/skhome/.claude/skills/hook-gauntlet/SKILL.md" ] || { echo "  FAIL  nothing in \$HOME/.claude/skills"; fails=$((fails + 1)); }
+# the gate: skills that do not pass skills-check.sh are not installed
+printf 'hand edit\n' >> "$SK/skills/hook-gauntlet-spec/SKILL.md"; mkdir -p "$TMP/skproj3"
+"$SK/scripts/install-skills.sh" --harness claude --project "$TMP/skproj3" > "$TMP/o919" 2>&1; check "install-skills.sh refuses skills that fail skills-check.sh" 2 $? "$TMP/o919"
+sk_says "$TMP/o919" "skills-check.sh does not pass on this kit's skills"
+[ ! -e "$TMP/skproj3/.claude" ] || { echo "  FAIL  and it wrote something"; fails=$((fails + 1)); }
+sk_restore
+
 # ================================================================= dossier-pdf.py (the dossier's reading copy; no forge needed)
 # The PDF is the auditor's reading copy of DOSSIER.md; the Markdown stays the record. What a PDF must never do is lose a
 # line on the way to paper, so the check below reads the text back out of the PDF (pypdf) and looks for every line of

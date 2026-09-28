@@ -25,6 +25,7 @@ It never deploys anything, never touches a key, and never calls a hook "safe".
 > numbers and limits under *Status*.
 
 Start at [`AGENTS.md`](AGENTS.md). Humans can keep reading here.
+With skills: install them into your project ([`skills/README.md`](skills/README.md)) and say *"use the hook-gauntlet skills"*.
 
 ## Two minutes
 

@@ -122,6 +122,7 @@ is: … Start at phase 0 and interview me."* From then on its next step comes fr
 first row whose condition is true. It re-reads that table whenever it arrives with no context and whenever it
 finishes anything. `scripts/next.sh .gauntlet/STATE.md` reads the flags, refuses a malformed one, and names that row
 (and the rows only a judgement can decide, never guessed: `state/README.md`).
+With skills: install them (`scripts/install-skills.sh --harness claude --project <your project>`, `skills/README.md`) and say *"Use the hook-gauntlet skills. My idea is: …"*.
 
 Phase 0 is the interview: the agent copies `briefs/owner-interview.md` to `.gauntlet/briefs/00-interview.md` and you
 answer it together. One question, the self-score against the Uniswap Foundation's security framework, needs the

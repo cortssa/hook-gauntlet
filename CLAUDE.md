@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-This project's instructions for agents live in **[`AGENTS.md`](AGENTS.md)**. Read it in full before doing anything.
+This project's instructions for agents live in **[`AGENTS.md`](AGENTS.md)**. If your harness supports skills, invoke
+`hook-gauntlet` first ([`skills/README.md`](skills/README.md)); read `AGENTS.md` in full only without skills.
 
 If you are Claude Code, also read **[`adapters/claude-code/README.md`](adapters/claude-code/README.md)**: it maps the
 roles in `AGENTS.md` to subagents and models, and shows how to launch a round.
