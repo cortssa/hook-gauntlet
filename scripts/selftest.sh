@@ -1732,7 +1732,7 @@ grep -qF "row 16" "$TMP/o717" || { echo "  FAIL  and the refusal does not name r
 # ================================================================= skills: gen-skills.sh, skills-check.sh, install-skills.sh (K30; no forge needed)
 # The skills are generated from AGENTS.md and doctrine/NEXT.md; skills-check.sh regenerates and compares. Each way a skill
 # can go wrong is made here, on a copy of the kit, and must be seen red: a hand edit in a SKILL.md, the invariants marker
-# moved in AGENTS.md (and doubled), a file a skill points at renamed, a skill grown past 8000 bytes (the skills
+# moved in AGENTS.md (and doubled), a file a skill points at renamed, a skill grown past 9000 bytes (the skills
 # regenerated, so that size is the only red), a NEXT.md row no skill owns. Then the installer, into temporary projects
 # and a temporary HOME only: {{KIT}} written, the kit absent said so, a kit lacking a file named, its own skills replaced
 # only with --force, a directory that is not the kit's never replaced, user level only with --user.
@@ -1768,13 +1768,13 @@ mv "$SK/doctrine/JUDGES.md" "$SK/doctrine/JUDGES-renamed.md"
 "$SK/scripts/skills-check.sh" > "$TMP/o905" 2>&1; check "a file a skill points at, renamed, is red" 1 $? "$TMP/o905"
 sk_says "$TMP/o905" "skills/hook-gauntlet-battery/SKILL.md: points at '{{KIT}}/doctrine/JUDGES.md', which is not in the kit"
 sk_restore
-# a skill past 8000 bytes, regenerated so that nothing drifts: row 7's cell grown by 2000 bytes in NEXT.md
+# a skill past 9000 bytes, regenerated so that nothing drifts: row 7's cell grown by 2000 bytes in NEXT.md
 pad="$(printf ' - padding%.0s' $(seq 1 200))"
 sed -i.bak "s/^\(| 7 | .*mutation (\`JUDGES.md\`)\) |/\1$pad |/" "$SK/doctrine/NEXT.md"; rm -f "$SK/doctrine/NEXT.md.bak"
 "$SK/scripts/gen-skills.sh" > "$TMP/o906" 2>&1; check "gen-skills.sh regenerates the copy's skills after row 7 grew" 0 $? "$TMP/o906"
-"$SK/scripts/skills-check.sh" > "$TMP/o907" 2>&1; check "a skill over 8000 bytes is red" 1 $? "$TMP/o907"
+"$SK/scripts/skills-check.sh" > "$TMP/o907" 2>&1; check "a skill over 9000 bytes is red" 1 $? "$TMP/o907"
 sk_says "$TMP/o907" "skills/hook-gauntlet-battery/SKILL.md: is "
-sk_says "$TMP/o907" "bytes, over 8000"
+sk_says "$TMP/o907" "bytes, over 9000"
 if grep -q 'differs from what gen-skills.sh writes' "$TMP/o907"; then echo "  FAIL  and it also reported drift: the size is not the only red"; fails=$((fails + 1)); else
   echo "  ok    and the size is the only red (the skills were regenerated)"; fi
 sk_restore

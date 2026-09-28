@@ -3,7 +3,8 @@
 If you were asked to take a Uniswap v4 hook from an idea to audit-ready, or to test an existing one hard, start here.
 An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after `AGENTS.md`; without
 them -> phase 0, the code as the sketch to specify. With skills (`skills/README.md`): invoke `hook-gauntlet` first and
-let each skill name the sections you need. Without skills: read this file to the end before you touch anything. It is
+let each skill name the sections you need - with skills, do not read `AGENTS.md`, `doctrine/NEXT.md` or `QUICKSTART.md`
+whole: read the section a skill names, when it names it. Without skills: read this file to the end before you touch anything. It is
 written for an agent with no prior context.
 
 ## 1. What this kit is

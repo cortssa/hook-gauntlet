@@ -12,7 +12,7 @@
 #   - "This phase": the NEXT.md rows the skill owns, each with its "do this" cell, read from the table by id;
 #   - "Gate": the phase's cell of AGENTS.md section 3;
 #   - "Read on entry": the path, and AGENTS.md section 7's own line for it when it has one;
-#   - the entry skill's four steps: sentences of AGENTS.md, each checked to be there before it is written;
+#   - the entry skill's steps: sentences of AGENTS.md, each checked to be there before it is written;
 #   - the doctor's checks: each script's own first line (line 3 of its header).
 # What is NOT extracted is short and kept as DATA below: which skill owns which rows, the trigger words of each
 # description, and the "Read on entry" / "Read when" lists. The only prose this script adds is structure: headings,
@@ -24,7 +24,7 @@
 # lib/hook-gauntlet). scripts/skills-check.sh regenerates into a temporary directory and compares: drift is red.
 #
 # The design (thin skills, the row -> skill table, the per-phase shape This phase / Gate / Read on entry / Read when /
-# Done when, the entry skill's four steps) is Pedro Santana's, from his fork of this kit that turned it into skills
+# Done when, the entry skill's steps) is Pedro Santana's, from his fork of this kit that turned it into skills
 # (0xZ0uk/hook-gauntlet, 2026-09); what changed is that nothing in a skill is written by hand.
 #
 # Usage:   scripts/gen-skills.sh [--out DIR]
@@ -66,7 +66,7 @@ SKILLS='
 hook-gauntlet           | -   | 1 3                      | -  | The entry to hook-gauntlet, the route that takes a Uniswap v4 hook from an idea to audit-ready (or tests an existing one hard) with its owner, on a local bench
 hook-gauntlet-interview | 0   | 0 4@0                    | -  | -
 hook-gauntlet-spec      | 1   | 4@1                      | -  | -
-hook-gauntlet-battery   | 2 3 | 4b 5 6 6b 7 7b           | 5:120 6b | -
+hook-gauntlet-battery   | 2 3 | 4b 5 6 6b 7 7b           | 5:120 | -
 hook-gauntlet-round     | 4   | 2 8 9 10 11b 11 13 13b 14 | -  | -
 hook-gauntlet-blackbox  | 5   | 12 15                    | -  | -
 hook-gauntlet-release   | 6 7 | 16 17                    | -  | -
@@ -137,9 +137,10 @@ hook-gauntlet-doctor    | when  | skills/README.md              | the skills the
 '
 # the doctor's checks: scripts whose own first line (header line 3) is printed, in this order
 DOCTOR_SCRIPTS='doctor.sh selftest.sh install-v4.sh next.sh skills-check.sh'
-# the entry skill's four steps (Pedro Santana's): a label of this script's, then a sentence of AGENTS.md, quoted - each is
+# the entry skill's steps (Pedro Santana's): a label of this script's, then a sentence of AGENTS.md, quoted - each is
 # checked to be in AGENTS.md (whitespace aside) before anything is written
 STEPS='
+With skills | do not read `AGENTS.md`, `doctrine/NEXT.md` or `QUICKSTART.md` whole: read the section a skill names, when it names it.
 A hook that already exists | An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after `AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
 A new project | Before phase 0, install the state convention in the owner'"'"'s project: copy the three files from `state/` into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook
 Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`) | Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
