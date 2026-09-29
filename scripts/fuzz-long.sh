@@ -13,6 +13,13 @@
 #
 # When it fails, WRITE DOWN THE SEED it prints. A counterexample you cannot reproduce is a rumour.
 #
+# Before the campaign it says what it will cost (AGENTS.md section 5: say how long first): runs x depth, the everyday
+# campaigns' measured time - the battery's last log, <OUT_DIR>/02-test.txt - scaled by the ratio of calls, and that a
+# failure is then shrunk (the profile's shrink_run_limit; about 10 minutes on a v4 hook, measured). No battery log with a
+# campaign in it, or one whose campaign time is of a shape not read here: "no everyday time measured", saying which, never
+# a guess. To ask before spending: ESTIMATE_ONLY=1 prints the cost and stops (exit 0, no campaign) - the owner's machine,
+# the owner's call; the same command without it runs the campaign.
+#
 # Usage:   scripts/fuzz-long.sh [project-dir]
 # Env:     MATCH      forge filter (default: --match-contract Invariant), the ONLY filter, and the verdict line names it.
 #                     Nothing else of forge's is taken from the environment (scripts/lib/forge-env.sh): every variable
@@ -22,6 +29,11 @@
 #          RUNS       override the profile's invariant runs (this script sets FOUNDRY_INVARIANT_RUNS from it)
 #          DEPTH      override the profile's invariant depth (FOUNDRY_INVARIANT_DEPTH, likewise)
 #          SEED       replay a specific seed
+#          ESTIMATE_ONLY  any value but empty or 0 (1, true, yes) to print what the campaign will cost (above) and stop
+#                     there: exit 0, no campaign, no bench, nothing written - the refusals before the cost (a profile that
+#                     does not exist, a budget no larger than the everyday one, a campaign whose bench would have no place:
+#                     BENCH_ROOT unset in a tree without .gauntlet/) still refuse. NEXT.md row 7's "say how long first" is
+#                     this run.
 #          USE_BENCH  1 to run in a bench copy (default: 1). A project whose foundry.toml or remappings.txt reach
 #                     outside it (`../src`, as the v4 module does) is benched from the parent they reach - one or two
 #                     levels up - and run at its own place inside that bench; deeper than two levels is refused (bench
@@ -52,7 +64,7 @@
 #          as it is when a source changed that forge's incremental build does not follow (outside src/, or src/ through a
 #          link or a remapping), or when nothing recorded what the last build read (the kit records it after each build).
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
-# Exit:    forge's exit code - 1, never 0, when a test FAILED whatever forge exited with (`--allow-failure` exits 0
+# Exit:    0 after the cost alone with ESTIMATE_ONLY=1. Otherwise forge's exit code - 1, never 0, when a test FAILED whatever forge exited with (`--allow-failure` exits 0
 #          over one: a FAIL line or a failed count is a failed campaign); 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
 #          than the everyday one, no invariant campaign ran - including a build or a setUp that failed before any could,
 #          which is never reported as a counterexample - or one skipped itself, or the bench cannot hold the project).
@@ -76,16 +88,28 @@ forge_env_clean fuzz-long "FOUNDRY_PROFILE FORGE_FLAGS" "$0" "$@"
 PROJECT="${1:-.}"
 MATCH="${MATCH:---match-contract Invariant}"
 USE_BENCH="${USE_BENCH:-1}"
+# K32c (V32b): any value but empty or 0 is the cost alone - `true` ran a real campaign
+ESTIMATE_GIVEN="${ESTIMATE_ONLY:-}"
+case "$ESTIMATE_GIVEN" in "" | 0) ESTIMATE_ONLY=0 ;; *) ESTIMATE_ONLY=1 ;; esac
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 
 SRC="$(cd "$PROJECT" && pwd)" || { echo "fuzz-long: cannot enter $PROJECT"; exit 1; }
 # the default bench root is inside the project: only where the kit's convention is installed. Checked before anything is
 # written - the log's default directory is under <project>/.gauntlet/ too, and creating it would satisfy this check.
 if [ "$USE_BENCH" = "1" ] && [ -z "${BENCH_ROOT:-}" ] && [ ! -d "$SRC/.gauntlet" ]; then
-  echo "fuzz-long: BENCH_ROOT is not set, and $SRC has no .gauntlet/ (the kit's convention is not installed there): the bench"
-  echo "           would be made inside that tree - doctrine/RETROFIT.md: a bench of your own, never their working tree."
-  echo "           NOTHING PROVEN, nothing written: set BENCH_ROOT=<a directory outside the project> (and OUT_DIR, whose default"
-  echo "           is <project>/.gauntlet/reports)."
+  if [ "$ESTIMATE_ONLY" = "1" ]; then
+    # the cost alone makes no bench (V32b: it said one would be made); the campaign it prices is what has no place here
+    echo "fuzz-long: ESTIMATE_ONLY makes no bench and writes nothing, but the campaign it prices is refused here: BENCH_ROOT is"
+    echo "           not set, and $SRC has no .gauntlet/ (the kit's convention is not installed there) - a campaign in someone"
+    echo "           else's tree runs in a bench of your own, never their working tree (doctrine/RETROFIT.md). NOTHING PROVEN,"
+    echo "           nothing written: set BENCH_ROOT=<a directory outside the project> (and OUT_DIR, whose default is"
+    echo "           <project>/.gauntlet/reports), and ask again."
+  else
+    echo "fuzz-long: BENCH_ROOT is not set, and $SRC has no .gauntlet/ (the kit's convention is not installed there): the bench"
+    echo "           would be made inside that tree - doctrine/RETROFIT.md: a bench of your own, never their working tree."
+    echo "           NOTHING PROVEN, nothing written: set BENCH_ROOT=<a directory outside the project> (and OUT_DIR, whose default"
+    echo "           is <project>/.gauntlet/reports)."
+  fi
   exit 2
 fi
 # A project that imports from outside itself (`gauntlet-kit/=../src/`, `allow_paths = ["../src"]`) cannot compile in a
@@ -107,10 +131,12 @@ case "$OUT_DIR" in /*) ;; *) OUT_DIR="$PWD/$OUT_DIR" ;; esac   # the log is writ
 # never into a tree without the kit's convention - with USE_BENCH=0 too (V26b: it made <proj>/.gauntlet/reports in one) -
 # refused before anything is written (scripts/lib/owner-tree.sh)
 report_dir_allowed fuzz-long "$SRC" "$OUT_DIR" || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
-mkdir -p "$OUT_DIR"
+[ "$ESTIMATE_ONLY" = "1" ] || mkdir -p "$OUT_DIR"
 
 RUN_IN="$SRC"
-if [ "$USE_BENCH" = "1" ]; then
+# the cost alone (ESTIMATE_ONLY=1) reads the project's configuration where it is: no bench is made for a campaign that
+# does not run
+if [ "$USE_BENCH" = "1" ] && [ "$ESTIMATE_ONLY" != "1" ]; then
   BENCH_FROM="$SRC"; REL_IN=""
   for _ in $(seq 1 "$ups"); do REL_IN="$(basename "$BENCH_FROM")${REL_IN:+/$REL_IN}"; BENCH_FROM="$(dirname "$BENCH_FROM")"; done
   # one bench per PROJECT: two long campaigns sharing a bench delete each other's files
@@ -150,8 +176,10 @@ global_shown="${FORGE_GLOBAL_KEYS:+; from $FORGE_GLOBAL_FILE: $FORGE_GLOBAL_KEYS
 # a cache written at another path: the campaign ran the OLD code over a new source (measured: "long fuzz passed", 6 of 6
 # invariants, over a planted mutant), so its record is removed and the campaign builds from nothing - and so when a source
 # changed that forge's incremental build does not follow, or nothing recorded what the last build read (forge-env.sh)
-forge_cache_rehome fuzz-long; [ "$?" -ne 2 ] || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
-sources_pre="$(forge_sources_snapshot)"
+if [ "$ESTIMATE_ONLY" != "1" ]; then   # the cost alone builds nothing: the project's cache is not touched
+  forge_cache_rehome fuzz-long; [ "$?" -ne 2 ] || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
+  sources_pre="$(forge_sources_snapshot)"
+fi
 flags_shown="$(forge_flags_shown "$FORGE_FLAGS")"
 
 # forge falls back to the DEFAULT profile, with a warning, when the named one does not exist - and the default budget
@@ -201,6 +229,33 @@ if [ "$long_budget" -le "$default_budget" ] && [ "${ALLOW_SMALL_BUDGET:-0}" != "
   suggest_block
   echo "           (RUNS / DEPTH, when set, override the profile: unset them. ALLOW_SMALL_BUDGET=1 to replay one seed on purpose.)"
   exit 2
+fi
+
+# What it will cost, said BEFORE it runs (AGENTS.md section 5: say how long first). FR16 blocked 68 minutes on four long
+# campaigns of about ten minutes each and a shrink of about ten more, and said "far over my estimate" only after. So:
+# the budget, the everyday campaigns' measured time - the battery's last log in this run's reports directory
+# (scripts/lib/parse.sh parse_campaign_seconds: those suites' times added, an upper bound) - scaled by the ratio of calls,
+# and what a failure adds: forge shrinks it, up to the profile's shrink_run_limit replays.
+if [ "$default_budget" -gt 0 ]; then ratio="$(awk -v a="$long_budget" -v b="$default_budget" 'BEGIN { r = a / b; f = (r == int(r)) ? "%d" : "%.1f"; printf f, r }')"; else ratio="?"; fi
+echo "fuzz-long: what it will cost, said before it runs (AGENTS.md section 5): $long_runs runs x $long_depth depth = $long_budget calls per campaign, ${ratio}x the everyday $default_runs x $default_depth"
+battery_log="$OUT_DIR/02-test.txt"
+cs="$(parse_campaign_seconds "$battery_log")"; cs_rc=$?
+if [ "$cs_rc" -eq 0 ]; then
+  read -r cs_n cs_s <<< "$cs"
+  est="$(awk -v s="$cs_s" -v a="$long_budget" -v b="$default_budget" 'BEGIN { if (b <= 0) { print "?"; exit } t = s * a / b; if (t < 60) printf "%.0f s", t; else printf "%.1f min", t / 60 }')"
+  echo "fuzz-long: the everyday campaigns took $cs_s s in the battery's last log ($battery_log, $cs_n suite(s) with a campaign): about $est at ${ratio}x the calls (their times added: an upper bound on a machine with cores to spare)"
+elif [ "$cs_rc" -eq 2 ]; then
+  # a campaign is there, and its time is of a shape parse_campaign_seconds does not read (V32: "no battery log with a
+  # campaign in it" was said over a log that had one)
+  echo "fuzz-long: no everyday time measured (the battery's last log, $battery_log, has a campaign whose time is not of a shape read here): the long campaign's time is not guessed here"
+else
+  echo "fuzz-long: no everyday time measured (no battery log at $battery_log with a campaign in it): run scripts/battery.sh first to have one - the long campaign's time is not guessed here"
+fi
+shrink="$(inv_of "$cfg" shrink_run_limit)"
+echo "fuzz-long: a failure is then shrunk (shrink_run_limit $shrink, about 10 minutes on a v4 hook measured) - on top of the campaign"
+if [ "$ESTIMATE_ONLY" = "1" ]; then
+  echo "fuzz-long: ESTIMATE_ONLY=$ESTIMATE_GIVEN - the cost above, and no campaign: nothing was run, nothing written. The same command without it runs the campaign."
+  exit 0
 fi
 
 # the campaign's census: one line per run, written by HandlerBase.writeCensus if the suite calls it, added up below

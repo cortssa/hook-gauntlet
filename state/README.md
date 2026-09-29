@@ -31,7 +31,13 @@ one address may swap per block and charges a surcharge above a threshold. It doe
 
 ## Where the route is: `scripts/next.sh`
 
-The flag block at the top of `STATE.md` is what `doctrine/NEXT.md` reads, and the table is taken top to bottom. Walking
+The flag block at the top of `STATE.md` is what `doctrine/NEXT.md` reads, and the table is taken top to bottom. Two flags
+mean more than their names: `bytecode_changed_since`'s `last_battery` is "the battery's INPUTS changed" - an edit under
+`src/`, under the suite's test directories (`test/`, the handlers, `pending/`) or a compiler setting - so a tests-only
+edit sets it to `yes` and the battery runs again (row 6); `last_long_fuzz` likewise is "the long fuzz's INPUTS changed"
+(`src/`, the test directories and handlers, a compiler setting), so a handler edited after the long fuzz sets it to `yes`
+and the long fuzz runs again (row 7); the other `bytecode_changed_since` flags are bytecode only
+(`doctrine/NEXT.md`, the flag block and the "Bytecode changed" paragraph). Walking
 ~25 rows by hand, a mistyped value (`battery: gren`) or a flag left out is read as whatever the reader guesses. So:
 
 ```sh
@@ -127,7 +133,7 @@ ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
 `executor`, `promotion`, `rehearsal`, `handoff`, `simulation`) · model, as specific as you can be · bench · dates · findings AS THE ROUND
-CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open; black-box: no divergence left; verifier: every claim held; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - a real state, not a pass with a footnote: the owner was absent, every question has an answer or an explicit "undecided" from their files, and nobody has yet read the scope and the non-goals back to them; the route continues, the pending item is in `waiting_on_owner` (`read-back of scope`), nothing in phases 6-8 closes without it (`briefs/owner-interview.md`), and the dossier says so in section 8. `scripts/round.sh` writes it for `--type interview` only, and refuses any other wording) · cost AND effort (tokens, wall-clock,
+CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open; black-box: no divergence left; verifier: every claim held; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - a real state, not a pass with a footnote: the owner was absent, every question has an answer or an explicit "undecided" from their files, and nobody has yet read the scope and the non-goals back to them; the route continues, the pending item is in `waiting_on_owner` (`read-back of scope`), nothing in phases 6-8 closes without it (`briefs/owner-interview.md`), and the dossier says so in section 8; the same for a SPEC written with the owner absent - phase 1's gate also waits on the owner's read (`AGENTS.md` §3): `gate pass (read-back pending)`, `waiting_on_owner: read-back of the spec`. `scripts/round.sh` writes it for `--type interview` and `--type spec` only, and refuses any other wording) · cost AND effort (tokens, wall-clock,
 files read, tests written; leave out what you cannot measure, never guess - an orchestration harness does not always
 return a subagent's usage, and then the field says `cost not measured`, what `scripts/round.sh` writes when no cost
 field is given) · the report · and, optionally,

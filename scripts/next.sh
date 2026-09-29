@@ -156,9 +156,9 @@ ROWS='
 4   | a019d2cf | act  | -                   | phase=0,1 | -
 4b  | 2473e53b | act  | -                   | phase=2,3 | -
 5   | 2a2d739a | act  | -                   | - | has the fuzzer reported a violation of a promise that is not yet a deterministic test?
-6   | cebb3ad7 | act  | -                   | bytecode_changed_since.last_battery=yes ; battery=never | -
+6   | e0949a62 | act  | -                   | bytecode_changed_since.last_battery=yes ; battery=never | -
 6b  | 021321a6 | act  | -                   | battery=red | -
-7   | c644f4bc | act  | -                   | bytecode_changed_since.last_long_fuzz=yes battery=green ; bytecode_changed_since.last_other_free_judges=yes battery=green | -
+7   | 72863a27 | act  | -                   | bytecode_changed_since.last_long_fuzz=yes battery=green ; bytecode_changed_since.last_other_free_judges=yes battery=green | -
 7b  | 4135edaa | act  | -                   | real_manager.owed=yes waiting_on_owner.real_manager=no | -
 8   | c328f377 | act  | -                   | any_round=yes | is there an ACCEPTED or FIXED finding (triaged in row 9) from outside the fuzzer with no rule for it yet (an invariant or action, or a unit test and a not fuzzable: note)?
 9   | 6d5b5f55 | act  | -                   | last_audit_round!=none open_findings.total>0 ; ceiling=reached open_findings.total>0 | is a finding from any round still open (not fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name - one triaged fix at the cause whose fix is not written yet is still open; a phase-3 pending: finding is one too, now that round 1 has run or the ceiling is reached), and is the owner there to answer, or is it already triaged fix at the cause?

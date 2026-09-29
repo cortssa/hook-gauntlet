@@ -70,8 +70,10 @@ The root is named here because the scripts' own default, `<project>/.gauntlet/be
 a `.gauntlet/` (the kit's convention installed - a battery run makes one; in a tree without it the scripts refuse and
 ask for `BENCH_ROOT`); `.gauntlet/` is left out of every copy, so the bench never holds itself. Never `$HOME`: it is
 shared by every project and every agent on the machine. Three details that are not obvious. The bench copies **`foundry-kit`**, not `foundry-kit/v4`, because the v4
-project remaps `gauntlet-kit/` to `../src` and a bench of the subdirectory alone has no parent to remap to
-(`scripts/fuzz-long.sh foundry-kit/v4` knows this and benches `foundry-kit` by itself). The dependency directories are
+project remaps `gauntlet-kit/` to `../src` and a copy of the subdirectory alone has no parent to remap to
+(`scripts/fuzz-long.sh foundry-kit/v4` knows this and benches `foundry-kit` by itself; `scripts/bench.sh` given
+`foundry-kit/v4` puts its copy at `<bench>/v4` with `../src` linked beside it, and prints that place last - the
+recipe above, the whole root kit, is the one measured with the battery). The dependency directories are
 `lib/` at the root and `lib/` beside every nested `foundry.toml`, found and linked one by one - and nothing else called
 `lib`: `scripts/lib/` is source and is copied (an rsync `--exclude=lib` used to drop both it and `v4/lib`, and every
 v4 bench then needed a network install). `SRC_DIRS` on the battery adds the root kit's sources to the freshness check's
@@ -80,7 +82,10 @@ verdict is forge's own build, which follows the imports into `../src` without be
 example too, since it lives inside them.
 
 A project with **no `lib/` of its own** (forge-std installed somewhere else) gets nothing linked, and `bench.sh` says so
-in one line: `the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>`. `LINK_FROM=<dir>` makes
+in one line: `the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>` - unless its `foundry.toml`
+or `remappings.txt` reaches out by `../` (the kit vendored beside it, `QUICKSTART.md` step 7b): then what `../` reaches
+is put beside the project's copy, one line each (`bench: ../lib -> <where>: linked at <bench>/lib`), and LINK_FROM is
+not advised. `LINK_FROM=<dir>` makes
 `<dir>` the bench's `lib/` - linked, or copied through its links in a bench that withholds (`BENCH_EXCLUDE`); the root
 `lib/` only, never over a `lib/` directory the bench already has, and ignored with a note when the project has a `lib/`.
 
@@ -144,21 +149,21 @@ behaviour, the upstream one is right.
 | `src/examples/SPEC.md` | its spec: the rule, the hostile-actor table, and what a discovery round found on it (F1, fixed at the cause; F2, decided) |
 | `src/examples/MUTANTS.md` | its mutation survivors: four real gaps, six equivalents argued one by one |
 | `test/examples/CappedDynamicFeeHook.t.sol` | its unit tests, one per line of its threat model |
-| `test/examples/CappedDynamicFeeHook.invariants.t.sol` | its handler, its invariants, its non-vacuity smoke test |
+| `test/examples/CappedDynamicFeeHook.invariants.t.sol` | its handler, its invariants, its non-vacuity smoke test. The handler excuses every pool revert but a few it names: a known gap, not the model (`InRangeDonateHook`'s, below, is) |
 | `test/examples/CappedDynamicFeeHook.r01.t.sol` | what round r01 found, kept as tests: F1 (seen red on the old rule), its residual, F2 on a real native pool |
 | `src/examples/DeltaFeeHook.sol` | the worked DELTA toy: a fee on the unspecified side, a rebate on the specified side, a per-block cap, all kept per pool; its promises P1-P13 and one measured limit in the file header |
 | `test/examples/DeltaFeeHook.t.sol` | its unit tests: all four orientations, a price far from 1, the cap, no free rebate, the partial fill (P9, P11), the payment in flight (P7), a currency that re-syncs mid-rebate (P12), and `TwoSwaps` - a helper that makes two swaps in ONE transaction |
 | `test/examples/DeltaFeeHook.multipool.t.sol` | two pools on the delta toy sharing a currency: a pool nobody approved draining another's rebates, the cap per pool, and a two-pool campaign with invariants per pool AND per currency |
-| `test/examples/DeltaFeeHook.invariants.t.sol` | its handler (per-swap books from three sources), its invariants, its smoke test |
+| `test/examples/DeltaFeeHook.invariants.t.sol` | its handler (per-swap books from three sources), its invariants, its smoke test. Copy the books, not the catches: its swap and liquidity actions still excuse reverts by a switch's state or a bare `catch` - a known gap, not the model (`InRangeDonateHook`'s, below, is) |
 | `test/examples/PrepayRouter.sol` | a router that pays FIRST (sync, transfer, swap, settle): the payment in flight a delta hook must not clobber |
 | `test/examples/DeltaFeeHook.native.t.sol` | the delta example on an ETH / 6-decimal-token pool at 3 000 per ETH: the four orientations with ETH specified and unspecified, the rebate paid in ETH, the cap in ETH, a payment in flight in the fee currency, a second pool sharing ETH |
 | `test/examples/Edges.t.sol` | the four examples and the harness at the edges: tick spacing 1 and 32 767, prices near and at the ends of the range, an LP fee of 0 and of 100 %, a dynamic fee at the cap, a cap above 2^96, a fee the manager does not hold yet |
 | `src/examples/ClaimsFeeHook.sol` | the worked CLAIMS toy: a fee kept as an ERC-6909 claim (`mint`), withdrawn by a treasury (`burn` + `take`); its promises C1-C5 in the file header |
 | `test/examples/ClaimsFeeHook.t.sol` | its unit tests: the four orientations counted by balance and by party, the withdrawal in both currencies, a treasury that refuses ETH |
-| `test/examples/ClaimsFeeHook.invariants.t.sol` | its campaign on an ETH / token pool: every party's ETH, token and claims per swap, three naive invariants kept next to the per-party ones |
+| `test/examples/ClaimsFeeHook.invariants.t.sol` | its campaign on an ETH / token pool: every party's ETH, token and claims per swap, three naive invariants kept next to the per-party ones. Its handler still excuses reverts by a switch's state or a bare `catch`: a known gap, not the model |
 | `src/examples/InRangeDonateHook.sol` | the worked PAYOUT toy: a fee kept as a claim and donated to "whoever is in range", paid before anything can change who that is; its promises D1-D5 and limits R1-R4 in the file header ("Paying whoever is in range") |
 | `test/examples/InRangeDonateHookNaive.sol` | its first draft, a fixture: a `sweep` that donates the pot to whoever is in range when it runs |
-| `test/examples/InRangeDonateHook.t.sol`, `InRangeDonateHook.invariants.t.sol`, `InRangeDonateWatcher.sol` | its unit tests (both drafts, the JIT scenarios), its campaign (WHO was paid next to HOW MUCH) and the feed of its rule into the reference model |
+| `test/examples/InRangeDonateHook.t.sol`, `InRangeDonateHook.invariants.t.sol`, `InRangeDonateWatcher.sol` | its unit tests (both drafts, the JIT scenarios), its campaign (WHO was paid next to HOW MUCH) and the feed of its rule into the reference model. **Its handler is the one to copy for a v4 hook**: every catch is unexpected unless the error is named (`doctrine/FUZZ-ACTIONS.md`) - here none is excused |
 | `test/fork/ForkInRangeDonate.t.sol` | the payout scenarios on real USDC / WETH, and the JIT actor against the liquidity of the chain's own ETH / USDC pool |
 | `src/BacktestBase.sol` | the backtest ("Backtests"): `BacktestFixture` reads and checks a fixture of a real pool's swaps; `BacktestBase` replays it through your hook and a hook-less control on a fork at the window's first block, and prints what the hook took, returned, refused and paid out, per swap and in total |
 | `test/backtest/Backtest.t.sol` | the three example hooks that take fees, replayed through 200 blocks of the chain's ETH / USDC 0.05 % pool, each held to its own ledger; the fixture format's refusals. Only under `FOUNDRY_PROFILE=fork` |

@@ -35,6 +35,14 @@
 #          KEEP=1      keep the copy and print its path
 #          BASELINE_MAY_BE_RED=1  only with EXPECT=green: accept a baseline with failing tests, for the flow "write the
 #                      regression test first, see it red, then compare candidate fixes". The variant must still be all green.
+#                      Its VARIANT PASSED is half of a finding's MUTATION-TESTED, and says so: the everyday suite on the same
+#                      variant is the other half (doctrine/EVIDENCE.md section 2); a test file that ran here and accepts ANY
+#                      revert - a bare vm.expectRevert(), a low-level call whose success flag is only asserted false, a catch
+#                      that does not compare the error - is named in a WARNING line, read in its code, not its comments
+#                      or strings (scripts/lib/parse.sh any_revert_shapes: a heuristic that knows a few shapes only - its
+#                      silence is not evidence; the verdict and the exit code do not change).
+#                      A baseline that came out GREEN under it is said in one line: condition 1 of a finding's label (red
+#                      on the code as it is) failed.
 #          COPY_ROOT   a parent directory to copy instead of the project alone, for a project that imports from
 #                      outside itself (a remapping like ../src/). The project must be inside it.
 #          BENCH_ROOT  where the throwaway copy is made (created if it does not exist); without it <project>/.gauntlet/bench -
@@ -248,6 +256,11 @@ if [ "$base_red_ok" -eq 0 ] && { [ "$base_red" -eq 1 ] || [ -z "$base_passed" ] 
   tail -n 8 "$OUT_DIR/$LABEL.baseline-test.txt" | sed "s/^/    | /"
   exit 2
 fi
+# K32c (V32b): the variable says a red baseline is EXPECTED - a finding's test, red on the code. A green one here means the
+# test does not show the finding on the code as it is, and no variant earns the finding's label from this run
+if [ "$EXPECT" = "green" ] && [ "${BASELINE_MAY_BE_RED:-0}" = "1" ] && [ "$base_red" -eq 0 ]; then
+  echo "mutate: BASELINE_MAY_BE_RED=1, and the baseline came out GREEN: condition 1 of a finding's MUTATION-TESTED (red on the code as it is) FAILED - whatever the variant does, this run earns no finding's label (doctrine/EVIDENCE.md section 2)."
+fi
 
 # literal replacement, counted. Strings come through the environment so that awk does not interpret backslashes.
 export MUT_TARGET="$WORK/$FILE.mutated"
@@ -362,5 +375,31 @@ if [ -x "$HERE/size.sh" ]; then
   OUT_DIR="$OUT_DIR" LABEL="$LABEL-sizes" "$HERE/size.sh" "$WORK" | tee -a "$LOG"
 else
   echo "size.sh not found next to mutate.sh: sizes NOT measured" | tee -a "$LOG"
+fi
+if [ "$base_red_ok" -eq 1 ]; then
+  # a red baseline turned green: a finding's test on a fix variant (doctrine/EVIDENCE.md section 2). V32: a "fix" that refused
+  # every pool but the test's own passed here, alone, and broke the everyday suite - so this run says it is half, and a
+  # test that is green on ANY revert is named: neither earns MUTATION-TESTED
+  {
+    echo "mutate: VARIANT PASSED is HALF of a finding's MUTATION-TESTED: run the same variant against the everyday suite too"
+    echo "        (the same strings, EXPECT=green, no BASELINE_MAY_BE_RED, the battery's profile and filter) - a variant that"
+    echo "        deletes the test's subject passes here and fails there (doctrine/EVIDENCE.md section 2)."
+    # the test files that ran here (TEST_FLAGS names the finding's), by forge's "Ran N test(s) for <file>:<contract>" lines.
+    # K32c (V32b): every shape that accepts ANY revert, read in the code - a call + assertFalse(ok) passed unwarned, and a
+    # comment citing the rule next to an exact selector was warned against; K32d (V32c): strings are not code either, and
+    # the check says it knows a few shapes only
+    while IFS= read -r tf; do
+      [ -f "$WORK/$tf" ] || continue
+      shapes="$(any_revert_shapes "$WORK/$tf" | sed -e 's/^bare-expectRevert$/a bare vm.expectRevert()/' \
+        -e 's/^call-asserted-false$/a low-level call whose success flag is only asserted false/' \
+        -e 's|^catch-not-compared$|a try/catch whose catch does not compare the error|' | paste -s -d ';' - | sed 's/;/; /g')"
+      if [ -n "$shapes" ]; then
+        echo "mutate: WARNING - $tf: the finding's test accepts any revert - not evidence for a finding's label, EVIDENCE section 2"
+        echo "        ($shapes). Green on ANY revert, the fix's or another guard's: expect the exact error"
+        echo "        (vm.expectRevert(MyHook.Err.selector)), or compare the returned data or the caught error."
+        echo "        This check knows a few shapes only: its silence is not evidence."
+      fi
+    done < <(sed -nE 's/^Ran [0-9]+ tests? for ([^:]+):.*/\1/p' "$OUT_DIR/$LABEL.baseline-test.txt" | sort -u)
+  } | tee -a "$LOG"
 fi
 exit 0

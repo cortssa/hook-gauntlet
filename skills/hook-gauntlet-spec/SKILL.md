@@ -30,7 +30,7 @@ From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to 
 
 ## Gate (`{{KIT}}/AGENTS.md` section 3: all of it, measured)
 
-- **Phase 1, Falsifiable spec** - every class in `{{KIT}}/doctrine/HOOK-ATTACKS.md` is decided (applies / does not apply, with its predicate / accepted / prevented by an admission rule); the assumptions the spec stands on are listed; the "what a hostile actor can do -> what the contract answers" table covers every external entry point; invariants are written in words; out-of-scope is explicit; the owner has read it (absent: `waiting_on_owner`, as in phase 0)
+- **Phase 1, Falsifiable spec** - every class in `{{KIT}}/doctrine/HOOK-ATTACKS.md` is decided (applies / does not apply, with its predicate / accepted / prevented by an admission rule); the assumptions the spec stands on are listed; the "what a hostile actor can do -> what the contract answers" table covers every external entry point; invariants are written in words; out-of-scope is explicit; the owner has read it (absent: `waiting_on_owner: read-back of the spec`, as in phase 0, and the ROUND line's gate `pass (read-back pending)`)
 
 ## Read on entry
 

@@ -58,6 +58,30 @@ parse_invariant_runs() {
     | awk '{ n++; s += $1; if (n == 1 || $1 < m) m = $1 } END { print n + 0, s + 0, m + 0 }'
 }
 
+# parse_campaign_seconds <log>
+#   how long forge took for the suites that ran an invariant campaign - what scripts/fuzz-long.sh scales into the cost of
+#   the long one (K32). A suite is the block from "Ran N test(s) for <file>:<Contract>" to its
+#     Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 1.20s (1.20s CPU time)
+#   and it counts when a line inside it closes a campaign (parse_invariant_runs's shapes). Its time as forge prints it:
+#   1.20s, 812.34ms, 339.10µs. Prints "suites seconds" (two decimals): the counted suites' times ADDED - forge runs suites
+#   side by side, so on a machine with cores to spare the campaigns take less: an upper bound, as a cost said in advance
+#   should be. exit 1: no suite with a campaign (no log, a filter, no invariant); exit 2: such a suite with no time of a
+#   shape read here - refused, never read as 0.
+parse_campaign_seconds() {
+  [ -r "$1" ] || return 1
+  _parse_clean "$1" | awk '
+    /^Ran [0-9]+ tests? for / { in_s = 1; camp = 0; next }
+    in_s && /^(\[(PASS|FAIL)(: .*)?\] | )[A-Za-z_$][A-Za-z0-9_$]*(\(\)| invariants) \(runs: [0-9]+, calls: [0-9]+, reverts: [0-9]+\)[ \t]*$/ { camp = 1 }
+    in_s && /^Suite result: / {
+      in_s = 0
+      if (!camp) next
+      if (!match($0, /finished in [0-9]+(\.[0-9]+)?(s|ms|µs|μs|us|ns) /)) { bad = 1; next }
+      t = substr($0, RSTART + 12, RLENGTH - 13); v = t; sub(/[^0-9.]+$/, "", v); u = substr(t, length(v) + 1)
+      total += v * (u == "s" ? 1 : u == "ms" ? 0.001 : u == "ns" ? 0.000000001 : 0.000001); n++
+    }
+    END { if (bad) exit 2; if (!n) exit 1; printf "%d %.2f\n", n, total }'
+}
+
 # parse_suites_by_dir <log>
 #   forge's "Ran 5 tests for test/sim/GasMeter.t.sol:GasMeterScenario" lines, counted per directory of the test file:
 #   prints e.g. "test=6 test/examples=2 test/sim=12" (sorted), or nothing when no suite ran. So a log says by NAME which
@@ -74,10 +98,15 @@ parse_suites_by_dir() {
 #     | ToyVault | 2,431            | 2,606             | 22,145             | 46,546              |
 #   prints "name runtime_bytes" per contract. The column is found BY ITS HEADER ("Runtime Size"), never by position,
 #   and the header must name "Contract" first: a table without that header, or rows before it, are not read.
+#   The name is ONE word. forge names a contract `<name> (<path>)` when two sources give it that name - a project that
+#   reaches the kit by `../` has some of the kit's sources compiled under the relative AND the absolute path (FR16) - and
+#   that is printed `<name>@<path>` (a space in the path as %20): with the space, every reader downstream took the path
+#   for the size (scripts/size.sh wrote "runtime 24576" over it).
 #   exit 2: no header, or a header with no Runtime Size column, or not a single row read
+_SIZES_TOKEN='function token(n,  p) { if (match(n, / \(.*\)$/)) { p = substr(n, RSTART + 2, RLENGTH - 3); gsub(/ /, "%20", p); n = substr(n, 1, RSTART - 1) "@" p } return n }'
 parse_sizes() {
   [ -r "$1" ] || return 2
-  _parse_clean "$1" | awk -F'|' '
+  _parse_clean "$1" | awk -F'|' "$_SIZES_TOKEN"'
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     !col && NF >= 4 && trim($2) == "Contract" {
       for (i = 3; i < NF; i++) if (trim($i) ~ /^Runtime Size/) col = i
@@ -85,7 +114,7 @@ parse_sizes() {
       next
     }
     col && NF >= col + 1 {
-      name = trim($2); size = $col; gsub(/[ ,\t]/, "", size)
+      name = token(trim($2)); size = $col; gsub(/[ ,\t]/, "", size)
       if (name == "" || name == "Contract" || size !~ /^[0-9]+$/) next
       print name, size; rows++
     }
@@ -95,11 +124,11 @@ parse_sizes() {
 # parse_sizes_both <raw output of forge build --sizes>
 #   the same table, both sizes: prints "name runtime_bytes initcode_bytes" per contract. Both columns are found by their
 #   headers ("Runtime Size", "Initcode Size"); the phase-2 gate needs both margins (AGENTS.md), so a table that lacks
-#   either column is refused, never read as "initcode 0".
+#   either column is refused, never read as "initcode 0". The name is one word, as in parse_sizes (`<name>@<path>`).
 #   exit 2: no header, a header without both columns, or not a single row read
 parse_sizes_both() {
   [ -r "$1" ] || return 2
-  _parse_clean "$1" | awk -F'|' '
+  _parse_clean "$1" | awk -F'|' "$_SIZES_TOKEN"'
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     !rc && NF >= 4 && trim($2) == "Contract" {
       for (i = 3; i < NF; i++) { h = trim($i); if (h ~ /^Runtime Size/) rc = i; if (h ~ /^Initcode Size/) ic = i }
@@ -107,7 +136,7 @@ parse_sizes_both() {
       next
     }
     rc && NF >= (rc > ic ? rc : ic) + 1 {
-      name = trim($2); r = $rc; c = $ic; gsub(/[ ,\t]/, "", r); gsub(/[ ,\t]/, "", c)
+      name = token(trim($2)); r = $rc; c = $ic; gsub(/[ ,\t]/, "", r); gsub(/[ ,\t]/, "", c)
       if (name == "" || name == "Contract" || r !~ /^[0-9]+$/ || c !~ /^[0-9]+$/) next
       print name, r, c; rows++
     }
@@ -166,6 +195,102 @@ sim_ledger_filter() {
 # sim_ledger_malformed <file>   prints how many lines are malformed (empty lines included: the ledger writes none)
 sim_ledger_malformed() {
   _parse_clean "$1" | awk -F '\t' "$_SIM_LINE_OK"' !sim_ok() { n++ } END { print n + 0 }'
+}
+
+# any_revert_shapes <a test's .sol file>   (K32c, V32b: scripts/mutate.sh's WARNING on a finding's test)
+#   the ways the file accepts ANY revert, one word a line, each once, in this order: `bare-expectRevert` (a
+#   vm.expectRevert() with no error in it), `call-asserted-false` (a low-level .call / .delegatecall / .staticcall whose
+#   success flag is asserted false - assertFalse(ok), assertTrue(!ok), assertEq(ok, false), require(!ok) - and whose
+#   returned data is not captured, or never read again), `catch-not-compared` (a try/catch whose catch names no error, or
+#   never reads the one it names under an assert, a require or a comparison; a catch that fails the test - fail(),
+#   revert - accepts nothing and is not one). CODE is read, not comments or strings: `//` and `/* */` are taken out first,
+#   and a string literal is blanked to its quotes (a URL in one included), so a comment or an assertion's message that
+#   cites the rule is not a hit (V32b: Q-1's NatSpec was; V32c: Q-5's message was).
+#   A heuristic that knows these few shapes only, stated: its silence is not evidence. The file is read as one text, not
+#   test by test; a comparison made in a helper it does not see counts as none, and a name read anywhere in the file
+#   counts as read. Known and not chased (V32c): a flag asserted false in a helper under another name (`_mustFail(ok)`),
+#   `if (ok) fail();`, `assertTrue(ok == false)`, a catch that asserts only `err.length > 0` - all silent.
+#   EVIDENCE.md section 2, condition 3.
+#   exit 1: the file cannot be read. Nothing printed: none found.
+any_revert_shapes() {
+  [ -r "$1" ] && [ -f "$1" ] || return 1
+  awk '
+    function isid(ch) { return ch ~ /[A-Za-z0-9_$]/ }
+    function words(s, w,   n, p, b, a) { # how many times the identifier w stands alone in s
+      n = 0
+      while ((p = index(s, w)) > 0) {
+        b = p > 1 ? substr(s, p - 1, 1) : " "; a = substr(s, p + length(w), 1)
+        if (!isid(b) && !isid(a)) n++
+        s = substr(s, p + length(w))
+      }
+      return n
+    }
+    function closing(s, p, o, c,   d, ch) { # s has o at p: where its matching c is, 0 if nowhere
+      d = 0
+      for (; p <= length(s); p++) {
+        ch = substr(s, p, 1)
+        if (ch == o) d++; else if (ch == c && --d == 0) return p
+      }
+      return 0
+    }
+    function asserted_false(s, f) {
+      return s ~ ("assertFalse *\\( *" f " *[,)]") || s ~ ("assertTrue *\\( *! *" f " *[,)]") \
+        || s ~ ("assertEq *\\( *" f " *, *false *[,)]") || s ~ ("assertEq *\\( *false *, *" f " *[,)]") \
+        || s ~ ("require *\\( *! *" f " *[,)]")
+    }
+    { # comments out, strings blanked to their quotes (K32d, V32c: a message citing the rule was read as code):
+      # st 0 code, 2 inside /* */, 3 inside a double-quoted string, 4 a single-quoted one
+      out = ""; n = length($0)
+      for (i = 1; i <= n; i++) {
+        ch = substr($0, i, 1); two = substr($0, i, 2)
+        if (st == 2) { if (two == "*/") { st = 0; i++; out = out " " } continue }
+        if (st >= 3) {
+          if (ch == "\\") i++
+          else if ((st == 3 && ch == "\"") || (st == 4 && ch == "\047")) { st = 0; out = out ch }
+          continue
+        }
+        if (two == "//") break
+        if (two == "/*") { st = 2; i++; continue }
+        if (ch == "\"") st = 3; else if (ch == "\047") st = 4
+        out = out ch
+      }
+      if (st >= 3) st = 0
+      code = code " " out
+    }
+    END {
+      gsub(/[\t\r]/, " ", code)
+      bare = code ~ /(^|[^A-Za-z0-9_$])expectRevert *\( *\)/
+      rest = code
+      while (match(rest, /\( *(bool +)?[A-Za-z_][A-Za-z0-9_]* *, *((bytes +memory +)?[A-Za-z_][A-Za-z0-9_]*)? *\) *= *[^;]*\.(call|delegatecall|staticcall) *[({]/)) {
+        m = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
+        split(substr(m, 2, index(m, ")") - 2), part, ",")
+        f = part[1]; gsub(/^ +| +$/, "", f); sub(/^bool +/, "", f)
+        r = part[2]; gsub(/^ +| +$/, "", r); sub(/^bytes +memory +/, "", r)
+        if (f !~ /^[A-Za-z_][A-Za-z0-9_]*$/ || !asserted_false(code, f)) continue
+        if (r == "" || words(code, r) <= 1) call = 1
+      }
+      rest = code
+      while ((p = index(rest, "catch")) > 0) {
+        b = p > 1 ? substr(rest, p - 1, 1) : " "; a = substr(rest, p + 5, 1); rest = substr(rest, p + 5)
+        if (isid(b) || isid(a)) continue
+        s = rest; sub(/^ +/, "", s); v = ""
+        if (s ~ /^[A-Za-z_]+ *\(/ || s ~ /^\(/) {
+          q = index(s, "("); e = closing(s, q, "(", ")"); if (!e) continue
+          params = substr(s, q + 1, e - q - 1); gsub(/^ +| +$/, "", params)
+          k = split(params, tok, / +/)
+          if (k >= 2 && tok[k] != "memory" && tok[k] != "calldata") v = tok[k]
+          s = substr(s, e + 1); sub(/^ +/, "", s)
+        }
+        if (substr(s, 1, 1) != "{") continue
+        e = closing(s, 1, "{", "}"); if (!e) continue
+        body = substr(s, 2, e - 2)
+        if (body ~ /(^|[^A-Za-z0-9_$])(fail *\(|revert[ (;])/) continue
+        if (v == "" || !words(body, v) || body !~ /assert|require|==|!=/) nocmp = 1
+      }
+      if (bare) print "bare-expectRevert"
+      if (call) print "call-asserted-false"
+      if (nocmp) print "catch-not-compared"
+    }' "$1"
 }
 
 # is_evm_address <string>   exactly "0x" and 40 hex digits, nothing before or after (a newline included)

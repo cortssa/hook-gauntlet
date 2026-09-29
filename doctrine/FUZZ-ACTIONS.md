@@ -47,7 +47,10 @@ almost every call reverts, and you are back at the vacuous pass.
   (`_bit(word)`, `actors[word % actors.length]`). A coverage-guided fuzzer sends malformed narrow types, the ABI
   decoder reverts before your code runs, and the campaign fails for a reason that is not the contract's. `JUDGES.md`.
 - `bound()` every input into its legal range, and make the range include the **edges**: zero, one, the maximum,
-  one below and one above every threshold in the spec.
+  one below and one above every threshold in the spec. A bound NARROWER than the legal range - a price the handler keeps
+  within 16x of the start, an amount cap below the hook's own, a clock that never passes the window - is a choice about
+  what the campaign never does: write it in the dossier's section 9 as what the campaign never exercised (the range, the
+  handler line, why), not only in a code comment or the log.
 - Fund and approve the actor inside the action when the point of the action is the contract's logic, not the
   approval. Keep a separate action that revokes approvals and drains wallets, because that is a real thing
   wallets do.
@@ -57,6 +60,19 @@ almost every call reverts, and you are back at the vacuous pass.
   the spec predicts, `_unexpectedRevert(why)` for anything else - it RECORDS the surprise (count and reason) where an
   invariant can read it; it does not revert, because a revert would undo its own record. Run with `fail_on_revert = true`. A campaign
   that swallows surprises in silence will report green over hundreds of hidden failures.
+- **An expected revert is classified by its ERROR, not by a state.** The handler says WHICH error it expects - the
+  selector (`catch (bytes memory err)`, `bytes4(err) == MyHook.Paused.selector`; a hook's revert arrives wrapped by the
+  manager, `WrappedError(hook, selector, reason, ...)`: read the reason) - and, where it matters, the state that makes
+  it expected: the token paused AND the token's `Paused` error; a fee on transfer AND the manager's `CurrencyNotSettled`.
+  Never "any revert while the token has a fee", never a bare `catch { _expectedRevert(); }`, never "everything but the
+  few errors I thought of": each excuses, in that state, whatever else reverts there - the hook's own bugs included. A
+  revert from code the hook does not own (the pool's math at an extreme price) is excused by its selector too, once it
+  has been reproduced without the hook. The kit's `ToyVault` handler (`foundry-kit/test/examples/`) classifies this way,
+  and so does the v4 `InRangeDonateHook` handler (`foundry-kit/v4/test/examples/InRangeDonateHook.invariants.t.sol`:
+  every catch is `_unexpectedRevert`, no error is excused) - the one to copy for a v4 hook. The `DeltaFeeHook`,
+  `CappedDynamicFeeHook` and `ClaimsFeeHook` handlers still excuse reverts by a switch's state or by what they do not
+  name (any revert while a switch is on, a bare `catch` on the liquidity actions, everything but a few named errors): a
+  known gap in those examples, not the model for this rule.
 
 ## Measure that the campaign is working
 
@@ -95,6 +111,9 @@ and `fail_on_revert = false` is how a suite lies to you.
 - Seeds are random per run on purpose. A failure that appears on the sixth long campaign was there during the
   first five; keep running the long campaign after every change, not once.
 - **STOP and tell the owner** before a campaign you expect to take more than a few minutes of their machine.
+  `ESTIMATE_ONLY=1 scripts/fuzz-long.sh <proj>` prints what it will cost and stops there, no campaign: runs x depth, the
+  everyday campaigns' time scaled by calls, and that a failure is then shrunk (`shrink_run_limit`; about 10 minutes on a
+  v4 hook, measured). The run without it prints the same before its campaign.
 
 ## The growth rule, again
 

@@ -39,7 +39,7 @@ scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on 
 Done looks like this, on forge 1.8.1 (CI also runs 1.8.3):
 
 ```
-SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 853 cases, about 200 s
+SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 1143 cases, about 285 s
 test      rc=0   (passed 107, failed 0, skipped 0; filter: none)  ...  BATTERY PASSED           # the root kit
 test      rc=0   (passed 271, failed 0, skipped 0; filter: no_match_path = "test/{fork,backtest}/**" (the project's foundry.toml))  suites test=11 test/examples=13 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
 ```

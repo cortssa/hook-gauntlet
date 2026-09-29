@@ -17,7 +17,7 @@ Every finding, every row of the spec's "proved by" column, and every claim in th
 | **PROVED** | a symbolic or formal proof, with its bounds stated next to the word | for the stated bounds only |
 | **MODEL-TESTED** | the contract agrees with an independently written reference model over generated inputs (section 5) | strongest against a shared misconception |
 | **PROPERTY-TESTED** | the claim survived generated sequences over a stated domain, with the success and reach censuses attached | |
-| **MUTATION-TESTED** | the test was SEEN RED on a deliberately broken version of the code - a plausible wrong implementation of THIS claim | the minimum for a test to count at all |
+| **MUTATION-TESTED** | the test was SEEN RED on a deliberately broken version of the code - a plausible wrong implementation of THIS claim (a finding's test: red on the code as it is, green on a fix variant with the everyday suite green on it too, the exact failure expected, and in a test of its own the same call on the same shape accepted, only the finding's condition different, §2) | the minimum for a test to count at all |
 | **TESTED** | a test passes and nobody has seen it fail | **not evidence.** A label for work in progress |
 | **SUPPORTED** | static analysis, a fork observation, a measurement that is consistent with the claim but does not isolate it | |
 | **REASONED** | an argument, written down, that someone else can attack. Economic and ordering attacks often live here | real, and the auditor should know it is not more |
@@ -63,6 +63,47 @@ A test is evidence only after it has failed on code that is wrong in the way the
   precondition that is not met is `vm.skip(true, why)` - a skip the battery refuses unless accepted on purpose
   (`ALLOW_SKIPS`), never a `return`; and a harness that calls into the contract under test checks the success flag of
   every low-level call, so that a harness that silently does nothing cannot report a green.
+- **A finding's test gets past TESTED on a FIX variant, not on a mutant - by two runs, and a named failure.** A
+  finding's test is red on the code as it is - the code is the broken version - and that red alone does not show the
+  test fails FOR the claim. It is **MUTATION-TESTED** when all three hold, the outputs pasted:
+  1. **Red on the code, green on a fix variant.** A plausible fix of THIS claim, one line, built by `scripts/mutate.sh`
+     on a throwaway copy - never applied to `src/`, the owner absent or not (the fix is the owner's decision, `NEXT.md`
+     row 6b) - with `TEST_FLAGS` naming that test's file (its control runs with it): `FOUNDRY_PROFILE=pending EXPECT=green BASELINE_MAY_BE_RED=1
+     TEST_FLAGS="--match-path pending/<id>.t.sol" scripts/mutate.sh <proj> src/<Hook>.sol '<old>' '<fix>'`. Its baseline
+     shows the red, `VARIANT PASSED` the green.
+  2. **The everyday suite green on that SAME variant** - a second run, the same strings, `EXPECT=green`, no
+     `BASELINE_MAY_BE_RED`, the battery's profile and filter (none: `EXPECT=green scripts/mutate.sh <proj> src/<Hook>.sol
+     '<old>' '<fix>'`) -> `VARIANT PASSED`. A "fix" that deletes the test's subject - refuses every pool but the test's
+     own, switches the function off - turns the finding's test green and breaks the everyday suite: it is not a fix, and
+     the label is not earned (measured: a variant that let only the test's own pool initialize turned a
+     stranger-initializes finding green alone, and the everyday suite red). The first run says it is half.
+  3. **The finding's test expects the exact failure, and carries a tight control.** The exact failure:
+     `vm.expectRevert(MyHook.NotRegistered.selector)` (or the exact bytes), an exact amount - never a bare
+     `vm.expectRevert()`, a low-level `.call` whose success flag is only asserted false, or a `catch` that does not
+     compare the error: each is green on ANY revert, the fix's or an unrelated guard's. The control: the SAME call on
+     the SAME shape - the same key or pool shape, the same terms, the same caller - ACCEPTED, only the finding's
+     condition different. Both, because the exact error excludes an unrelated guard only when that guard's error
+     differs; the control excludes it when the error is the same. A control that changes more than the condition lets
+     through a guard keyed to what else it changed. Measured on "a live launch cannot be registered again" (exact
+     selector `BadTerms`): a control on a fresh key with another fee let two non-fixes pass both runs - a guard on the
+     test's treasury and fee, and `if (l.treasury != address(0) && key.fee == 3000) revert BadTerms();` (any
+     registered pool of the test's fee); the tight control - the same pool shape registered twice while NOT live,
+     accepted - turned both red in the first run, and the true fix (`if (l.start != 0) revert BadTerms();`) passed both
+     runs. **The control lives in the finding's own test file, in a test of its own**: the first run's `--match-path`
+     runs the whole file, so a sibling test runs with the finding's. A control in another file does not run there and
+     proves nothing (measured: a same-error guard passed the first run with its control in a file of its own). A
+     control placed before the finding's call, in the same test, lets a guard that counts calls through (measured: a
+     guard refusing a caller's third registration, live or not, passed both runs that way, and failed on the same
+     control in a test of its own). What no control excludes: a variant keyed to the test's exact values (an
+     address only the test uses) - that is why the label is evidence, not proof, and why condition 1 asks for a
+     plausible fix. The first run warns on a test file that accepts any revert (`mutate: WARNING - ... accepts any
+     revert`), reading its code, not its comments or strings - a heuristic that knows a few shapes only: its silence is
+     not evidence, and not the control.
+
+  In the layout `QUICKSTART.md` 7b recommends - the kit vendored beside the project, remappings through `../` - BOTH runs
+  need `COPY_ROOT=<the directory that holds the project and the kit>` (run from the project: `COPY_ROOT=..`): without
+  it the copy does not compile, `NOTHING PROVEN` (rc 2). A fix that turns other findings' tests green too is said with
+  them; a test no fix variant passes both runs for stays TESTED.
 
 ## 3. What blocks the exit
 

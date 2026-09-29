@@ -22,7 +22,8 @@
 #                      own (scripts/lib/owner-tree.sh)
 #          FORGE_FLAGS extra flags for forge (a line break in it is refused, exit 2: scripts/lib/forge-env.sh)
 # Output:  lines of "name runtime_bytes runtime_margin initcode_bytes initcode_margin", also saved to $OUT_DIR/$LABEL.txt
-#          (usable as a BASELINE; a baseline of the older three-column form is read too)
+#          (usable as a BASELINE; a baseline of the older three-column form is read too). A source forge compiled under two
+#          paths (a relative path out of the project and the absolute one) is ONE row, and the run says how many it merged.
 # Exit:    0 ok, 1 a margin is below MIN_MARGIN or MIN_INIT_MARGIN, 2 no sizes could be read (a table without BOTH size
 #          columns measures nothing), or a line break in FORGE_FLAGS, or OUT_DIR refused (above)
 
@@ -68,7 +69,30 @@ rc_build=$?
 # forge prints a table: | Contract | Runtime Size (B) | Initcode Size (B) | Runtime Margin (B) | Initcode Margin (B) |
 # Both size columns are found BY THEIR HEADERS (scripts/lib/parse.sh, parse_sizes_both), never by position: a table
 # without that header, or with a column renamed or missing, measures nothing. The margins are recomputed here.
-parse_sizes_both "$RAW" | awk -v limit="$LIMIT" -v ilimit="$INIT_LIMIT" '{ print $1, $2, limit - $2, $3, ilimit - $3 }' > "$OUT.all"
+# A source compiled under TWO paths - a project that reaches the kit by `../` (the kit vendored beside it, FR16) gets some
+# of the kit's and v4-core's files under the relative path and the absolute one - is one contract that forge lists twice,
+# as `<name> (<path>)` (parse.sh: one word, `<name>@<path>`). Listed once here: the two paths are resolved from the project
+# (textually: `..` against the directory, no link followed) and a row whose name and resolved file an earlier row
+# already had is dropped, counted, and said. A name left with one file is printed plain; two DIFFERENT files of one
+# name keep their `@<path>`.
+parse_sizes_both "$RAW" | awk -v dir="$(pwd -P)" -v note="$OUT.merged" '
+  function norm(p,  n, i, a, k, out, parts) {
+    gsub(/%20/, " ", p); if (p !~ /^\//) p = dir "/" p
+    n = split(p, a, "/"); k = 0
+    for (i = 1; i <= n; i++) { if (a[i] == "" || a[i] == ".") continue; if (a[i] == "..") { if (k > 0) k--; continue } parts[++k] = a[i] }
+    out = ""; for (i = 1; i <= k; i++) out = out "/" parts[i]; return out
+  }
+  { base = $1; key = $1; at = index($1, "@"); if (at) { base = substr($1, 1, at - 1); key = base "@" norm(substr($1, at + 1)) }
+    if (key in seen) { merged++; next }
+    seen[key] = 1; files[base]++; n++; b[n] = base; row[n] = $0 }
+  END {
+    for (i = 1; i <= n; i++) { split(row[i], f, " "); name = (files[b[i]] == 1) ? b[i] : f[1]; print name, f[2], f[3] }
+    if (merged) print merged > note
+  }' | awk -v limit="$LIMIT" -v ilimit="$INIT_LIMIT" '{ print $1, $2, limit - $2, $3, ilimit - $3 }' > "$OUT.all"
+if [ -s "$OUT.merged" ]; then
+  echo "size: $(cat "$OUT.merged") row(s) of forge's table were a source compiled under two paths (a relative path out of the project and the absolute one): listed once"
+fi
+rm -f "$OUT.merged"
 
 if [ ! -s "$OUT.all" ]; then
   echo "size: could not read any size from forge's output (rc=$rc_build): no table headed 'Contract | ... Runtime Size ..."

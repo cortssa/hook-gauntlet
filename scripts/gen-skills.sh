@@ -142,7 +142,7 @@ DOCTOR_SCRIPTS='doctor.sh selftest.sh install-v4.sh next.sh skills-check.sh'
 STEPS='
 With skills | do not read `AGENTS.md`, `doctrine/NEXT.md` or `QUICKSTART.md` whole: read the section a skill names, when it names it.
 A hook that already exists | An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after `AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
-A new project | Before phase 0, install the state convention in the owner'"'"'s project: copy the three files from `state/` into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook
+A new project | Before phase 0, install the state convention in the owner'"'"'s project: copy the three files from `state/`, and its `.gitignore`, into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook
 Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`) | Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
 Where next | `scripts/next.sh <STATE.md>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first
 '

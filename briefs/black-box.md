@@ -12,11 +12,14 @@ attacker deploys the target with `deployCode("artifacts/X.sol/X.json", args)`. W
 bench cannot deploy the thing it is supposed to attack. Withhold more than `src`: earlier reports, the state files, the
 regression tests whose names give the answers (`BENCH_EXCLUDE="src script reports STATE.md DECISIONS.md LOG.md"` and the
 regression test files by name). With `BENCH_EXCLUDE` set the script never copies an excluded path the project has and
-removes any stale copy of one from the bench (a bench of the same name made earlier without the exclude), COPIES the
-dependency directories instead of linking them (a link into the project leads straight back to its source), and
-refuses to hand over a bench in which an excluded path of the project or any symlink remains. A matching path that only
-the BENCH has (a fixture fetched into it) is its own and is kept, and the script says so. Still list the bench yourself
-before launching. Where it lives matters too: the default root, `<project>/.gauntlet/bench`, is INSIDE the project, and
+removes any stale copy of one from the bench (a bench of the same name made earlier without the exclude, or in an
+earlier layout: the project at the bench's root before its remappings reached `../`), COPIES the dependency directories
+instead of linking them (a link into the project leads straight back to its source), and refuses to hand over a bench
+in which an excluded path of the project or any symlink remains - checked over the whole bench, not only the project's
+copy in it. A matching path that only the BENCH has (a fixture fetched into it) is its own and is kept, and the script
+says so. A project that reaches outside itself by `../` (the kit vendored beside it) gets what `../` names copied beside
+its copy WHOLE - all of `../lib`, not only the kit in it - and a `WARNING` line names what that brings: read it. Still
+list the bench yourself before launching. Where it lives matters too: the default root, `<project>/.gauntlet/bench`, is INSIDE the project, and
 the source is three directories up from a bench there - so `scripts/bench.sh` REFUSES a bench that withholds `src`
 (a `BENCH_EXCLUDE` pattern naming `src`, `v4/src`, ...) anywhere inside the project, `.gauntlet/` included, with the
 reason and the fix: `BENCH_ROOT=<a directory outside the project>` (not the shared `$HOME`: a directory of this round's

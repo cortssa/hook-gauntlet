@@ -53,16 +53,22 @@ tells it) needs the selftest again. Any ending but PASSED leaves no marker.
 
 ## 2. The worked example, root kit
 
+*See the examples work - optional for a walk on the owner's hook: what proves the kit's tools on this machine is step
+1's selftest marker, not this battery. Skipped, it is a choice: say so (`STATE.md` `notes:`), not a silent skip.*
+
 ```sh
 scripts/battery.sh foundry-kit
 ```
 
 Done: `BATTERY PASSED`, with a summary above it (`test rc=0 (passed N, failed 0, skipped 0; filter: none)`, sizes, freshness; a filter your own `foundry.toml` sets is named there instead of `none`). The battery runs the whole suite and says what it refused to let narrow or soften it - forge's environment variables, a project `.env`, a `~/.foundry/foundry.toml`, build artefacts from another path - and a failed test fails it whatever forge exited with (`foundry-kit/README.md`, "What the battery refuses").
 Read the summary, not the exit code: the battery refuses an empty green (a filter that matched nothing, a skipped test).
-Steps 1 and 2 are the kit proven on this machine; what they leave for the route is step 1's marker, which your
-dossier's section 10 cites ("the kit's selftest passed on <date> for scripts <hash>").
+Step 1 is the kit proven on this machine, and what it leaves for the route is its marker, which your dossier's section
+10 cites ("the kit's selftest passed on <date> for scripts <hash>"); this step shows the kit's own example green.
 
 ## 3. The v4 module: Uniswap's sources, then the example hook
+
+*The install (either of the first two commands) is needed for any v4 hook: step 7b's recipe remaps into it. The battery
+on the kit's v4 module (the last command) is "see the examples work" - optional for a walk on the owner's hook, as step 2; skipped, say so.*
 
 Uniswap's `PoolManager` is BUSL-1.1 and is **not** in this repository. Fetch it at the pinned commits (network), or
 copy local clones you already have (offline - the pins are checked either way):
@@ -142,14 +148,26 @@ action per capability, the `HostileERC20` switches wired in as actions (they do 
 "Not covered yet" - a balance that changes with no transfer, a rebase, needs a token of your own), and `targetSelector` set; the invariants from
 your spec's section 3 on `InvariantBase`; a smoke test that asserts every action succeeded a few times; `fail_on_revert =
 true` and the census wiring (`writeCensus` in `afterInvariant`, `fs_permissions` for `./census`). How: `doctrine/INVARIANTS.md`
-and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` are the worked examples. A project with no
-`lib/` reaches the kit through two absolute remappings, `gauntlet-kit/=<kit>/foundry-kit/src/` and
-`forge-std/=<kit>/foundry-kit/lib/forge-std/src/` (no `allow_paths` needed). Absolute paths into a kit checkout are fine for an
-exercise, and the dossier's section 10 then says so; a project going to a HANDOFF vendors the kit inside itself
-(`lib/hook-gauntlet`, a submodule or a copy) and remaps relatively, so that section 10 runs on a clean machine. That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
+and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` are the worked examples.
+
+**`<kit>` in the remappings below: a RELATIVE path, for a portable project.** With the kit vendored at `lib/hook-gauntlet`
+(a submodule or a copy - what the dossier's section 10 and the skills assume), `<kit>` is relative to the directory of
+the `foundry.toml`: `lib/hook-gauntlet` when that is the project's root, beside the `lib/`; `../lib/hook-gauntlet` from a
+sub-directory of it (a `proj/` beside the kit), which also needs `allow_paths = ["../lib/hook-gauntlet/foundry-kit"]` -
+forge reads nothing above the project without it. Then section 10 runs on a clean machine. ABSOLUTE paths
+(`/home/you/hook-gauntlet`) only when the kit lives elsewhere, a checkout of its own; they need no `allow_paths`, and then
+the dossier's section 10 says the project is NOT portable (`not yet`: it runs on this machine only). Measured 2026-09-28,
+forge 1.8.1, one v4 hook with its suite, the three ways: `../lib/hook-gauntlet` with `allow_paths` (22 s), the same
+absolute (18 s), the kit copied inside the project as `lib/hook-gauntlet` (19 s) - each compiled from nothing and its 22
+unit tests green; the `../` way compiles some of the kit's and v4-core's files twice, under the relative and the
+absolute path (19 of 81: forge names those contracts `<name> (<path>)`; `scripts/size.sh` lists each once), and
+`scripts/bench.sh` puts what `../` reaches beside the project's copy. A project with no `lib/` of its own reaches the
+kit through two remappings, `gauntlet-kit/=<kit>/foundry-kit/src/` and `forge-std/=<kit>/foundry-kit/lib/forge-std/src/`.
+
+That is the layout of a hook OFF Uniswap's manager. A REAL v4 hook cannot be built on forge's defaults at all
 (the PoolManager stops at "stack too deep"): start its `foundry.toml` and `remappings.txt` from the kit's own
-`foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (drop its `libs = ["lib"]` and `allow_paths = ["../src"]`: with every dependency remapped by absolute path, `libs = []` and no `allow_paths` is what a reader measured to work; solc 0.8.26, evm cancun, the optimizer - the owner's own `optimizer` and `optimizer_runs` stay in the default profile: the tests, the fuzz and the mutants deploy the `.manager` build (via IR, 44 444 444 runs), and that is the artefact the dossier cites - the PoolManager's
-IR compilation restrictions - its `paths` entry made absolute too, `<kit>/foundry-kit/v4/lib/v4-core/src/PoolManager.sol` -
+`foundry-kit/v4/foundry.toml` and `foundry-kit/v4/remappings.txt` (drop its `libs = ["lib"]` and `allow_paths = ["../src"]`: with every dependency remapped through `<kit>`, `libs = []` is what a reader measured to work, and `allow_paths` only the one line above when `<kit>` starts with `../`; solc 0.8.26, evm cancun, the optimizer - the owner's own `optimizer` and `optimizer_runs` stay in the default profile: the tests, the fuzz and the mutants deploy the `.manager` build (via IR, 44 444 444 runs), and that is the artefact the dossier cites - the PoolManager's
+IR compilation restrictions - its `paths` entry through `<kit>` too, `<kit>/foundry-kit/v4/lib/v4-core/src/PoolManager.sol` -
 and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `ds-test/`, `solmate/`, `@openzeppelin/`,
 `v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, `permit2/`, `openzeppelin-contracts/` (the last two matter only with the
 periphery installed, `V4_WITH_PERIPHERY=1`), and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
@@ -164,7 +182,11 @@ restricted via-IR profile, so the hook the tests, the fuzz and the mutants deplo
 default `<Hook>.json`: THAT is the audited artefact - `size.sh` prints both rows, cite the `.manager` one; promotion hashes it;
 a hook deployed from any other profile is a different artefact (`NEXT.md`, bytecode changed). A hook that HOLDS tokens has a worked example since 2026-09-24: `DeltaFeeHook` (a fee taken by
 delta, a rebate, a per-block cap) in `foundry-kit/v4/src/examples/` with its unit, invariant and mutant tests; the
-token-side hostile cases stay in `foundry-kit/test/` (ToyVault). Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
+token-side hostile cases stay in `foundry-kit/test/` (ToyVault). **The handler to copy is `InRangeDonateHook`'s**
+(`foundry-kit/v4/test/examples/InRangeDonateHook.invariants.t.sol`): it follows `doctrine/FUZZ-ACTIONS.md`'s rule - every
+catch is unexpected unless the error is named. The `DeltaFeeHook`, `CappedDynamicFeeHook` and `ClaimsFeeHook` handlers
+still excuse reverts by a switch's state or by what they do not name - a known gap in those examples, not the model:
+copy their books and invariants, not their catches. Expect this to be a few hundred lines. Done: `forge test` green with `fail_on_revert` on, and a first census.
 A promise that breaks under a token behaviour the owner has not decided: `doctrine/NEXT.md` row 6b, not a reason to leave
 the action out.
 
@@ -179,7 +201,7 @@ Deterministic tools on your machine, no model. Run them on your project director
 | static triage | `forge lint src/` (Slither only if the owner allowed the install; write `static triage: forge lint only, Slither not installed` in `STATE.md` `notes:` otherwise) | every warning triaged in `.gauntlet/STATIC-TRIAGE.md`: fixed, or refused with the reason (`doctrine/JUDGES.md` row 1) |
 | branch coverage | `forge coverage --report summary --no-match-coverage '<the regex in doctrine/JUDGES.md row 4>'` (this reruns your everyday campaign: about two minutes at forge's default 256 x 500, seconds at the v4 recipe's 64 x 64; a hook next to the PoolManager's IR restriction, the 7b layout: add `--ir-minimum`, or forge measures the wrong build and maps hits to the wrong lines - `doctrine/JUDGES.md` row 4) (`--ir-minimum` also if it will not compile) | branch numbers for `src/` in the dossier, and the uncovered branches named |
 | dirty memory, junk bits | `forge test --brutalize` in `<proj>` | the same suite green (`doctrine/JUDGES.md` row 6) |
-| long fuzz | `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
+| long fuzz | say how long first (`AGENTS.md` section 5): `ESTIMATE_ONLY=1 scripts/fuzz-long.sh <proj>` prints what it will cost and stops, no campaign (the run prints it again before its campaign starts) - runs x depth, the everyday campaigns' time from the battery's last log scaled by calls, and that a failure is then shrunk (`shrink_run_limit`; about 10 minutes on a v4 hook, measured); read them to the owner, and stop there if it is too much. `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
 | campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
 | mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is read by mutate.sh only - the battery ignores it; set it on the command line, not with `export`. It is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies reached by RELATIVE paths outside the project: `COPY_ROOT=<their common parent>`; absolute remappings need nothing; the mutated copy goes under `BENCH_ROOT`, else `<proj>/.gauntlet/bench`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
@@ -196,9 +218,10 @@ A tool that does not fit your hook is not a reason to skip the question: answer 
 scripts/bench.sh r01 <proj>            # a copy in <proj>/.gauntlet/bench/r01 (BENCH_ROOT to change the root; never $HOME), dependencies linked;
                                        # the default only once <proj>/.gauntlet/ exists (step 5 installs it): without it, refused - BENCH_ROOT outside
                                        # .gauntlet/ stays in the project: the auditor reads SPEC.md and the brief there, not in the bench
-                                       # dependencies outside the project's own lib/: LINK_FROM=<dir with forge-std> scripts/bench.sh r01 <proj>
-                                       # (when foundry.toml already points outside the project - an absolute `libs` path or absolute
-                                       #  remappings - the script says "nothing to link" and LINK_FROM is not needed)
+                                       # the kit reached by `../` (step 7b, a proj/ beside lib/hook-gauntlet): the copy is at
+                                       #  <bench>/<proj's folder> with ../lib linked beside it - the LAST line printed is where to work
+                                       # an absolute `libs` path or absolute remappings: "nothing to link"; forge-std elsewhere and
+                                       #  named nowhere: LINK_FROM=<dir with forge-std> scripts/bench.sh r01 <proj>
 cp <kit>/briefs/audit-round.md .gauntlet/briefs/r01.md   # fill the placeholders; do not rewrite the rules
 ```
 

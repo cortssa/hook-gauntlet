@@ -19,8 +19,8 @@ published guides; the dossier's author should cite the ones they checked against
 # {{PROJECT}} {{REVISION}} - dossier for security review
 
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
-**Not deployed. No human security review yet.** Prepared with AI agents under the owner's direction; every claim below carries
-its evidence label, and a test is cited as evidence only if it has been seen to fail on broken code.
+**Not deployed. No human security review yet.** Prepared with AI agents under the owner's direction; every claim carries its
+evidence label (`doctrine/EVIDENCE.md`); MUTATION-TESTED, PROPERTY-TESTED and MODEL-TESTED mean a test seen red on broken code; PROVED means a proof, within its stated bounds; TESTED means a test that passes and has not been seen red - work in progress, not evidence; REASONED means an argument, not a test.
 **Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{yes/no}} · skeleton: {{K}} findings open** -
 the status line: the one line every flag in `doctrine/NEXT.md` points at. `N_ROWS` is the number of rows section 6 has
 for this hook (`doctrine/JUDGES.md`'s rows, its row 1 counted as the two it becomes here; the sandbox row counts only when it was asked for). A dossier can be complete and thin at the
@@ -190,14 +190,16 @@ OPERATOR set, the owner absent in full mode: `ceiling: N model rounds, set by th
 the owner` with the reason for N from `DECISIONS.md` - every round it cut short was cut by the operator's number. An
 interview whose ROUND line says `gate pass (read-back pending)`: the owner was absent, the interview was played from their
 files, and nobody has yet read the scope and the non-goals back to them - say so here, with the item still in
-`waiting_on_owner`.
+`waiting_on_owner`; and a spec whose ROUND line says it: the owner has not yet read the spec (phase 1's gate).
 
 ## 9. What was NOT checked (must - the auditor reads this first)
 
 Be specific. Examples of the form this takes: economic and ordering attacks (MEV, JIT liquidity) were reasoned about,
 not tested · native currency paths do not exist and were not tested · behaviour on chains other than {{CHAIN}} ·
 the deployment script was simulated, never broadcast · nothing here was reviewed by a human with security training ·
-rows of section 6 marked "not done" · a black-box round the ceiling left unrun or the environment stopped, and what it would have added · what
+rows of section 6 marked "not done" · every bound a handler puts on its own actions narrower than the legal range (a
+price kept within 16x of the start, an amount cap, a clock that never passes a window): what the campaign never
+exercised, with the handler line (`doctrine/FUZZ-ACTIONS.md`) · a black-box round the ceiling left unrun or the environment stopped, and what it would have added · what
 promotion would have added, when it was skipped · for a backtest, what the replay cannot say: how the real swappers, arbitrageurs
 and LPs would have REACTED to the hook (the replay keeps their real orders, placed against another price), the LP set it
 replaced with one position, the swap types it did not replay, and the windows not run (`doctrine/SIMULATE.md` section 6).
@@ -205,10 +207,12 @@ replaced with one position, the swap types it did not replay, and the windows no
 ## 10. Reproduce it (must)
 
 From a clean checkout on a machine with nothing but Foundry: the exact commands, in order, that rebuild the bytecode
-(`forge clean` first), run the battery, and check the manifest. Absolute remappings or `libs` paths in `foundry.toml`
-are not portable: a HANDOFF ships the kit inside the project (`lib/hook-gauntlet`, a submodule or a copy, with relative
-remappings) so that this section runs on a clean machine; absolute paths into a kit checkout are for an exercise, and
-then this section says `not yet` and the dossier is a skeleton, whatever else it holds. If it needs an RPC endpoint, say for which step; never
+(`forge clean` first), run the battery, and check the manifest. A HANDOFF ships the kit inside the project
+(`lib/hook-gauntlet`, a submodule or a copy) with RELATIVE remappings (`QUICKSTART.md` step 7b: `lib/hook-gauntlet/...`
+from the project's root, `../lib/hook-gauntlet/...` from a sub-directory) so that this section runs on a clean machine.
+Absolute remappings or `libs` paths in `foundry.toml` (a kit that lives elsewhere) are not portable: then this section
+says so - `not yet: the project is not portable, its remappings name <the absolute path>` - and the dossier is a
+skeleton, whatever else it holds. If it needs an RPC endpoint, say for which step; never
 include one. Cite the kit's own proof, read from `<kit>/.gauntlet/selftest-passed` (`scripts/selftest.sh` leaves it only
 when it ends PASSED; `scripts/next.sh` names no row without it): "the kit's selftest passed on <date> for scripts
 <hash>", with forge's version from the same file - the reproducer runs `scripts/selftest.sh` first and gets the same

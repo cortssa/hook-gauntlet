@@ -26,7 +26,7 @@ Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. Thi
 
 1. **With skills.** do not read `{{KIT}}/AGENTS.md`, `{{KIT}}/doctrine/NEXT.md` or `{{KIT}}/QUICKSTART.md` whole: read the section a skill names, when it names it.
 2. **A hook that already exists.** An existing hook with tests or a history (audits, reports, a log) -> `{{KIT}}/doctrine/RETROFIT.md` after `{{KIT}}/AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
-3. **A new project.** Before phase 0, install the state convention in the owner's project: copy the three files from `{{KIT}}/state/` into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook.
+3. **A new project.** Before phase 0, install the state convention in the owner's project: copy the three files from `{{KIT}}/state/`, and its `.gitignore`, into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook.
 4. **Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`).** Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
 5. **Where next.** `{{KIT}}/scripts/next.sh <STATE.md>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first.
 

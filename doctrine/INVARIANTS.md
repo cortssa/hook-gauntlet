@@ -102,7 +102,9 @@ calls are rejected - no balance, bad parameters - the book is almost always empt
 passes every time while testing nothing.
 
 **Reaching the kit from a project that has no `lib/`:** remap it in `foundry.toml` - `remappings = ["gauntlet-kit/=<kit>/foundry-kit/src/", "forge-std/=<kit>/foundry-kit/lib/forge-std/src/"]` (`InvariantBase` imports forge-std, so both),
-an absolute path is fine and needs no `allow_paths` (measured on forge 1.8.1) - and import `gauntlet-kit/InvariantBase.sol`.
+`<kit>` RELATIVE for a project that is handed over (`lib/hook-gauntlet`, or `../lib/hook-gauntlet` with `allow_paths`:
+`QUICKSTART.md` step 7b); an absolute path only for a kit that lives elsewhere - it needs no `allow_paths` (measured on
+forge 1.8.1), and the project is then not portable - and import `gauntlet-kit/InvariantBase.sol`.
 A scenario or a suite for a hook off the v4 manager takes its tokens from `gauntlet-kit/HostileERC20.sol` or its own.
 
 **Defence: count successes, not calls.** `HandlerBase` gives you `_noteSuccess(action)`, `successesOf(action)`,
@@ -111,7 +113,10 @@ A scenario or a suite for a hook off the v4 manager takes its tokens from `gaunt
 - a smoke test that walks the happy path and asserts every action succeeded at least a few times;
 - after a long campaign, read the census. **An action near zero is an action you are not testing.** Fix the
   handler (fund the actors, bound the inputs to legal ranges) until the hostile branches and the honest ones
-  are both reached.
+  are both reached;
+- a revert the handler files as expected names its ERROR, never only a state (`FUZZ-ACTIONS.md`, "Make the actions
+  land"): a catch that excuses every revert while a switch is on is a vacuous pass of its own, over exactly the runs
+  the hostile switches were wired in for.
 
 **Restrict your handler with `targetSelector` to the actions you wrote.** `targetContract(handler)` alone lets the
 fuzzer call every non-view function the handler has, `HandlerBase`'s own included: `writeCensus(string)` is one. On a

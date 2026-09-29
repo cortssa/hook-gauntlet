@@ -24,9 +24,11 @@
 #          --high --medium --low --info   the findings AS THE ROUND CLASSIFIED THEM, whole numbers, all four required
 #          --reasoned    the REASONED high/medium, counted apart (state/README.md), a whole number, required
 #          --gate        pass | fail  (a round that died on a rate limit is `fail`, and it still gets its line)
-#                        | "pass (read-back pending)": --type interview only - the interview was played from the
-#                        owner's files with the owner absent, and the owner has not yet read the scope and the
-#                        non-goals back (state/README.md, "The ROUND line"; `waiting_on_owner: read-back of scope`)
+#                        | "pass (read-back pending)": --type interview or spec only - the interview was played from
+#                        the owner's files with the owner absent, and the owner has not yet read the scope and the
+#                        non-goals back; or the spec was written with the owner absent, and the owner has not yet read
+#                        it (phase 1's gate, AGENTS.md section 3) (state/README.md, "The ROUND line"; `waiting_on_owner:
+#                        read-back of scope` / `read-back of the spec`)
 #          --tokens (a whole number, or with k / M: 230k), --minutes, --files-read, --tests-written: the cost and the
 #                        effort. OPTIONAL, because what you cannot measure you leave out - never guess it
 #          --conf        OPTIONAL raw_confidence, 0 to 1: what the round's author would bet on its own verdict. Recorded;
@@ -70,7 +72,7 @@ if [ "${1:-}" = "--json" ]; then
       if (f[7] !~ /^[0-9]+H [0-9]+M [0-9]+L [0-9]+I reasoned [0-9]+$/) { bad("findings"); next }
       split(f[7], g, / /); H = g[1]; M = g[2]; L = g[3]; I = g[4]; sub(/H/, "", H); sub(/M/, "", M); sub(/L/, "", L); sub(/I/, "", I)
       if (f[8] !~ /^gate (pass|fail|pass \(read-back pending\))$/) { bad("gate"); next }
-      if (f[8] == "gate pass (read-back pending)" && f[3] != "interview") { bad("gate: read-back pending is an interview'"'"'s only"); next }
+      if (f[8] == "gate pass (read-back pending)" && f[3] != "interview" && f[3] != "spec") { bad("gate: read-back pending is an interview'"'"'s or a spec'"'"'s only"); next }
       gate = substr(f[8], 6)
       c = f[9]; t = ""; mi = ""; fr = ""; tw = ""
       if (c != "cost not measured") {
@@ -157,9 +159,9 @@ for pair in "high:$high" "medium:$medium" "low:$low" "info:$info" "reasoned:$rea
 done
 case "$gate" in
   pass | fail) ;;
-  "pass (read-back pending)") [ "$type" = interview ] \
-    || refuse "--gate 'pass (read-back pending)' is an interview's only (the scope not yet read back by an absent owner); this is a $type round." ;;
-  *) refuse "--gate is pass, fail, or 'pass (read-back pending)' for an interview (got '$gate')." ;;
+  "pass (read-back pending)") [ "$type" = interview ] || [ "$type" = spec ] \
+    || refuse "--gate 'pass (read-back pending)' is an interview's or a spec's only (the scope, or the spec, not yet read back by an absent owner); this is a $type round." ;;
+  *) refuse "--gate is pass, fail, or 'pass (read-back pending)' for an interview or a spec (got '$gate')." ;;
 esac
 if [ -n "$tokens" ]; then printf '%s' "$tokens" | grep -Eq '^[0-9]+[kM]?$' || refuse "--tokens is a whole number, optionally with k or M (got '$tokens')."; fi
 for pair in "minutes:$minutes" "files-read:$files_read" "tests-written:$tests_written"; do

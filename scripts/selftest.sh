@@ -45,7 +45,7 @@ set -uo pipefail
 SELFTEST_CLEARED="ALLOW_SKIPS ALLOW_SMALL_BUDGET BASELINE BASELINE_MAY_BE_RED BENCH_ARTIFACTS BENCH_EXCLUDE BENCH_KEEP \
 BENCH_ROOT CACHE_FILE CENSUS_FORGE_LOG CENSUS_TABLE_ONLY COPY_ROOT CORE DEPTH EXPECT EXTRA_SRC FORGE_FLAGS GATE_WHY \
 GUARD_EXCLUDE HASH_PYTHON KEEP LABEL LINK_FROM LINK_LIB MATCH MIN_INIT_MARGIN MIN_MARGIN MIN_PCT OUT_DIR REACH RUNS SEED \
-SRC_DIRS TEST_FLAGS USE_BENCH V4_ALLOW_UNTRACKED V4_CORE_SUBMODULES V4_FORCE V4_LOCAL_SRC V4_WITH_PERIPHERY \
+SRC_DIRS TEST_FLAGS USE_BENCH ESTIMATE_ONLY V4_ALLOW_UNTRACKED V4_CORE_SUBMODULES V4_FORCE V4_LOCAL_SRC V4_WITH_PERIPHERY \
 V4_MANAGER V4_FIXTURE FORK_BLOCK GAUNTLET_CENSUS GAUNTLET_SIM SIM_SEED RPC_URL ETH_RPC_URL KIT_PROJECT \
 BACKTEST_LOGS_CHUNK BACKTEST_FIXTURE NEXT_SELFTEST"
 selftest_clears() { # selftest_clears <name>: 0 when the name is one this run removes
@@ -758,6 +758,69 @@ expect_out "campaigns, real, two, one printing a fake campaign line in its logs"
 expect_out "campaigns, real, a failing one (forge prints it twice)" "1 1 1" 0 parse_invariant_runs "$FIX/invariant-real-fail.txt"
 expect_out "campaign lines only inside a test's logs: none ran" "0 0 0" 0 parse_invariant_runs "$FIX/invariant-nm-console-only.txt"
 expect_out "suites by directory, real" "test=4 test/examples=2" 0 parse_suites_by_dir "$FIX/summary-real-many-suites.txt"
+# K32c (V32b): a finding's test that accepts ANY revert, in the three shapes mutate.sh warns on - read in the CODE, never in a
+# comment (V32b's Q-1 cited the rule in its NatSpec and was warned against for it)
+AR="$TMP/anyrevert"; mkdir -p "$AR"
+cat > "$AR/bare.sol" << 'EOF'
+contract T is Test { function test_bare() public { vm.prank(bob);
+  vm.expectRevert(
+  ); r.register(1); } }
+EOF
+cat > "$AR/exact.sol" << 'EOF'
+/// @notice the exact error - not a bare vm.expectRevert(), which EVIDENCE section 2 refuses
+contract T is Test { function test_exact() public { string memory u = "https://example.test/"; // vm.expectRevert()
+  /* nor vm.expectRevert( ) here,
+     nor (bool ok,) = address(r).call(""); assertFalse(ok); */
+  vm.expectRevert(Reg.Taken.selector); r.register(1); } }
+EOF
+cat > "$AR/call.sol" << 'EOF'
+contract T is Test { function test_call() public { vm.prank(bob);
+  (bool ok,) = address(r).call(abi.encodeCall(Reg.register, (1)));
+  assertFalse(ok, "must revert"); } }
+EOF
+cat > "$AR/call-data.sol" << 'EOF'
+contract T is Test { function test_call() public {
+  (bool ok, bytes memory ret) = address(r).call{value: 0}(abi.encodeCall(Reg.register, (1)));
+  assertFalse(ok); assertEq(bytes4(ret), Reg.Taken.selector); } }
+EOF
+cat > "$AR/catch.sol" << 'EOF'
+contract T is Test { function test_catch() public {
+  try r.register(1) { fail(); } catch (bytes memory reason) { emit log_bytes(hex""); } } }
+EOF
+cat > "$AR/catch-cmp.sol" << 'EOF'
+contract T is Test { function test_catch() public {
+  try r.register(1) { fail(); } catch (bytes memory reason) { assertEq(bytes4(reason), Reg.Taken.selector); }
+  try r.register(2) {} catch { fail(); } } }
+EOF
+# K32d (V32c): a string is not code either - its text is blanked, its quotes kept (Q-5: the rule cited in an assertion's
+# message next to the exact selector; "no try/catch {} here"); a catch that only logs a string with "revert" in it
+# accepts any revert; and a known gap, documented: the flag asserted false in a helper under another name (Q-6)
+cat > "$AR/strings.sol" << 'EOF'
+contract T is Test { function test_exact() public {
+  vm.expectRevert(Reg.Taken.selector); r.register(1);
+  assertEq(r.count(), 1, "exact selector above, not a bare vm.expectRevert()");
+  emit log("no try/catch {} here, nor (bool ok,) = address(r).call(x); assertFalse(ok);"); emit log('it\'s "fine"'); } }
+EOF
+cat > "$AR/catch-log.sol" << 'EOF'
+contract T is Test { function test_catch() public {
+  try r.register(1) { fail(); } catch { emit log("revert as expected"); } } }
+EOF
+cat > "$AR/helper.sol" << 'EOF'
+contract T is Test { function _mustFail(bool success) internal { assertFalse(success, "must revert"); }
+  function test_call() public { (bool ok,) = address(r).call(abi.encodeCall(Reg.register, (1))); _mustFail(ok); } }
+EOF
+cat "$AR/bare.sol" "$AR/call.sol" > "$AR/all.sol"; printf 'contract U { function f() public { try r.g() {} catch {} } }\n' >> "$AR/all.sol"
+expect_out "any revert: a bare vm.expectRevert() over two lines" "bare-expectRevert" 0 any_revert_shapes "$AR/bare.sol"
+expect_out "any revert: none in the code - the rule cited in comments, a URL in a string, the exact selector" "" 0 any_revert_shapes "$AR/exact.sol"
+expect_out "any revert: a low-level call whose success flag is only asserted false (V32b's Q-2)" "call-asserted-false" 0 any_revert_shapes "$AR/call.sol"
+expect_out "any revert: the same call with its returned data compared: none" "" 0 any_revert_shapes "$AR/call-data.sol"
+expect_out "any revert: a catch that never compares the error it names" "catch-not-compared" 0 any_revert_shapes "$AR/catch.sol"
+expect_out "any revert: a catch that compares it, and one that fails the test: none" "" 0 any_revert_shapes "$AR/catch-cmp.sol"
+expect_out "any revert: all three in one file, each named once" "$(printf 'bare-expectRevert\ncall-asserted-false\ncatch-not-compared')" 0 any_revert_shapes "$AR/all.sol"
+expect_out "any revert: a file that cannot be read" "" 1 any_revert_shapes "$AR/no-such.sol"
+expect_out "any revert: none in strings - the rule in an assertion's message, \"no try/catch {} here\" (V32c's Q-5)" "" 0 any_revert_shapes "$AR/strings.sol"
+expect_out "any revert: a catch that only logs a string saying \"revert\" accepts any revert" "catch-not-compared" 0 any_revert_shapes "$AR/catch-log.sol"
+expect_out "any revert: KNOWN GAP, documented - the flag asserted false in a helper under another name is not seen (V32c's Q-6)" "" 0 any_revert_shapes "$AR/helper.sol"
 expect_out "sizes, real: ToyVault's runtime" "ToyVault 1672" 0 first_row "$FIX/sizes-real.txt" ToyVault
 expect_out "sizes, columns in another order: still the RUNTIME column" "ToyVault 1672" 0 first_row "$FIX/sizes-nm-columns-swapped.txt" ToyVault
 expect_out "sizes, no header: refused" "" 2 parse_sizes "$FIX/sizes-nm-no-header.txt"
@@ -774,6 +837,22 @@ first_row_both() { parse_sizes_both "$1" | grep "^$2 "; }
 expect_out "sizes, both columns, real: ToyVault's runtime AND initcode" "ToyVault 1672 1811" 0 first_row_both "$FIX/sizes-real.txt" ToyVault
 expect_out "sizes, both columns, in another order: still read by header" "ToyVault 1672 1811" 0 first_row_both "$FIX/sizes-nm-columns-swapped.txt" ToyVault
 expect_out "sizes, a table without the Initcode column: refused (never initcode 0)" "" 2 parse_sizes_both "$FIX/sizes-nm-no-initcode.txt"
+# K32 (FR16): a project that reaches the kit by a RELATIVE path out of itself (`../lib/hook-gauntlet/...`) gets some of the
+# kit's and v4-core's sources compiled twice, under that path and under the absolute one, and forge then names each such
+# contract `<name> (<path>)` - a name with a space in it, which the scripts downstream read as the size. The fixture is
+# forge 1.8.1's table from that layout (rows cut; the absolute root replaced by /home/user/work). One token now: <name>@<path>.
+expect_out "sizes, real, a contract forge names with its path: one token, <name>@<path>" \
+  "BalanceDeltaLibrary.default@../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/src/types/BalanceDelta.sol 91 141" 0 \
+  first_row_both "$FIX/sizes-real-v4-two-paths.txt" "BalanceDeltaLibrary.default@../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/src/types/BalanceDelta.sol"
+expect_out "sizes, the same table, runtime column only: the same token" \
+  "BalanceDeltaLibrary.manager@/home/user/work/lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/src/types/BalanceDelta.sol 100" 0 \
+  first_row "$FIX/sizes-real-v4-two-paths.txt" "BalanceDeltaLibrary.manager@/home/user/work/lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/src/types/BalanceDelta.sol"
+# K32: the time of the suites that ran a campaign, which fuzz-long.sh scales into what the long campaign will cost
+expect_out "campaign time, real: the one suite with a campaign (1.20s), not the five without" "1 1.20" 0 parse_campaign_seconds "$FIX/summary-real-many-suites.txt"
+expect_out "campaign time, real: two suites with a campaign, added (4.15ms + 4.27ms)" "2 0.01" 0 parse_campaign_seconds "$FIX/invariant-real-pass-with-logs.txt"
+expect_out "campaign time, a log with no campaign: none" "" 1 parse_campaign_seconds "$FIX/summary-real-one-suite.txt"
+sed 's/finished in 1\.20s /finished in 1.20 fortnights /' "$FIX/summary-real-many-suites.txt" > "$TMP/camp-nm-unit.txt"
+expect_out "campaign time, a campaign suite whose time is of another shape: refused, never 0" "" 2 parse_campaign_seconds "$TMP/camp-nm-unit.txt"
 first_err_is() { first_error_line "$1" | cut -c1-60; }
 expect_out "first error, real (v4 module copied without its parent): the unresolved import, not the warnings" \
   'Error (6275): Source "../src/HostileERC20.sol" not found: Fi' 0 first_err_is "$FIX/build-real-v4-without-copy-root.txt"
@@ -845,6 +924,27 @@ PATH="$FS:$PATH" OUT_DIR="$FP/reports" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o8
 own_clean "size.sh, OUT_DIR=<project>/reports" "$TMP/o815" "$FP/reports"
 PATH="$FS:$PATH" OUT_DIR="rel-reports" "$HERE/size.sh" "$FP" ToyVault > "$TMP/o816" 2>&1; check "size.sh with a relative OUT_DIR (under the project): refused" 2 $? "$TMP/o816"
 own_clean "size.sh, OUT_DIR relative" "$TMP/o816" "$FP/rel-reports"
+# K32 (FR16): size.sh lists a source forge compiled under two paths ONCE - the relative path, resolved from the project,
+# and the absolute one are the same file - under its plain name when no other file has that name, and with the SIZES in
+# the columns (FR16's sizes.txt: "BalanceDeltaLibrary.manager (/home/...) 24576 100 49052", the path read as the runtime).
+TW="$TMP/twopaths"; mkdir -p "$TW/proj/.gauntlet"; TWR="$(cd "$TW" && pwd -P)"; TWS="$TW/proj/.gauntlet/reports/sizes.txt"
+sed "s|/home/user/work|$TWR|g" "$FIX/sizes-real-v4-two-paths.txt" > "$TMP/sizes-two.txt"
+SHIM_SIZES="$TMP/sizes-two.txt" PATH="$FS:$PATH" "$HERE/size.sh" "$TW/proj" > "$TMP/o950" 2>&1; check "size.sh on a table that names sources by two paths (FR16's layout)" 0 $? "$TMP/o950"
+if [ "$(grep -c '^BalanceDeltaLibrary' "$TWS")" = "2" ] && grep -qx 'BalanceDeltaLibrary.default 91 24485 141 49011' "$TWS" \
+  && grep -qx 'BalanceDeltaLibrary.manager 100 24476 128 49024' "$TWS" && grep -qx 'SafeCast.manager 16 24560 44 49108' "$TWS" \
+  && ! grep -q '[(@]' "$TWS" && grep -q '2 row(s) .* listed once' "$TMP/o950"; then
+  echo "  ok    each source once, under its plain name, with its own sizes and margins, and the run says how many were merged"; else
+  echo "  FAIL  the two-path table:"; sed "s/^/        | /" "$TWS" "$TMP/o950" | head -16; fails=$((fails + 1)); fi
+SHIM_SIZES="$TMP/sizes-two.txt" PATH="$FS:$PATH" "$HERE/size.sh" "$TW/proj" BalanceDeltaLibrary > "$TMP/o951" 2>&1; check "the same, one contract named" 0 $? "$TMP/o951"
+if [ "$(wc -l < "$TWS" | tr -d ' ')" = "2" ] && grep -qx 'BalanceDeltaLibrary.manager 100 24476 128 49024' "$TWS"; then
+  echo "  ok    and naming it gives its two builds, once each"; else echo "  FAIL  named:"; sed "s/^/        | /" "$TWS"; fails=$((fails + 1)); fi
+# two DIFFERENT files with one name stay two rows, each with its path (one token): nothing is merged that is not the same file
+sed "s|/home/user/work|/elsewhere|g" "$FIX/sizes-real-v4-two-paths.txt" > "$TMP/sizes-two-other.txt"
+SHIM_SIZES="$TMP/sizes-two-other.txt" PATH="$FS:$PATH" "$HERE/size.sh" "$TW/proj" > "$TMP/o952" 2>&1; check "size.sh on two files of one name that are NOT the same file" 0 $? "$TMP/o952"
+if [ "$(grep -c '^BalanceDeltaLibrary.*@' "$TWS")" = "4" ] && grep -qx 'BalanceDeltaLibrary.manager@/elsewhere/lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/src/types/BalanceDelta.sol 100 24476 128 49024' "$TWS" \
+  && ! grep -q 'listed once' "$TMP/o952"; then
+  echo "  ok    four rows, each named with its path, none merged"; else echo "  FAIL  two different files merged or misread:"; sed "s/^/        | /" "$TWS"; fails=$((fails + 1)); fi
+rm -rf "$TW"
 printf 'run\taction\tcalls\treverts\n1\tinc\t10\t0\n' > "$TMP/own.tsv"
 PATH="$FS:$PATH" env -u OUT_DIR CORE=inc "$HERE/census.sh" --aggregate "$TMP/own.tsv" "$FP" > "$TMP/o817" 2>&1; check "the census gate (QUICKSTART's line) on a tree with no .gauntlet/: refused" 2 $? "$TMP/o817"
 own_clean "census.sh --aggregate <tsv> <project>" "$TMP/o817"
@@ -1051,16 +1151,17 @@ BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nl "$NL" > "$TMP/o170" 2>&1; check "a ref
 if grep -qF "bench: lib/ is a link left by an earlier LINK_FROM: $(cd "$TMP/fstd" && pwd -P)" "$TMP/o170" && ! grep -q "the bench's own" "$TMP/o170" && [ -L "$TMP/bb3/nl/lib" ]; then
   echo "  ok    and it says the lib/ is a link left by an earlier LINK_FROM, naming the target (kept)"; else
   echo "  FAIL  the leftover LINK_FROM link is not reported as such:"; grep -i 'lib/' "$TMP/o170" | sed "s/^/        | /"; fails=$((fails + 1)); fi
-# no lib/, but foundry.toml already says where the dependencies are: an absolute (or ../) `libs` entry, or a remapping to
-# an absolute path. Then there is nothing to link, and advising LINK_FROM sent a fresh reader looking for a directory it
+# no lib/, but foundry.toml already says where the dependencies are: an absolute `libs` entry, or a remapping to an
+# absolute path. Then there is nothing to link, and advising LINK_FROM sent a fresh reader looking for a directory it
 # did not need (FR7: the toy on forge's defaults, forge-std through an absolute libs, the kit through a remapping).
+# (A `../` entry is not "nothing to link": it is followed into the bench - K32, below.)
 NR="$TMP/nolib-deps"; mkdir -p "$NR/abslibs/src" "$NR/remap/src" "$NR/uplibs/src" "$NR/multiline/src" "$NR/inside/src"
 printf '[profile.default]\nlibs = ["%s"]\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/abslibs/foundry.toml"
 printf '[profile.default]\nremappings = ["forge-std/=%s/forge-std/src/"]\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/remap/foundry.toml"
 printf '[profile.default]\nlibs = ["../deps"]\n' > "$NR/uplibs/foundry.toml"
 printf '[profile.default]\nremappings = [\n  "a/=src/",\n  "forge-std/=%s/forge-std/src/",\n]\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/multiline/foundry.toml"
 printf '[profile.default]\nlibs = ["lib"]\nremappings = ["a/=src/"]\n' > "$NR/inside/foundry.toml"
-for p in abslibs remap uplibs multiline; do
+for p in abslibs remap multiline; do
   BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" "nr-$p" "$NR/$p" > "$TMP/o181-$p" 2>&1; check "a bench of a project with no lib/ whose foundry.toml names its dependencies ($p)" 0 $? "$TMP/o181-$p"
   if [ "$(grep -cxF 'bench: no lib/; dependencies come from foundry.toml (libs / remappings): nothing to link' "$TMP/o181-$p")" = "1" ] && ! grep -q "LINK_FROM" "$TMP/o181-$p" && [ ! -e "$TMP/bb3/nr-$p/lib" ]; then
     echo "  ok    and it says the dependencies come from foundry.toml, without advising LINK_FROM"; else
@@ -1071,19 +1172,124 @@ if grep -qF 'the project has no lib/: nothing linked; set LINK_FROM=<dir with fo
   echo "  ok    and there it still advises LINK_FROM (nothing in foundry.toml reaches outside)"; else
   echo "  FAIL  the no-lib/ note on a project whose foundry.toml stays inside:"; grep -i lib "$TMP/o182" | sed "s/^/        | /"; fails=$((fails + 1)); fi
 # ... and remappings.txt, which forge reads as well: a project whose ONLY absolute remapping is there (FR8) got the
-# LINK_FROM advice. With CRLF line ends and a context-scoped line too; relative targets there still advise LINK_FROM.
+# LINK_FROM advice. With CRLF line ends and a context-scoped line too; a relative target that stays inside the project
+# still advises LINK_FROM (below), one that leaves it is followed (K32, further below).
 mkdir -p "$NR/remaptxt/src" "$NR/remaptxt-inside/src"
 printf '[profile.default]\n' > "$NR/remaptxt/foundry.toml"; printf '[profile.default]\n' > "$NR/remaptxt-inside/foundry.toml"
 printf 'a/=src/\r\nsrc/:forge-std/=%s/forge-std/src/\r\n' "$(cd "$TMP/fstd" && pwd -P)" > "$NR/remaptxt/remappings.txt"
-printf 'a/=src/\nb/=../b/\n' > "$NR/remaptxt-inside/remappings.txt"
+printf 'a/=src/\nb/=lib/b/\n' > "$NR/remaptxt-inside/remappings.txt"
 BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-remaptxt "$NR/remaptxt" > "$TMP/o183" 2>&1; check "a bench of a project with no lib/ whose remappings.txt names an absolute target" 0 $? "$TMP/o183"
 if [ "$(grep -cxF 'bench: no lib/; dependencies come from remappings.txt (an absolute remapping): nothing to link' "$TMP/o183")" = "1" ] && ! grep -q "LINK_FROM" "$TMP/o183" && [ ! -e "$TMP/bb3/nr-remaptxt/lib" ]; then
   echo "  ok    and it says the dependencies come from remappings.txt, without advising LINK_FROM"; else
   echo "  FAIL  the no-lib/ note on a project whose remappings.txt names its dependencies:"; grep -i lib "$TMP/o183" | sed "s/^/        | /"; fails=$((fails + 1)); fi
-BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-remaptxt-inside "$NR/remaptxt-inside" > "$TMP/o184" 2>&1; check "a bench of a project with no lib/ whose remappings.txt stays relative" 0 $? "$TMP/o184"
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-remaptxt-inside "$NR/remaptxt-inside" > "$TMP/o184" 2>&1; check "a bench of a project with no lib/ whose remappings.txt stays relative, inside it" 0 $? "$TMP/o184"
 if grep -qF 'the project has no lib/: nothing linked; set LINK_FROM=<dir with forge-std>' "$TMP/o184" && ! grep -q "nothing to link" "$TMP/o184"; then
-  echo "  ok    and there it still advises LINK_FROM (no absolute target in remappings.txt)"; else
+  echo "  ok    and there it still advises LINK_FROM (no absolute target in remappings.txt, none that leaves the project)"; else
   echo "  FAIL  the no-lib/ note on a project whose remappings.txt is relative:"; grep -i lib "$TMP/o184" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+# K32 (FR16): a project that reaches OUT of itself by a relative path - the kit vendored BESIDE it, `../lib/hook-gauntlet/...`
+# in remappings.txt and allow_paths, `libs = []` (QUICKSTART 7b) - got a bench whose `../lib` resolved to nothing, and the
+# advice to set LINK_FROM, which fills the bench's OWN lib/, not ../lib: a fresh reader linked it by hand. Now the bench
+# holds the project at <bench>/<its folder>, what `../` reaches is linked beside it (copied, in a bench that withholds) so
+# the remapping resolves there, a sibling it does not reach is not copied, and the last line is the project's place.
+FR="$TMP/fr16like"; mkdir -p "$FR/lib/hook-gauntlet/foundry-kit/src" "$FR/proj/src" "$FR/proj/.gauntlet" "$FR/walk-logs"
+printf 'contract K {}\n' > "$FR/lib/hook-gauntlet/foundry-kit/src/K.sol"; printf 'a log\n' > "$FR/walk-logs/w.log"
+printf '[profile.default]\n# ...the kit is beside, not inside\nsrc = "src" # the ... sources; see ../notes\nlibs = []\nallow_paths = ["../lib/hook-gauntlet/foundry-kit"]\n' > "$FR/proj/foundry.toml"
+printf 'gauntlet-kit/=../lib/hook-gauntlet/foundry-kit/src/\nself/=../proj/src/\n' > "$FR/proj/remappings.txt"
+printf 'contract P {}\n' > "$FR/proj/src/P.sol"
+FRR="$(cd "$FR" && pwd -P)"; FRB="$FRR/proj/.gauntlet/bench/r01"
+(cd "$TMP" && env -u BENCH_ROOT "$HERE/bench.sh" r01 "$FR/proj") > "$TMP/o740" 2>&1
+check "a bench of a project whose remappings reach ../lib (the kit beside it, FR16's layout)" 0 $? "$TMP/o740"
+w="$(tail -1 "$TMP/o740")"
+if [ "$w" = "$FRB/proj" ] && [ -f "$w/src/P.sol" ] && (cd "$w" && [ -f ../lib/hook-gauntlet/foundry-kit/src/K.sol ] && [ -f ../proj/src/P.sol ]) \
+  && [ -L "$FRB/lib" ] && [ -f "$FRB/.gauntlet-bench" ] && [ ! -e "$FRB/walk-logs" ] && [ ! -e "$FRB/proj/.gauntlet" ] \
+  && ! grep -q LINK_FROM "$TMP/o740" && grep -qxF "bench: ../lib -> $FRR/lib: linked at $FRB/lib" "$TMP/o740"; then
+  echo "  ok    the project is at <bench>/proj, ../lib resolves there (a link, named), no sibling copied, no LINK_FROM advice"; else
+  echo "  FAIL  the bench of a project that reaches ../lib (last line '$w'):"; sed "s/^/        | /" "$TMP/o740"; fails=$((fails + 1)); fi
+printf 'contract P { uint256 x; }\n' > "$FR/proj/src/P.sol"
+(cd "$TMP" && env -u BENCH_ROOT "$HERE/bench.sh" r01 "$FR/proj") > "$TMP/o741" 2>&1; check "the same bench, refreshed" 0 $? "$TMP/o741"
+if [ "$(tail -1 "$TMP/o741")" = "$FRB/proj" ] && grep -q 'uint256 x' "$FRB/proj/src/P.sol" && (cd "$FRB/proj" && [ -f ../lib/hook-gauntlet/foundry-kit/src/K.sol ]) \
+  && [ -f "$FRR/lib/hook-gauntlet/foundry-kit/src/K.sol" ]; then
+  echo "  ok    and the refresh keeps ../lib resolving, with the source refreshed and the kit beside the project untouched"; else
+  echo "  FAIL  the refresh:"; sed "s/^/        | /" "$TMP/o741"; fails=$((fails + 1)); fi
+BENCH_ROOT="$TMP/frout" BENCH_EXCLUDE="src" "$HERE/bench.sh" bb "$FR/proj" > "$TMP/o742" 2>&1; check "the same project, a bench that withholds src/" 0 $? "$TMP/o742"
+w="$(tail -1 "$TMP/o742")"
+if [ "$w" = "$(cd "$TMP" && pwd -P)/frout/bb/proj" ] && [ ! -e "$w/src" ] && [ -d "$TMP/frout/bb/lib" ] && [ ! -L "$TMP/frout/bb/lib" ] \
+  && (cd "$w" && [ -f ../lib/hook-gauntlet/foundry-kit/src/K.sol ]) && [ -z "$(find "$TMP/frout/bb" -type l)" ] && grep -q 'isolation verified' "$TMP/o742" \
+  && grep -qF "bench: ../lib -> $FRR/lib: copied at " "$TMP/o742"; then
+  echo "  ok    and there ../lib is COPIED (no symlink), the project's src/ withheld, the isolation verified"; else
+  echo "  FAIL  the withholding bench of a project that reaches ../lib:"; sed "s/^/        | /" "$TMP/o742"; fails=$((fails + 1)); fi
+# `libs = ["../deps"]` likewise (it used to be "nothing to link", and the bench's ../deps resolved to nothing)
+mkdir -p "$NR/deps/forge-std/src"; printf '// std\n' > "$NR/deps/forge-std/src/Test.sol"
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-uplibs "$NR/uplibs" > "$TMP/o743" 2>&1; check "a bench of a project with no lib/ and libs = [\"../deps\"]" 0 $? "$TMP/o743"
+w="$(tail -1 "$TMP/o743")"
+if (cd "$w" 2> /dev/null && [ -f ../deps/forge-std/src/Test.sol ]) && ! grep -q LINK_FROM "$TMP/o743" && grep -qF 'bench: ../deps -> ' "$TMP/o743"; then
+  echo "  ok    and ../deps resolves in the bench, without advising LINK_FROM"; else
+  echo "  FAIL  libs = [\"../deps\"]:"; sed "s/^/        | /" "$TMP/o743"; fails=$((fails + 1)); fi
+# a target that does not exist is named, and LINK_FROM (which would not help) is not advised; one that HOLDS the project
+# (`../`) is refused - it cannot be linked beside the project without being the project
+mkdir -p "$NR/upmissing/src" "$NR/upall/src"; printf '[profile.default]\n' > "$NR/upmissing/foundry.toml"; printf '[profile.default]\n' > "$NR/upall/foundry.toml"
+printf 'b/=../nowhere/b/\n' > "$NR/upmissing/remappings.txt"; printf 'all/=../\n' > "$NR/upall/remappings.txt"
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-upmissing "$NR/upmissing" > "$TMP/o744" 2>&1; check "a bench of a project whose remapping reaches a ../ that does not exist" 0 $? "$TMP/o744"
+if grep -qE '^bench: \.\./nowhere -> .*: does not exist - nothing linked for it' "$TMP/o744" && ! grep -q LINK_FROM "$TMP/o744"; then
+  echo "  ok    and it names the missing target, without advising LINK_FROM"; else
+  echo "  FAIL  the missing ../ target:"; sed "s/^/        | /" "$TMP/o744"; fails=$((fails + 1)); fi
+BENCH_ROOT="$TMP/bb3" "$HERE/bench.sh" nr-upall "$NR/upall" > "$TMP/o745" 2>&1; check "a bench of a project whose remapping reaches the directory that holds it (../) is refused" 1 $? "$TMP/o745"
+if grep -q 'holds the project' "$TMP/o745" && [ ! -e "$TMP/bb3/nr-upall" ]; then echo "  ok    saying why, and no bench was made"; else
+  echo "  FAIL  the ../ that holds the project:"; sed "s/^/        | /" "$TMP/o745"; fails=$((fails + 1)); fi
+rm -rf "$FR" "$TMP/frout"
+# K32b (V32): the isolation is over the WHOLE bench, not the project's copy in it. A bench of the same name made in an
+# earlier layout - the project at <bench>/ before its remappings reached ../, at <bench>/<folder> after - kept the old
+# copy of src/ at <bench>/src, `../src` from where the script says to work, and said "isolation verified". Now a refresh
+# removes what an earlier layout left at the bench's root, the check scans the whole bench, a `../` target that is a link
+# into the project is refused, and a copied `../` target is said to come WHOLE.
+LY="$TMP/layout"; mkdir -p "$LY/lib/kit/src" "$LY/lib/other-private" "$LY/proj/src" "$LY/proj/.gauntlet"
+printf 'contract K {}\n' > "$LY/lib/kit/src/K.sol"; printf 'notes\n' > "$LY/lib/other-private/NOTES.txt"
+printf 'contract SECRET_SOURCE {}\n' > "$LY/proj/src/S.sol"; printf '[profile.default]\nsrc = "src"\n' > "$LY/proj/foundry.toml"
+LYR="$(cd "$LY" && pwd -P)"; LYB="$(cd "$TMP" && pwd -P)/lyout/ly"
+BENCH_ROOT="$TMP/lyout" "$HERE/bench.sh" ly "$LY/proj" > "$TMP/o955" 2>&1; check "a bench of a project that does not reach ../ (its copy at <bench>/)" 0 $? "$TMP/o955"
+printf 'kit/=../lib/kit/src/\n' > "$LY/proj/remappings.txt"
+BENCH_ROOT="$TMP/lyout" BENCH_EXCLUDE="src" "$HERE/bench.sh" ly "$LY/proj" > "$TMP/o956" 2>&1
+check "the same bench name, withholding src/, after the project came to reach ../lib (its copy now at <bench>/proj)" 0 $? "$TMP/o956"
+if [ "$(tail -1 "$TMP/o956")" = "$LYB/proj" ] && [ -z "$(grep -rl SECRET_SOURCE "$LYB" 2> /dev/null)" ] && [ ! -e "$LYB/src" ] \
+  && [ "$(ls -A "$LYB" | sort | tr '\n' ' ')" = ".gauntlet-bench lib proj " ] && grep -q 'isolation verified' "$TMP/o956" \
+  && grep -qE "^bench: removed from the bench's root, left by an earlier layout:.* src( |$)" "$TMP/o956"; then
+  echo "  ok    and the old copy at <bench>/ (src/ with it: ../src from the place to work) is removed, and said"; else
+  echo "  FAIL  the bench after a change of layout ($(ls -A "$LYB" | tr '\n' ' '); source in it: $(grep -rl SECRET_SOURCE "$LYB" 2> /dev/null | tr '\n' ' ')):"
+  sed "s/^/        | /" "$TMP/o956"; fails=$((fails + 1)); fi
+if grep -qxF "bench: WARNING - ../lib is copied WHOLE into a bench that withholds: everything in $LYR/lib, not only what the project names in it: kit other-private" "$TMP/o956"; then
+  echo "  ok    and the copied ../lib is said to come whole, naming what it brings"; else
+  echo "  FAIL  no line names what the copied ../lib brings:"; grep -E '\.\./lib' "$TMP/o956" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+# ... and back: a white-box refresh at <bench>/proj (src/ copied there), then the project no longer reaches ../ (the kit
+# moved inside it) and the bench withholds src/ again: the copy at <bench>/proj, src/ in it, must not survive as "the bench's own"
+BENCH_ROOT="$TMP/lyout" "$HERE/bench.sh" ly "$LY/proj" > "$TMP/o957" 2>&1; check "the same bench, white-box, at <bench>/proj" 0 $? "$TMP/o957"
+rm -f "$LY/proj/remappings.txt"
+BENCH_ROOT="$TMP/lyout" BENCH_EXCLUDE="src" "$HERE/bench.sh" ly "$LY/proj" > "$TMP/o958" 2>&1
+check "the same bench name, withholding src/, after the project stopped reaching ../ (its copy back at <bench>/)" 0 $? "$TMP/o958"
+if [ "$(tail -1 "$TMP/o958")" = "$LYB" ] && [ -z "$(grep -rl SECRET_SOURCE "$LYB" 2> /dev/null)" ] && [ ! -e "$LYB/proj" ] && [ ! -e "$LYB/lib" ] \
+  && grep -q 'isolation verified' "$TMP/o958"; then
+  echo "  ok    and the copy the earlier layout left at <bench>/proj, and the ../lib beside it, are removed"; else
+  echo "  FAIL  the bench after the layout changed back ($(ls -A "$LYB" | tr '\n' ' '); source in it: $(grep -rl SECRET_SOURCE "$LYB" 2> /dev/null | tr '\n' ' ')):"
+  sed "s/^/        | /" "$TMP/o958"; fails=$((fails + 1)); fi
+# the check scans the whole bench: a withheld path the removal could not take (a directory it may not write) is outside
+# the project's copy, and the bench is refused - never "isolation verified". Root may write anything: not run as root.
+if [ "$(id -u)" != "0" ]; then
+  BENCH_ROOT="$TMP/lyout" "$HERE/bench.sh" lz "$LY/proj" > "$TMP/o959" 2>&1; check "a white-box bench at <bench>/ (src/ copied)" 0 $? "$TMP/o959"
+  chmod 555 "$TMP/lyout/lz/src"; printf 'kit/=../lib/kit/src/\n' > "$LY/proj/remappings.txt"
+  BENCH_ROOT="$TMP/lyout" BENCH_EXCLUDE="src" "$HERE/bench.sh" lz "$LY/proj" > "$TMP/o960" 2>&1
+  check "the same bench, withholding src/, at <bench>/proj, with the old <bench>/src not removable: refused" 1 $? "$TMP/o960"
+  if grep -qF "bench: EXCLUDED path 'src' is present in the bench, outside the project's copy" "$TMP/o960" && grep -q 'NOT isolated' "$TMP/o960" \
+    && ! grep -q 'isolation verified' "$TMP/o960"; then
+    echo "  ok    naming the path outside the project's copy, and never saying isolation verified"; else
+    echo "  FAIL  a withheld path outside the project's copy:"; sed "s/^/        | /" "$TMP/o960"; fails=$((fails + 1)); fi
+  chmod 755 "$TMP/lyout/lz/src"
+fi
+# a `../` target that is a LINK into the project: it would be the project, source and all - refused before anything is written
+printf 'kit/=../lib/kit/src/\n' > "$LY/proj/remappings.txt"; ln -s "$LY/proj" "$LY/projlink"; printf 'x/=../projlink/test/\n' >> "$LY/proj/remappings.txt"
+BENCH_ROOT="$TMP/lyout" BENCH_EXCLUDE="src" "$HERE/bench.sh" lk "$LY/proj" > "$TMP/o961" 2>&1; check "a ../ target that is a link to the project itself is refused" 1 $? "$TMP/o961"
+if grep -qF "bench: ../projlink -> $LYR/projlink resolves into the project ($LYR/proj)" "$TMP/o961" && [ ! -e "$TMP/lyout/lk" ]; then
+  echo "  ok    saying where it leads, and no bench was made"; else
+  echo "  FAIL  the ../ link into the project:"; sed "s/^/        | /" "$TMP/o961"; ls -A "$TMP/lyout/lk" 2> /dev/null | sed "s/^/        | ls: /"; fails=$((fails + 1)); fi
+rm -rf "$LY" "$TMP/lyout"
 
 # the marker: every bench this script makes holds .gauntlet-bench, a refresh keeps it, and a directory that exists
 # WITHOUT it is refused - rc 1, one line, nothing touched (a reused name once let a refresh with --delete wipe a working copy)
@@ -1165,6 +1371,13 @@ check "fuzz-long.sh with BENCH_ROOT unset, in a tree with no .gauntlet/, is refu
 if grep -qF 'set BENCH_ROOT=<a directory outside the project>' "$TMP/o691" && grep -q 'NOTHING PROVEN' "$TMP/o691" && [ ! -e "$OT/.gauntlet" ]; then
   echo "  ok    and nothing was written into the tree (the log's default directory included)"; else
   echo "  FAIL  fuzz-long.sh in the owner's tree: .gauntlet $([ -e "$OT/.gauntlet" ] && echo CREATED || echo absent):"; sed "s/^/        | /" "$TMP/o691" | head -6; fails=$((fails + 1)); fi
+# K32c (V32b): ESTIMATE_ONLY makes no bench - its refusal there does not say one would be made (the campaign it prices would)
+(cd "$TMP" && env -u BENCH_ROOT -u OUT_DIR HOME="$TMP/fakehome" ESTIMATE_ONLY=1 "$HERE/fuzz-long.sh" "$OT") > "$TMP/o969" 2>&1
+check "fuzz-long.sh ESTIMATE_ONLY=1 with BENCH_ROOT unset, in a tree with no .gauntlet/, is refused" 2 $? "$TMP/o969"
+if grep -qF 'fuzz-long: ESTIMATE_ONLY makes no bench and writes nothing' "$TMP/o969" && ! grep -q 'would be made' "$TMP/o969" \
+  && grep -qF 'set BENCH_ROOT=<a directory outside the project>' "$TMP/o969" && [ ! -e "$OT/.gauntlet" ]; then
+  echo "  ok    and the refusal is the campaign's, not a bench this run would make; nothing written"; else
+  echo "  FAIL  ESTIMATE_ONLY's refusal in the owner's tree:"; sed "s/^/        | /" "$TMP/o969" | head -6; fails=$((fails + 1)); fi
 rm -rf "$DP" "$TMP/fakehome" "$OT" "$TMP/otb" "$TMP/bbout"
 
 # ================================================================= round.sh (the ROUND line, written and read back; no forge needed)
@@ -1217,17 +1430,23 @@ refused "an id already in LOG.md" "already has a ROUND line for 'r05'" --id r05
 refused "a required field left empty" "--model is required" --model ""
 refused "an argument it does not know" "unknown argument '--frobnicate'" -- --frobnicate 1
 # `gate pass (read-back pending)` (state/README.md): an interview played from an absent owner's files, the scope not yet
-# read back - a real state, written for an interview only, in those words only
+# read back - a real state, written for an interview only, in those words only ... and for a SPEC (K32, FR16): phase 1's
+# gate also waits on the owner's read (AGENTS.md section 3), the owner absent the same way
 rn=760
-refused "the read-back gate on a round that is not an interview" "is an interview's only" --gate "pass (read-back pending)"
+refused "the read-back gate on a round that is neither an interview nor a spec" "is an interview's or a spec's only" --gate "pass (read-back pending)"
 refused "the read-back gate in other words" "--gate is pass, fail" --type interview --phase 0 --gate "pass (read back pending)"
 rround --id i01 --type interview --phase 0 --gate "pass (read-back pending)" -- --dry-run > "$TMP/o736" 2>&1
 check "round.sh: an interview with the read-back pending, gate 'pass (read-back pending)' (--dry-run)" 0 $? "$TMP/o736"
+rround --id s01 --type spec --phase 1 --gate "pass (read-back pending)" -- --dry-run > "$TMP/o953" 2>&1
+check "round.sh: a spec with the owner's read pending, gate 'pass (read-back pending)' (--dry-run)" 0 $? "$TMP/o953"
+refused "the read-back gate on a battery round (phase 3's gate waits on no read)" "is an interview's or a spec's only" --type battery --phase 3 --gate "pass (read-back pending)"
 RB="$TMP/round-LOG-readback.md"; printf '# LOG\n' > "$RB"; grep '^ROUND ' "$TMP/o736" >> "$RB"
 printf 'ROUND x09 | phase 4 | regression | m | bench b | 2026-03-09 | 0H 0M 0L 0I reasoned 0 | gate pass (read-back pending) | cost not measured | r.md\n' >> "$RB"
-"$HERE/round.sh" --json "$RB" > "$TMP/o737" 2> "$TMP/o737e"; check "round.sh --json: the read-back gate read on an interview, refused on a regression round" 1 $? "$TMP/o737e"
-if grep -q '"id":"i01",.*"gate":"pass (read-back pending)"' "$TMP/o737" && [ "$(wc -l < "$TMP/o737" | tr -d ' ')" = "1" ] && grep -q "line 3 is not a ROUND line of the fixed shape (gate" "$TMP/o737e"; then
-  echo "  ok    and the interview's gate reads back as written; the regression round's is named"; else
+grep '^ROUND ' "$TMP/o953" >> "$RB"
+"$HERE/round.sh" --json "$RB" > "$TMP/o737" 2> "$TMP/o737e"; check "round.sh --json: the read-back gate read on an interview and a spec, refused on a regression round" 1 $? "$TMP/o737e"
+if grep -q '"id":"i01",.*"gate":"pass (read-back pending)"' "$TMP/o737" && grep -q '"id":"s01",.*"type":"spec",.*"gate":"pass (read-back pending)"' "$TMP/o737" \
+  && [ "$(wc -l < "$TMP/o737" | tr -d ' ')" = "2" ] && grep -q "line 3 is not a ROUND line of the fixed shape (gate" "$TMP/o737e"; then
+  echo "  ok    and the interview's and the spec's gates read back as written; the regression round's is named"; else
   echo "  FAIL  --json did not read the read-back gate back, or did not refuse it on a regression round:"; cat "$TMP/o737" "$TMP/o737e" | sed "s/^/        | /"; fails=$((fails + 1)); fi
 "$HERE/round.sh" "$RL" --id r06 --phase 4 --type regression --model m --bench b --dates 2026-03-09 --gate pass --report r.md > "$TMP/o143" 2>&1
 check "round.sh refuses a round with the findings left out" 2 $? "$TMP/o143"
@@ -2648,6 +2867,48 @@ EOF
   rm -f "$M/test/Skip.t.sol"
 
   USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o30" 2>&1; check "long fuzz on a project that has the profile and a campaign" 0 $? "$TMP/o30"
+  # K32 (FR16: four long campaigns of ~10 minutes and a shrink of ~10 more, the cost said only after - "far over my
+  # estimate"): the long fuzz says what it will cost BEFORE the campaign - runs x depth, the everyday campaigns' measured
+  # time (the battery's last log, just written above) scaled by calls, and what shrinking a failure adds
+  fl_first="$(grep -n -m1 '^Ran [0-9]* test' "$TMP/o30" | cut -d: -f1)"; fl_cost="$(grep -n -m1 '^fuzz-long: what it will cost' "$TMP/o30" | cut -d: -f1)"
+  if [ -n "$fl_cost" ] && [ -n "$fl_first" ] && [ "$fl_cost" -lt "$fl_first" ] \
+    && grep -qF 'fuzz-long: what it will cost, said before it runs (AGENTS.md section 5): 8 runs x 8 depth = 64 calls per campaign, 4x the everyday 4 x 4' "$TMP/o30" \
+    && grep -qE "^fuzz-long: the everyday campaigns took [0-9.]+ s in the battery's last log \(.*/02-test\.txt, [0-9]+ suite\(s\) with a campaign\): about [0-9.]+ (s|min) at 4x the calls" "$TMP/o30" \
+    && grep -qE '^fuzz-long: a failure is then shrunk \(shrink_run_limit [0-9]+, about 10 minutes on a v4 hook measured\)' "$TMP/o30"; then
+    echo "  ok    and before the campaign it said what it will cost: runs x depth, the everyday time scaled, the shrink"; else
+    echo "  FAIL  the long fuzz did not say its cost before the campaign (cost line ${fl_cost:-none}, first test line ${fl_first:-none}):"
+    grep -a '^fuzz-long:' "$TMP/o30" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  mv "$M/.gauntlet/reports/02-test.txt" "$TMP/02-test.keep"
+  USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o954" 2>&1; check "long fuzz with no battery log to scale from" 0 $? "$TMP/o954"
+  if grep -q "^fuzz-long: no everyday time measured (no battery log at .*/02-test.txt with a campaign in it)" "$TMP/o954" \
+    && grep -qF '8 runs x 8 depth = 64 calls per campaign' "$TMP/o954"; then
+    echo "  ok    and there it says the time is not measured, not a guess"; else
+    echo "  FAIL  with no battery log:"; grep -a '^fuzz-long:' "$TMP/o954" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  mv "$TMP/02-test.keep" "$M/.gauntlet/reports/02-test.txt"
+  # K32b (V32): "say how long first" had no place to stop but Ctrl-C - the cost was printed and the campaign started in
+  # the same breath. ESTIMATE_ONLY=1 says the cost and stops there: rc 0, no campaign, no bench, nothing written.
+  fl_before="$(cksum < "$M/.gauntlet/reports/05-fuzz-long.txt" 2> /dev/null)"
+  ESTIMATE_ONLY=1 "$HERE/fuzz-long.sh" "$M" > "$TMP/o967" 2>&1; check "fuzz-long with ESTIMATE_ONLY=1: the cost, and no campaign" 0 $? "$TMP/o967"
+  if grep -qF 'fuzz-long: what it will cost, said before it runs (AGENTS.md section 5): 8 runs x 8 depth' "$TMP/o967" \
+    && grep -q "^fuzz-long: the everyday campaigns took [0-9.]* s in the battery's last log" "$TMP/o967" && ! grep -q '^Ran [0-9]' "$TMP/o967" \
+    && [ "$(tail -1 "$TMP/o967")" = "fuzz-long: ESTIMATE_ONLY=1 - the cost above, and no campaign: nothing was run, nothing written. The same command without it runs the campaign." ] \
+    && [ "$(cksum < "$M/.gauntlet/reports/05-fuzz-long.txt" 2> /dev/null)" = "$fl_before" ] && [ -z "$(ls -d "$M/.gauntlet/bench/fuzz-long-"* 2> /dev/null)" ]; then
+    echo "  ok    and it stops there: no test ran, no bench was made, the last log untouched, the last line says so"; else
+    echo "  FAIL  ESTIMATE_ONLY=1 (benches: $(ls -d "$M/.gauntlet/bench/fuzz-long-"* 2> /dev/null | wc -l | tr -d ' ')):"; grep -a -e '^fuzz-long:' -e '^Ran ' "$TMP/o967" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # ... and a battery log whose campaign's time is of a shape not read here is not "no battery log with a campaign in it"
+  mkdir -p "$TMP/garbled"; sed -E 's/finished in [0-9.]+(s|ms|µs|μs)/finished in 1.2m/' "$M/.gauntlet/reports/02-test.txt" > "$TMP/garbled/02-test.txt"
+  ESTIMATE_ONLY=1 OUT_DIR="$TMP/garbled" "$HERE/fuzz-long.sh" "$M" > "$TMP/o968" 2>&1; check "fuzz-long's estimate over a battery log whose campaign time is unreadable" 0 $? "$TMP/o968"
+  if grep -qF "fuzz-long: no everyday time measured (the battery's last log, $TMP/garbled/02-test.txt, has a campaign whose time is not of a shape read here): the long campaign's time is not guessed here" "$TMP/o968" \
+    && ! grep -q 'with a campaign in it' "$TMP/o968"; then
+    echo "  ok    and it says the time could not be read, not that there was no campaign"; else
+    echo "  FAIL  the unreadable time:"; grep -a '^fuzz-long:' "$TMP/o968" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # K32c (V32b): any value but empty or 0 asks for the cost alone - `true` ran a real campaign
+  ESTIMATE_ONLY=true "$HERE/fuzz-long.sh" "$M" > "$TMP/o970" 2>&1; check "fuzz-long with ESTIMATE_ONLY=true: the cost, and no campaign" 0 $? "$TMP/o970"
+  if ! grep -q '^Ran [0-9]' "$TMP/o970" && [ "$(cksum < "$M/.gauntlet/reports/05-fuzz-long.txt" 2> /dev/null)" = "$fl_before" ] \
+    && [ "$(tail -1 "$TMP/o970")" = "fuzz-long: ESTIMATE_ONLY=true - the cost above, and no campaign: nothing was run, nothing written. The same command without it runs the campaign." ] \
+    && [ -z "$(ls -d "$M/.gauntlet/bench/fuzz-long-"* 2> /dev/null)" ]; then
+    echo "  ok    and it stops there, as with 1: no test ran, no bench, the last log untouched"; else
+    echo "  FAIL  ESTIMATE_ONLY=true ran something:"; grep -a -e '^fuzz-long:' -e '^Ran ' "$TMP/o970" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   USE_BENCH=0 FOUNDRY_PROFILE=nosuchprofile "$HERE/fuzz-long.sh" "$M" > "$TMP/o31" 2>&1
   check "a profile that does not exist proves nothing" 2 $? "$TMP/o31"
   USE_BENCH=0 MATCH="--match-contract NoSuchContractAnywhere" "$HERE/fuzz-long.sh" "$M" > "$TMP/o32" 2>&1
@@ -2786,6 +3047,117 @@ EOF
   LABEL=m11 OUT_DIR="$TMP/mut" EXPECT=green BASELINE_MAY_BE_RED=1 \
     "$HERE/mutate.sh" "$M" test/Red.t.sol "assertEq(uint256(1), 2);" "assertEq(uint256(1), 3);" > "$TMP/o48" 2>&1
   check "and a 'fix' that leaves it red FAILS" 1 $? "$TMP/o48"
+  # ---- a finding's MUTATION-TESTED takes TWO runs on the same fix variant (K32b, V32): the finding's test green on it
+  # (EXPECT=green BASELINE_MAY_BE_RED=1, that test alone) AND the everyday suite green on it (EXPECT=green, the battery's
+  # filter) - doctrine/EVIDENCE.md section 2. V32's P-8: a "fix" that refused every pool but the test's own turned the finding's
+  # test green and broke the everyday suite, and the first run alone said VARIANT PASSED. The same shape here: only the
+  # test's own registrant may register. It passes the first run, fails the second, and does not earn the label.
+  MF="$TMP/minif"; mkdir -p "$MF/src" "$MF/test" "$MF/pending" "$MF/.gauntlet"; ln -s "$(cd "$KIT/lib" && pwd -P)" "$MF/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[profile.pending]\nsrc = "src"\ntest = "pending"\nlibs = ["lib"]\n' > "$MF/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract Reg {\n    error Taken();\n    mapping(uint256 => address) public ownerOf;\n    function register(uint256 id) external {\n        ownerOf[id] = msg.sender;\n    }\n}\n' > "$MF/src/Reg.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/Reg.sol";\ncontract RegUnit is Test { function test_anyone_registers_a_free_id() public { Reg r = new Reg(); r.register(7); assertEq(r.ownerOf(7), address(this)); } }\n' > "$MF/test/Reg.t.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/Reg.sol";\n/// the exact error - not a bare vm.expectRevert(), which EVIDENCE section 2 refuses\ncontract F1 is Test { function test_F1_a_stranger_cannot_take_a_registered_id() public { Reg r = new Reg(); vm.prank(address(0xA11CE)); r.register(1); vm.prank(address(0xB0B)); vm.expectRevert(Reg.Taken.selector); r.register(1); assertEq(r.ownerOf(1), address(0xA11CE), "exact selector above, not a bare vm.expectRevert()"); } }\n' > "$MF/pending/F-1.t.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/Reg.sol";\ncontract F2 is Test { function test_F2_the_same_with_a_bare_expectRevert() public { Reg r = new Reg(); vm.prank(address(0xA11CE)); r.register(1); vm.prank(address(0xB0B)); vm.expectRevert(); r.register(1); } }\n' > "$MF/pending/F-2.t.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/Reg.sol";\ncontract F3 is Test { function test_F3_the_same_by_a_low_level_call() public { Reg r = new Reg(); vm.prank(address(0xA11CE)); r.register(1); vm.prank(address(0xB0B)); (bool ok,) = address(r).call(abi.encodeCall(Reg.register, (1))); assertFalse(ok, "taken"); } }\n' > "$MF/pending/F-3.t.sol"
+  mf_run() { # mf_run <label> <new string> <finding|everyday> [test file]: one mutate.sh run of the documented pair
+    if [ "$3" = finding ]; then
+      FOUNDRY_PROFILE=pending EXPECT=green BASELINE_MAY_BE_RED=1 TEST_FLAGS="--match-path pending/${4:-F-1.t.sol}" LABEL="$1" OUT_DIR="$TMP/mut" \
+        "$HERE/mutate.sh" "$MF" src/Reg.sol "ownerOf[id] = msg.sender;" "$2"
+    else
+      EXPECT=green LABEL="$1" OUT_DIR="$TMP/mut" "$HERE/mutate.sh" "$MF" src/Reg.sol "ownerOf[id] = msg.sender;" "$2"
+    fi
+  }
+  MF_GONE='if (msg.sender != address(0xA11CE)) revert Taken(); ownerOf[id] = msg.sender;'
+  MF_FIX='if (ownerOf[id] != address(0)) revert Taken(); ownerOf[id] = msg.sender;'
+  mf_run mf1 "$MF_GONE" finding > "$TMP/o962" 2>&1; mf1=$?
+  mf_run mf2 "$MF_GONE" everyday > "$TMP/o963" 2>&1; mf2=$?
+  check "a finding's fix variant that deletes the test's subject: the finding's test alone passes it" 0 "$mf1" "$TMP/o962"
+  check "... and the everyday suite on the same variant FAILS it: MUTATION-TESTED not earned" 1 "$mf2" "$TMP/o963"
+  if grep -qF "mutate: VARIANT PASSED is HALF of a finding's MUTATION-TESTED" "$TMP/o962" && grep -q 'test_anyone_registers_a_free_id' "$TMP/o963"; then
+    echo "  ok    the first run says it is half, and names the second; the second names the everyday test the variant broke"; else
+    echo "  FAIL  the finding run does not say it is half of the label, or the everyday run did not name the broken test:"
+    grep -E '^mutate:|VARIANT|FAIL' "$TMP/o962" "$TMP/o963" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  mf_run mf3 "$MF_FIX" finding > "$TMP/o964" 2>&1; mf3=$?
+  mf_run mf4 "$MF_FIX" everyday > "$TMP/o965" 2>&1; mf4=$?
+  if [ "$mf3" = 0 ] && [ "$mf4" = 0 ] && ! grep -q 'WARNING' "$TMP/o964"; then
+    echo "  ok    a real fix passes both runs (rc $mf3 and $mf4): the pair that earns MUTATION-TESTED, no warning on a named error - the rule cited in a comment and in an assertion's message beside it is not code"; else
+    echo "  FAIL  a real fix: finding run rc $mf3, everyday run rc $mf4"; tail -n 4 "$TMP/o964" "$TMP/o965" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # ... and the finding's test must expect the EXACT failure: a bare vm.expectRevert() is green on any revert
+  mf_run mf5 "$MF_FIX" finding F-2.t.sol > "$TMP/o966" 2>&1; mf5=$?
+  mf_warned() { # mf_warned <out> <file> <shape>: the WARNING line for that file, the shape named under it, and (K32d,
+    # V32c) the line that says the check knows a few shapes only
+    grep -qF "mutate: WARNING - $2: the finding's test accepts any revert - not evidence for a finding's label, EVIDENCE section 2" "$1" \
+      && grep -qF "($3)" "$1" && grep -qF "        This check knows a few shapes only: its silence is not evidence." "$1"
+  }
+  if [ "$mf5" = 0 ] && mf_warned "$TMP/o966" pending/F-2.t.sol "a bare vm.expectRevert()"; then
+    echo "  ok    a finding's test with a bare vm.expectRevert(): the variant passes, and a WARNING names the file - not the label"; else
+    echo "  FAIL  a bare vm.expectRevert() in the finding's test is not named (rc $mf5):"; grep -E '^mutate:|^        \(|VARIANT' "$TMP/o966" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # K32c (V32b's Q-2): the same claim by a low-level call whose success flag is only asserted false is green on any revert too
+  mf_run mf6 "$MF_FIX" finding F-3.t.sol > "$TMP/o971" 2>&1; mf6=$?
+  if [ "$mf6" = 0 ] && mf_warned "$TMP/o971" pending/F-3.t.sol "a low-level call whose success flag is only asserted false"; then
+    echo "  ok    a finding's test by call + assertFalse: the variant passes, and the WARNING names that shape"; else
+    echo "  FAIL  a call whose flag is only asserted false is not named (rc $mf6):"; grep -E '^mutate:|^        \(|VARIANT' "$TMP/o971" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # K32c (V32b): BASELINE_MAY_BE_RED=1 over a baseline that came out GREEN - the finding's test is not red on the code
+  EXPECT=green BASELINE_MAY_BE_RED=1 LABEL=mf7 OUT_DIR="$TMP/mut" "$HERE/mutate.sh" "$MF" src/Reg.sol "ownerOf[id] = msg.sender;" "$MF_FIX" > "$TMP/o972" 2>&1
+  check "BASELINE_MAY_BE_RED=1 over a green baseline: the variant is still judged" 0 $? "$TMP/o972"
+  if grep -qF "mutate: BASELINE_MAY_BE_RED=1, and the baseline came out GREEN: condition 1 of a finding's MUTATION-TESTED (red on the code as it is) FAILED" "$TMP/o972" \
+    && ! grep -q 'HALF' "$TMP/o972"; then
+    echo "  ok    and one line says condition 1 (red on the code) failed"; else
+    echo "  FAIL  a green baseline under BASELINE_MAY_BE_RED=1 is not said:"; grep -E '^mutate:|VARIANT' "$TMP/o972" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  # K32c (V32b), K32d (V32c): a guard that reverts with the finding's OWN error turns an exact-selector test green without
+  # fixing anything - both runs pass. Only a CONTROL goes red on it: the SAME call on the SAME shape accepted, only the
+  # finding's condition different (doctrine/EVIDENCE.md section 2, condition 3). The finding: a LIVE launch cannot be
+  # registered again. F-5's control is the weak one K32c taught (a fresh key, another fee, on the same terms): V32c's two
+  # non-fix variants pass it, both runs. F-6's is the tight one (V32c's Q-1t): the same pool shape registered twice while
+  # NOT live, accepted - both variants go red on it, V32b's guard too, and the real fix earns the label.
+  printf 'pragma solidity ^0.8.26;\ncontract Launch {\n    error BadTerms();\n    struct L { address treasury; uint256 maxBuy; bool live; }\n    mapping(bytes32 => L) internal launches;\n    function register(uint256 id, uint24 fee, address treasury, uint256 maxBuy) external {\n        if (maxBuy == 0) revert BadTerms();\n        L storage l = launches[keccak256(abi.encode(id, fee))];\n        l.treasury = treasury;\n        l.maxBuy = maxBuy;\n    }\n    function start(uint256 id, uint24 fee) external { launches[keccak256(abi.encode(id, fee))].live = true; }\n    function maxBuyOf(uint256 id, uint24 fee) external view returns (uint256) { return launches[keccak256(abi.encode(id, fee))].maxBuy; }\n}\n' > "$MF/src/Launch.sol"
+  LH='pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/Launch.sol";\n'
+  LS='Launch l = new Launch(); l.register(1, 3000, address(0x7EA), 10e18); l.start(1, 3000);'
+  LQ='vm.expectRevert(Launch.BadTerms.selector); l.register(1, 3000, address(0xE71), 1000e18);'
+  printf "${LH}contract LaunchUnit is Test { function test_a_launch_registers_and_starts() public { %s assertEq(l.maxBuyOf(1, 3000), 10e18); } }\n" "$LS" > "$MF/test/Launch.t.sol"
+  printf "${LH}contract F4 is Test { function test_F4_a_live_launch_cannot_be_registered_again() public { %s %s } }\n" "$LS" "$LQ" > "$MF/pending/F-4.t.sol"
+  printf "${LH}contract F5 is Test { function test_F5_with_a_weak_control() public { %s l.register(2, 500, address(0xE71), 1000e18); assertEq(l.maxBuyOf(2, 500), 1000e18); %s } }\n" "$LS" "$LQ" > "$MF/pending/F-5.t.sol"
+  printf "${LH}contract F6 is Test { function test_F6_with_a_tight_control() public { %s l.register(2, 3000, address(0x7EA), 10e18); l.register(2, 3000, address(0xE71), 1000e18); assertEq(l.maxBuyOf(2, 3000), 1000e18); %s } }\n" "$LS" "$LQ" > "$MF/pending/F-6.t.sol"
+  LF_MB='if (maxBuy == 0) revert BadTerms();'; LF_TR='l.treasury = treasury;'
+  lf_run() { # lf_run <label> <old string> <new string> <finding's test file | everyday>
+    if [ "$4" = everyday ]; then
+      EXPECT=green LABEL="$1" OUT_DIR="$TMP/mut" "$HERE/mutate.sh" "$MF" src/Launch.sol "$2" "$3"
+    else
+      FOUNDRY_PROFILE=pending EXPECT=green BASELINE_MAY_BE_RED=1 TEST_FLAGS="--match-path pending/$4" LABEL="$1" OUT_DIR="$TMP/mut" \
+        "$HERE/mutate.sh" "$MF" src/Launch.sol "$2" "$3"
+    fi
+  }
+  LF_SAME='if (maxBuy == 0 || maxBuy > 100e18) revert BadTerms();'                              # V32b: a guard on another argument
+  LF_VX='if (maxBuy == 0 || (treasury == address(0xE71) && fee == 3000)) revert BadTerms();'   # V32c: the test's values and shape
+  LF_VS='if (l.treasury != address(0) && fee == 3000) revert BadTerms(); l.treasury = treasury;' # V32c: any registered 3000 pool
+  LF_FIX='if (l.live) revert BadTerms(); l.treasury = treasury;'
+  lf_run lf1 "$LF_MB" "$LF_SAME" F-4.t.sol > "$TMP/o973" 2>&1; lf1=$?
+  lf_run lf2 "$LF_MB" "$LF_SAME" everyday > "$TMP/o974" 2>&1; lf2=$?
+  if [ "$lf1" = 0 ] && [ "$lf2" = 0 ] && ! grep -q 'WARNING' "$TMP/o973"; then
+    echo "  ok    the same-error guard passes BOTH runs for an exact-selector test with no control (rc $lf1, $lf2), unwarned: the gap"; else
+    echo "  FAIL  the same-error variant without a control: finding run rc $lf1, everyday rc $lf2"; grep -E '^mutate:|VARIANT|FAIL' "$TMP/o973" "$TMP/o974" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  lf_run lw1 "$LF_MB" "$LF_VX" F-5.t.sol > "$TMP/o980" 2>&1; lw1=$?
+  lf_run lw2 "$LF_MB" "$LF_VX" everyday > "$TMP/o981" 2>&1; lw2=$?
+  lf_run lw3 "$LF_TR" "$LF_VS" F-5.t.sol > "$TMP/o982" 2>&1; lw3=$?
+  lf_run lw4 "$LF_TR" "$LF_VS" everyday > "$TMP/o983" 2>&1; lw4=$?
+  if [ "$lw1$lw2$lw3$lw4" = 0000 ]; then
+    echo "  ok    the WEAK control (a fresh key, another fee, the same terms): both non-fix variants pass both runs (V32c) - why it is not taught"; else
+    echo "  FAIL  the weak control: rc $lw1 $lw2 (test's values) $lw3 $lw4 (any registered pool of that fee)"
+    grep -E '^mutate:|VARIANT|^\[FAIL' "$TMP/o980" "$TMP/o981" "$TMP/o982" "$TMP/o983" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  for v in SAME:975 VX:984 VS:985; do
+    case "${v%%:*}" in SAME) o="$LF_MB" n="$LF_SAME" ;; VX) o="$LF_MB" n="$LF_VX" ;; VS) o="$LF_TR" n="$LF_VS" ;; esac
+    lf_run "lt-${v%%:*}" "$o" "$n" F-6.t.sol > "$TMP/o${v#*:}" 2>&1
+    check "a non-fix variant (${v%%:*}) against the TIGHT control in the finding's file: VARIANT FAILED, the label refused" 1 $? "$TMP/o${v#*:}"
+    if grep -q '^\[FAIL: BadTerms()\] test_F6_with_a_tight_control' "$TMP/o${v#*:}"; then
+      echo "  ok    and it is the control that went red: the same shape, not live, refused with the finding's own error"; else
+      echo "  FAIL  the tight control did not go red for ${v%%:*}:"; grep -E '^\[FAIL|VARIANT' "$TMP/o${v#*:}" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  done
+  lf_run lf4 "$LF_TR" "$LF_FIX" F-6.t.sol > "$TMP/o976" 2>&1; lf4=$?
+  lf_run lf5 "$LF_TR" "$LF_FIX" everyday > "$TMP/o986" 2>&1; lf5=$?
+  if [ "$lf4" = 0 ] && [ "$lf5" = 0 ]; then
+    echo "  ok    the real fix passes both runs against the tight control (rc $lf4, $lf5): the label earned - the control does not block a fix"; else
+    echo "  FAIL  the real fix with the tight control: finding run rc $lf4, everyday rc $lf5"; grep -E '^mutate:|VARIANT|^\[FAIL' "$TMP/o976" "$TMP/o986" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$MF"
   # the exception has TWO conditions, and each has to be seen refusing alone: without the variable a red baseline proves
   # nothing under EXPECT=green, and WITH it a mutant (EXPECT=red) over a red baseline must never come out KILLED
   LABEL=m14 OUT_DIR="$TMP/mut" EXPECT=green \
