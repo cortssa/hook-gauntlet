@@ -82,6 +82,16 @@ V4_MANAGER=source scripts/battery.sh foundry-kit/v4
 Done: `INSTALL-V4 OK`, then `BATTERY PASSED` with `suites test=… test/examples=… test/sim=…`. `V4_MANAGER=source`
 means the manager compiled from those sources; the manager that actually exists on your chain is step 8.
 
+YOUR project reaches these sources through the kit, never through a copy: once the kit is vendored in it (step 7b's
+`lib/hook-gauntlet`), one command writes its `remappings.txt` and `foundry.toml` lines and builds it -
+
+```sh
+<kit>/scripts/setup-deps.sh <proj>     # --dry-run first to see every line; it refuses a project with its own lib/v4-core
+```
+
+Done: `setup-deps: DONE - ... forge build green`. `scripts/doctor.sh <proj>` then says `deps: ok`. What it writes, and
+why: step 7b.
+
 ## 4. The eleventh judge on the example: the simulation sandbox
 
 ```sh
@@ -149,6 +159,16 @@ action per capability, the `HostileERC20` switches wired in as actions (they do 
 your spec's section 3 on `InvariantBase`; a smoke test that asserts every action succeeded a few times; `fail_on_revert =
 true` and the census wiring (`writeCensus` in `afterInvariant`, `fs_permissions` for `./census`). How: `doctrine/INVARIANTS.md`
 and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` are the worked examples.
+
+**One command writes the dependency lines below: `<kit>/scripts/setup-deps.sh <proj>`.** It finds the kit walking up
+from `<proj>` for `lib/hook-gauntlet` (or `--kit PATH`), writes or repairs `remappings.txt` and the `[profile.default]`
+lines of `foundry.toml` for that layout, prints each line it wrote or changed, then runs `forge build` (`--dry-run`: it
+prints, and writes and builds nothing). It never copies a library into the project, and refuses one that has its own
+`lib/forge-std` or `lib/v4-core` (a copy of the kit's? remove it, or `SETUP_DEPS_KEEP_LIB=1`), a kit without Uniswap's
+sources (step 3), a project with no kit in reach. Measured 2026-09-30: FR16's layout (the eight remappings and the
+`foundry.toml` lines it writes are that project's, byte for byte), a project with the kit's libraries copied into its
+`lib/` (refused; then, `lib/` removed, repaired and built), the kit inside the project (built from nothing, 21 s). The
+paragraphs below are what it writes, and why.
 
 **`<kit>` in the remappings below: a RELATIVE path, for a portable project.** With the kit vendored at `lib/hook-gauntlet`
 (a submodule or a copy - what the dossier's section 10 and the skills assume), `<kit>` is relative to the directory of

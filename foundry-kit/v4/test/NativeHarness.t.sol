@@ -42,6 +42,7 @@ contract NativeHarnessTest is V4Harness {
         plain = _initNativePool(IHooks(address(0)), 3000, 60, SQRT_PRICE_1_1, currency1);
         _addFullRangeLiquidity(plain, provider, 100e18);
 
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to fewer bits on purpose (K46)
         hook = HostileHook(
             _deployHook(
                 type(HostileHook).creationCode,

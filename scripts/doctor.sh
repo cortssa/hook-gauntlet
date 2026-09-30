@@ -6,10 +6,13 @@
 # value of an environment variable: RPC_URL is reported as set or not set, nothing else. The commands it prints are for
 # the owner to read and run - an agent shows them to the owner and installs only on the owner's yes.
 #
-# Usage:   scripts/doctor.sh
+# Usage:   scripts/doctor.sh [<proj>]
 # Output:  one line per requirement - `ok <name> <version>`, `missing <name> - <why>` or `optional-missing <name> - <why>` -
 #          each missing item followed by indented lines with the command for THIS system: Linux (apt), macOS (brew), or
 #          Windows outside WSL (Git Bash / MSYS / Cygwin): the WSL steps first, then the Linux commands, run inside WSL.
+#          With <proj>, one line more before the last: `deps: ok`, or `deps: <proj>: not set up - scripts/setup-deps.sh
+#          <proj>` (what `scripts/setup-deps.sh --check` reads: remappings.txt and foundry.toml as step 7b writes them;
+#          nothing written), and then `deps` is a missing item.
 #          The last line is exactly `doctor: ready` or `doctor: missing: a, b` (required items only).
 # Exit:    0 ready; 1 something required is missing.
 #
@@ -176,6 +179,20 @@ fi
 if [ -n "${RPC_URL:-}" ]; then echo "ok RPC_URL set (its value is never printed)"; else
   want RPC_URL "not set: needed only to fetch the real pool manager's bytecode (scripts/fetch-bytecode.sh) and for a fork"
   echo "  set: export RPC_URL=<a read-only endpoint>   (in the shell that runs the kit; never in a tracked file, never in a chat)"
+fi
+
+# ---------------------------------------------------------------------------- a project's dependencies (step 7b), when one is named
+if [ -n "${1:-}" ]; then
+  if [ ! -x "$HERE/setup-deps.sh" ]; then
+    echo "deps: $1: not checked - $HERE/setup-deps.sh is not there"; missing_list="${missing_list:+$missing_list, }deps"
+  else
+    dout="$("$HERE/setup-deps.sh" --check "$1" 2>&1)"; drc=$?
+    if [ "$drc" = 0 ]; then echo "deps: ok"; else
+      echo "deps: $1: not set up - scripts/setup-deps.sh $1"
+      [ "$drc" = 2 ] && printf '%s\n' "$dout" | grep -E '^setup-deps: ' | sed 's/^/  it refuses now: /'
+      missing_list="${missing_list:+$missing_list, }deps"
+    fi
+  fi
 fi
 
 if [ -z "$missing_list" ]; then

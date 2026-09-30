@@ -100,10 +100,10 @@ The phases say what exists. **`doctrine/NEXT.md` says when.** It is a decision t
 condition is true. Run it every time you arrive with no context and every time you finish anything. It is how you
 know that the battery and the long fuzz come before a model round, that the black-box goes early, that a change
 with no bytecode gets a verifier and not a round, that a change after promotion sends you back, and when to stop.
-`scripts/next.sh <STATE.md>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows
+`scripts/next.sh <proj>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows
 that need your judgement first - or, the owner absent and nothing left that does not wait on them, `STOP - paused,
 waiting on the owner`: the route's end until they answer (`NEXT.md` row 3, and its last section for what the script
-prints; `state/README.md` for the rest).
+prints; `state/README.md` for the rest). Your next command is `scripts/next.sh <proj>`. Run it; do not read it.
 
 ## 4. State on disk
 
@@ -120,6 +120,10 @@ STATE.md        current phase, what is open, what blocks it
 DECISIONS.md    one entry per owner decision, dated, with the reason
 LOG.md          one entry per change, never for reads
 ```
+
+The project's dependencies: run `scripts/setup-deps.sh <proj>` - it writes the project's `remappings.txt` and
+`foundry.toml` lines for the kit's libraries and builds it; never copy a library into the project (`QUICKSTART.md`
+steps 3 and 7b).
 
 Everything the route produces for the hook lives beside them: `.gauntlet/SPEC.md` (phase 1; a project that already has
 its own `SPEC.md` keeps it, and the route's spec links to it rather than copying), the filled briefs in
@@ -311,6 +315,11 @@ adapters/experimental/codex/  the same roles as separate tasks (experimental: no
 
 The core (this file, `doctrine/`, `briefs/`, `state/`, `scripts/`) depends on no vendor feature. The adapters are
 the thin layer that does, and they are the part that ages.
+
+A small model on your own machine: `adapters/local-models/README.md` - the one run of this kit by a 27B model in Hermes
+(Bonsai 2 27B, llama.cpp, 2026-09-29/30): the server and agent configuration that ran, what was measured, and what the
+run showed - it did not finish phase 3, and its record was invented. Read it before you plan one; it is a measurement,
+not a supported path.
 
 ## 8. Honest limits, so you do not oversell the result
 

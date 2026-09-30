@@ -11,6 +11,7 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
+import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {IERC20Minimal} from "v4-core/src/interfaces/external/IERC20Minimal.sol";
 import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
 import {MinimalRouter} from "./MinimalRouter.sol";
@@ -59,6 +60,20 @@ interface IUsdcBlocklist {
 /// And `V4_MANAGER` takes exactly three values. Anything else - `fixtrue`, `FIXTURE`, an empty string - is a
 /// revert, not a default. A mode that falls back to "source" on anything it does not recognise is the same
 /// silent fallback, reached by a typo instead of a missing file.
+///
+/// ## Two things it does to every hook suite (K46)
+///
+/// **The clock starts at a realistic time.** forge starts a test at timestamp 1 and block 1. A hook that keys state
+/// on time (a start, epochs, windows) then reads 0 where it should have written a time, and a test cannot tell "never
+/// set" from "set at the start": a hook whose clock never started passed a suite that way. So the manager's set-up
+/// warps to `V4_T0` and rolls to `V4_BLOCK0`, once, before any hook exists. A warp after `setUp` wins. The fork keeps the
+/// chain's own clock at its pinned block.
+///
+/// **The address's permission bits are held against the callbacks the hook implements.** `_deployHook` calls each of
+/// the ten callbacks as the manager and fails, naming the callback, when one that does something has no bit on the
+/// address: the manager never calls it, so its code is dead in production and alive only in a unit test that calls it
+/// by hand. A bit set for a callback that reverts on the probe is a log line, not a failure. `_skipPermissionCheck` is
+/// the escape for a suite that deploys a mis-flagged hook on purpose (`HostileHook` answers every callback).
 abstract contract V4Harness is Test {
     /// @notice what the harness decided to do about the manager, before doing it. (Appended to, never reordered: the
     /// numbers of the first three are what older logs and tests say.)
@@ -224,7 +239,30 @@ abstract contract V4Harness is Test {
             managerRuntimeSize = address(manager).code.length;
         }
 
+        _startClock();
         _printManager();
+    }
+
+    // ------------------------------------------------------------------ the clock (K46)
+    /// @notice where every suite's clock starts: 2026-01-02 03:10:57 UTC. Not a round number on purpose: a start on a
+    /// day's or a week's boundary would line a hook's epochs up with the calendar and hide an off-by-one at the edge.
+    /// A test that means "the start" reads this, or `block.timestamp` in its own `setUp`.
+    uint256 public constant V4_T0 = 1_767_323_457;
+    /// @notice the block height every suite starts at: about Ethereum mainnet's at `V4_T0`, not a round number either
+    uint256 public constant V4_BLOCK0 = 24_137_911;
+    bool private _clockStarted;
+
+    /// @notice warp to `V4_T0` and roll to `V4_BLOCK0`, once per test contract's set-up, before any hook is deployed (it
+    /// runs inside `_setUpManager`). Why: under forge's timestamp 1 a hook's recorded start read 0 whether its
+    /// clock had started or not, and a hook whose clock never started passed. A second call
+    /// does nothing, so a suite that warped after the first is not sent back. On the fork it does nothing at all: the
+    /// fork's clock is the chain's, at the pinned block, and a warp there would put the manager's own pools in the future.
+    function _startClock() internal {
+        if (_clockStarted) return;
+        _clockStarted = true;
+        if (managerPlan == ManagerPlan.FORK) return;
+        vm.warp(V4_T0);
+        vm.roll(V4_BLOCK0);
     }
 
     function _etchManagerFromFixture(string memory fixturePath) private {
@@ -326,6 +364,8 @@ abstract contract V4Harness is Test {
         console2.log("V4 MANAGER:", managerModeLabel());
         console2.log("  address     ", address(manager));
         console2.log("  runtime size", managerRuntimeSize);
+        console2.log("  timestamp   ", block.timestamp);
+        console2.log("  block number", block.number);
         if (managerPlan == ManagerPlan.FORK) {
             // the block and the chain, never the endpoint
             console2.log("  fork block  ", forkBlock);
@@ -449,6 +489,9 @@ abstract contract V4Harness is Test {
     /// own `validateHookPermissions` among them - reverts this with the constructor's own revert data, as `new` does.
     /// A test ABOUT the mining (`test/HookFlags.t.sol`) keeps `HookMiner.find` and `new` by hand: it asserts on the
     /// salt and the predicted address, which this does not hand back.
+    /// Then it holds the address's bits against the callbacks the hook implements (`_checkHookPermissions`, K46) and
+    /// reverts `V4Harness: <callback> implemented but its permission bit is not set on <address>` when one that does
+    /// something has no bit - unless the suite set `_skipPermissionCheck`.
     /// @param creationCode `type(MyHook).creationCode`
     /// @param constructorArgs `abi.encode(...)`, exactly as the constructor takes them - usually `abi.encode(manager)`,
     ///        which is why this refuses to run before the routers (`HookBeforeRouters`)
@@ -472,6 +515,220 @@ abstract contract V4Harness is Test {
         }
         if (hook == address(0)) revert HookNotDeployed(mined);
         if (hook != mined) revert HookLandedElsewhere(mined, hook);
+        if (!_skipPermissionCheck) _checkHookPermissions(hook);
+    }
+
+    // ------------------------------------------------------------------ the bits against the callbacks (K46)
+    /// @notice set it to true in a suite that deploys a hook mis-flagged ON PURPOSE (`HostileHook`, which answers all ten
+    /// callbacks, at an address carrying one; a mutant that drops a bit): `_deployHook` then skips the check. Set it
+    /// around that one deployment and back, so the suite's other hooks are still checked.
+    bool internal _skipPermissionCheck;
+
+    /// @notice what each callback did when the harness called it as the manager, one bit per callback, at the position
+    /// of its `Hooks.*_FLAG` (so `p.answered & Hooks.AFTER_INITIALIZE_FLAG != 0` reads as it says).
+    /// @param answered returned normally
+    /// @param ownError reverted with data of its own (a guard, or the probe's pool is one the hook does not know): it
+    ///        has code there
+    /// @param notImplemented reverted as not implemented: `NotImplemented()` or `HookNotImplemented()` (the examples',
+    ///        v4-periphery's and OpenZeppelin's `BaseHook`'s), the same data as a selector no hook has, or no data at all
+    ///        (no such function, a bare `revert()`)
+    /// @param blind the hook answers a selector no hook has (a fallback): nothing here can be told apart, and no bit
+    ///        is checked
+    struct HookProbe {
+        uint160 answered;
+        uint160 ownError;
+        uint160 notImplemented;
+        bool blind;
+    }
+
+    /// @notice the gas one probe may use. A write under STATICCALL burns all of it, so it is kept low; a callback that
+    /// needs more than 5 M gas on an ordinary call is a finding of its own, not something to wait for
+    uint256 private constant PROBE_GAS = 5_000_000;
+
+    /// @notice fail, naming the callback, when the hook at `hook` implements a callback its address has no bit for; log a
+    /// warning when a bit is set for a callback that reverts on the probe. `_deployHook` calls it; a suite that deploys a
+    /// hook by hand (`deployCodeTo`, `new` at a mined salt) can call it itself.
+    ///
+    /// How a callback is judged implemented: it is called as the manager, with the harness's two currencies, fee 3000,
+    /// spacing 60, the full range, 1e18, a zeroForOne exact-in swap, zero deltas and empty `hookData`, first under
+    /// STATICCALL (nothing it does can stay: no write, no event, nothing recorded by `vm.recordLogs`). A callback that
+    /// returns, or reverts with data of its own, has code there. One that reverts with no data under STATICCALL either
+    /// has no such function or tried to write - so, for a callback whose bit is NOT set, it is called once more for real
+    /// inside a state snapshot that is reverted straight after. A callback that writes (an `afterInitialize`
+    /// recording when the pool started) answers that second call. What it cannot see: a callback reached only through a fallback
+    /// (`blind`, logged), a guard that reverts with no data on the probe's arguments (counted not implemented), and an
+    /// unused callback that returns its selector and does nothing (counted implemented: make it revert, as the examples
+    /// do, or declare the bit).
+    function _checkHookPermissions(address hook) internal {
+        HookProbe memory p = _probeHookCallbacks(hook);
+        string memory where = vm.toString(hook);
+        if (p.blind) {
+            console2.log(
+                string.concat(
+                    "V4Harness: the hook at ",
+                    where,
+                    " answers a selector no hook has (a fallback): its permission bits were NOT checked against its callbacks"
+                )
+            );
+            return;
+        }
+        string memory missing;
+        uint256 n;
+        for (uint256 i = 0; i < 10; i++) {
+            uint160 f = _callbackFlag(i);
+            bool bit = Hooks.hasPermission(IHooks(hook), f);
+            if (!bit && (p.answered | p.ownError) & f != 0) {
+                missing = n == 0 ? _callbackName(i) : string.concat(missing, ", ", _callbackName(i));
+                n++;
+            } else if (bit && p.notImplemented & f != 0) {
+                console2.log(
+                    string.concat(
+                        "V4Harness: WARNING ",
+                        _callbackName(i),
+                        " has its permission bit set on ",
+                        where,
+                        " but reverts on call as not implemented: every pool of this hook reverts there"
+                    )
+                );
+            } else if (bit && p.ownError & f != 0) {
+                console2.log(
+                    string.concat(
+                        "V4Harness: note - ",
+                        _callbackName(i),
+                        " (bit set) reverted on the harness's probe with an error of its own; the probe's pool is not one",
+                        " the hook set up, so this is usually a guard. Check it is not a callback that always reverts"
+                    )
+                );
+            }
+        }
+        if (n == 0) return;
+        revert(
+            string.concat(
+                "V4Harness: ",
+                missing,
+                n == 1 ? " implemented but its permission bit is not set on " : " implemented but their permission bits are not set on ",
+                where,
+                " - the manager never calls it. That is a finding (the owner decides its fix, doctrine/NEXT.md row 6b):",
+                " see doctrine/EVIDENCE.md section 2; a suite that deploys a mis-flagged hook on purpose sets _skipPermissionCheck"
+            )
+        );
+    }
+
+    /// @notice call each of the ten callbacks as the manager and say what it did (`HookProbe`). Nothing it does stays:
+    /// the calls are STATICCALLs, or real calls inside a state snapshot reverted straight after.
+    function _probeHookCallbacks(address hook) internal returns (HookProbe memory p) {
+        // a selector no hook has: what the hook does with it is what "no such function" looks like here
+        vm.prank(address(manager));
+        (bool controlOk, bytes memory control) =
+            hook.staticcall{gas: PROBE_GAS}(abi.encodeWithSignature("v4HarnessNoSuchCallback()"));
+        if (controlOk) {
+            p.blind = true;
+            return p;
+        }
+        for (uint256 i = 0; i < 10; i++) {
+            uint160 f = _callbackFlag(i);
+            bytes memory data = _probeCalldata(i, hook);
+            vm.prank(address(manager));
+            (bool ok, bytes memory ret) = hook.staticcall{gas: PROBE_GAS}(data);
+            if (!ok && ret.length == 0) {
+                if (!Hooks.hasPermission(IHooks(hook), f)) {
+                    // no data: no such function, a bare revert, or a write under STATICCALL. Call it for real, and undo it.
+                    uint256 snap = vm.snapshotState();
+                    vm.prank(address(manager));
+                    (ok, ret) = hook.call{gas: PROBE_GAS}(data);
+                    vm.revertToStateAndDelete(snap);
+                } else if (_codeHasSelector(hook.code, bytes4(data))) {
+                    // its bit is set and the function is there: most likely a write under STATICCALL. Not run for real
+                    // (its events would reach a `vm.recordLogs` the suite started), and nothing to warn about.
+                    continue;
+                }
+            }
+            if (ok) p.answered |= f;
+            else if (_isNotImplementedRevert(ret, control)) p.notImplemented |= f;
+            else p.ownError |= f;
+        }
+    }
+
+    /// @notice whether a revert's data says "not implemented". Override it in a suite whose hook marks its unused
+    /// callbacks with an error of another name.
+    function _isNotImplementedRevert(bytes memory ret, bytes memory control) internal pure virtual returns (bool) {
+        if (ret.length == 0) return true;
+        if (keccak256(ret) == keccak256(control)) return true;
+        if (ret.length != 4) return false;
+        bytes4 sel = bytes4(ret);
+        return sel == bytes4(keccak256("NotImplemented()")) || sel == bytes4(keccak256("HookNotImplemented()"));
+    }
+
+    /// @notice whether `code` pushes `sel` the way solc's dispatcher does: PUSH4 and the four bytes, or PUSH3 and three
+    /// when the selector's first byte is zero
+    function _codeHasSelector(bytes memory code, bytes4 sel) internal pure returns (bool found) {
+        uint256 s = uint32(sel);
+        uint256 want = s >> 24 == 0 ? (0x62 << 24) | s : (0x63 << 32) | s;
+        uint256 shift = s >> 24 == 0 ? 224 : 216;
+        assembly ("memory-safe") {
+            let start := add(code, 0x20)
+            let len := mload(code)
+            for { let i := 0 } lt(add(i, 5), add(len, 1)) { i := add(i, 1) } {
+                if eq(shr(shift, mload(add(start, i))), want) {
+                    found := 1
+                    break
+                }
+            }
+        }
+    }
+
+    /// @notice the ten callbacks, in the order of their bits (13 down to 4)
+    function _callbackFlag(uint256 i) internal pure returns (uint160) {
+        if (i == 0) return Hooks.BEFORE_INITIALIZE_FLAG;
+        if (i == 1) return Hooks.AFTER_INITIALIZE_FLAG;
+        if (i == 2) return Hooks.BEFORE_ADD_LIQUIDITY_FLAG;
+        if (i == 3) return Hooks.AFTER_ADD_LIQUIDITY_FLAG;
+        if (i == 4) return Hooks.BEFORE_REMOVE_LIQUIDITY_FLAG;
+        if (i == 5) return Hooks.AFTER_REMOVE_LIQUIDITY_FLAG;
+        if (i == 6) return Hooks.BEFORE_SWAP_FLAG;
+        if (i == 7) return Hooks.AFTER_SWAP_FLAG;
+        if (i == 8) return Hooks.BEFORE_DONATE_FLAG;
+        return Hooks.AFTER_DONATE_FLAG;
+    }
+
+    function _callbackName(uint256 i) internal pure returns (string memory) {
+        if (i == 0) return "beforeInitialize";
+        if (i == 1) return "afterInitialize";
+        if (i == 2) return "beforeAddLiquidity";
+        if (i == 3) return "afterAddLiquidity";
+        if (i == 4) return "beforeRemoveLiquidity";
+        if (i == 5) return "afterRemoveLiquidity";
+        if (i == 6) return "beforeSwap";
+        if (i == 7) return "afterSwap";
+        if (i == 8) return "beforeDonate";
+        return "afterDonate";
+    }
+
+    /// @notice callback `i` with the arguments of an ordinary call on a pool of the harness's currencies
+    function _probeCalldata(uint256 i, address hook) internal view returns (bytes memory) {
+        PoolKey memory key = _poolKey(IHooks(hook), 3000, 60);
+        address sender = address(router);
+        if (i == 0) return abi.encodeCall(IHooks.beforeInitialize, (sender, key, uint160(1) << 96));
+        if (i == 1) return abi.encodeCall(IHooks.afterInitialize, (sender, key, uint160(1) << 96, int24(0)));
+        if (i < 6) {
+            (int24 lower, int24 upper) = _fullRange(60);
+            int256 liq = i < 4 ? int256(1e18) : -1e18;
+            ModifyLiquidityParams memory lp =
+                ModifyLiquidityParams({tickLower: lower, tickUpper: upper, liquidityDelta: liq, salt: bytes32(0)});
+            if (i == 2) return abi.encodeCall(IHooks.beforeAddLiquidity, (sender, key, lp, ""));
+            if (i == 4) return abi.encodeCall(IHooks.beforeRemoveLiquidity, (sender, key, lp, ""));
+            BalanceDelta zero = BalanceDelta.wrap(0);
+            if (i == 3) return abi.encodeCall(IHooks.afterAddLiquidity, (sender, key, lp, zero, zero, ""));
+            return abi.encodeCall(IHooks.afterRemoveLiquidity, (sender, key, lp, zero, zero, ""));
+        }
+        if (i < 8) {
+            SwapParams memory sp =
+                SwapParams({zeroForOne: true, amountSpecified: -1e18, sqrtPriceLimitX96: TickMath.MIN_SQRT_PRICE + 1});
+            if (i == 6) return abi.encodeCall(IHooks.beforeSwap, (sender, key, sp, ""));
+            return abi.encodeCall(IHooks.afterSwap, (sender, key, sp, BalanceDelta.wrap(0), ""));
+        }
+        if (i == 8) return abi.encodeCall(IHooks.beforeDonate, (sender, key, 1e18, 1e18, ""));
+        return abi.encodeCall(IHooks.afterDonate, (sender, key, 1e18, 1e18, ""));
     }
 
     // ------------------------------------------------------------------ pools

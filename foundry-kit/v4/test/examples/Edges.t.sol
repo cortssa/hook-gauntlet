@@ -334,8 +334,10 @@ contract ExampleHookEdgesTest is V4Harness {
     /// (`test/HostileHook.t.sol`). And the capped example at its OWN cap at spacing 32 767: every swap of a congested
     /// block is charged `MAX_FEE`, read off the manager's `Swap` event
     function test_a_dynamic_fee_at_the_cap() public {
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to one bit on purpose (K46)
         HostileHook hostile =
             HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG));
+        _skipPermissionCheck = false;
         PoolKey memory k = _initPool(IHooks(address(hostile)), LPFeeLibrary.DYNAMIC_FEE_FLAG, 60, SQRT_PRICE_1_1);
         _addFullRangeLiquidity(k, provider, 100e18);
         hostile.setRawFeeOverride(uint24(LPFeeLibrary.MAX_LP_FEE) | LPFeeLibrary.OVERRIDE_FEE_FLAG);

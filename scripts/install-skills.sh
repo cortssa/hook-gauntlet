@@ -15,15 +15,23 @@
 # and --project interface, the per-harness directories, the plan validated before anything is written, and the refusal
 # to touch what is not the kit's are his. What changed: the skills are generated and thin, so only SKILL.md is copied
 # (his copied each skill's whole tree, lib/ and out/ included), and the pointers are rewritten from one prefix instead of
-# resolving relative to sibling skills. The directories, as his header recorded them (verified 2026-09-26 against each
-# harness's documentation; not re-verified here, no network): Claude Code <project>/.claude/skills and ~/.claude/skills;
-# Codex and the shared agents convention <project>/.agents/skills and ~/.agents/skills; Devin <project>/.devin/skills
-# and ${XDG_CONFIG_HOME:-~/.config}/devin/skills.
+# resolving relative to sibling skills. The directories - the first three as his header recorded them (verified
+# 2026-09-26 against each harness's documentation; not re-verified here, no network), Hermes's measured:
+#   harness                        project level               user level
+#   Claude Code                    <project>/.claude/skills    ~/.claude/skills
+#   Codex, the agents convention   <project>/.agents/skills    ~/.agents/skills
+#   Devin                          <project>/.devin/skills     ${XDG_CONFIG_HOME:-~/.config}/devin/skills
+#   Hermes (0.17)                  none it reads: <project>/.agents/skills, named in its config's skills.external_dirs
+#                                                              ${HERMES_HOME:-~/.hermes}/skills
+# Hermes 0.17 reads skills only from HERMES_HOME/skills and the directories in `skills.external_dirs` (measured
+# 2026-09-29: the 9 skills in a project's .agents/skills were seen only once named there), so --harness hermes --project
+# writes .agents/skills and prints the two config lines that name it - it never edits Hermes's config.
 #
-# Usage:   scripts/install-skills.sh --harness claude|codex|devin|agents (--project DIR | --user) [--kit PATH]
+# Usage:   scripts/install-skills.sh --harness claude|codex|devin|agents|hermes (--project DIR | --user) [--kit PATH]
 #                                    [--force] [--dry-run]
 #   --harness H    which harness's directory: claude -> .claude/skills, codex and agents -> .agents/skills,
-#                  devin -> .devin/skills
+#                  devin -> .devin/skills, hermes -> .agents/skills (--project) or $HERMES_HOME/skills (--user;
+#                  HERMES_HOME is read from the environment, default ~/.hermes)
 #   --project DIR  install into DIR's project-level directory (DIR/.claude/skills, ...)
 #   --user         install into the user-level directory instead (~/.claude/skills, ...); --kit must then be absolute
 #   --kit PATH     what `{{KIT}}` becomes: a path relative to the project (default lib/hook-gauntlet), or absolute
@@ -31,7 +39,9 @@
 #   --dry-run      say what would be written; write nothing
 # Output:  "installed <name> -> <dest>/<name>/SKILL.md" per skill, then either "pointers: <k> resolve under <kit>" or
 #          "pointers: NOT checked - no kit at <kit>: vendor it there (a submodule or a copy) ...", then
-#          "installed: <n> skills into <dest>, {{KIT}} = <kit>"
+#          "installed: <n> skills into <dest>, {{KIT}} = <kit>"; with --harness hermes (a --dry-run too), then, for --project,
+#          the two lines to add to Hermes's config.yaml (`skills:` and `  external_dirs: [<dest>]`), and last
+#          "start Hermes with: hermes chat -s hook-gauntlet (...)"
 # Exit:    0 installed (with the kit absent, said so); 1 installed, but the kit at <kit> lacks a path a skill names (a kit
 #          of another version?) - each named; 2 REFUSED - bad arguments, the skills do not pass skills-check.sh, or a
 #          destination that may not be replaced: one line on stderr, nothing written.
@@ -61,8 +71,9 @@ case "$HARNESS" in
   claude) SUB=".claude/skills" ;;
   codex | agents) SUB=".agents/skills" ;;
   devin) SUB=".devin/skills" ;;
-  "") refuse "--harness is required: claude, codex, devin or agents." ;;
-  *) refuse "--harness '$HARNESS' is not one of: claude, codex, devin, agents." ;;
+  hermes) SUB=".agents/skills" ;;   # --project: Hermes reads it only once named in skills.external_dirs (printed below)
+  "") refuse "--harness is required: claude, codex, devin, agents or hermes." ;;
+  *) refuse "--harness '$HARNESS' is not one of: claude, codex, devin, agents, hermes." ;;
 esac
 if [ -n "$PROJECT" ] && [ "$USERLEVEL" = 1 ]; then refuse "--project or --user, not both."; fi
 if [ -z "$PROJECT" ] && [ "$USERLEVEL" = 0 ]; then
@@ -78,6 +89,7 @@ KITP="${KITP%/}"
 if [ "$USERLEVEL" = 1 ]; then
   case "$HARNESS" in
     devin) DEST="${XDG_CONFIG_HOME:-$HOME/.config}/devin/skills" ;;
+    hermes) DEST="${HERMES_HOME:-$HOME/.hermes}/skills" ;;
     *) DEST="$HOME/$SUB" ;;
   esac
   KITABS="$KITP"
@@ -100,6 +112,17 @@ else
   if same_dir "$(rp "$DEST")" "$(rp "$UDEST")" || { [ -L "$DEST" ] && same_dir "$(rp "$(readlink -f "$DEST" 2> /dev/null)")" "$(rp "$UDEST")"; }; then
     refuse "--project '$PROJECT' resolves to the user-level directory $UDEST: that is --user, on purpose."; fi
 fi
+
+# Hermes: what a user must do beyond the files - the config lines for a project directory, and how to start it
+hermes_tail() {
+  [ "$HARNESS" = hermes ] || return 0
+  if [ "$USERLEVEL" = 0 ]; then
+    echo "hermes: Hermes 0.17 reads no project directory - add these two lines to ${HERMES_HOME:-~/.hermes}/config.yaml (external_dirs under an existing skills: block if there is one):"
+    echo "skills:"
+    echo "  external_dirs: [$DEST]"
+  fi
+  echo "start Hermes with: hermes chat -s hook-gauntlet (the entry skill stays in the system prompt, which Hermes's compression protects)"
+}
 
 # the gate first: skills that are not what the doctrine generates today are not installed
 [ -d "$SRC" ] || refuse "no skills/ beside this script's kit ($SRC)."
@@ -125,6 +148,7 @@ done
 if [ "$DRY" = 1 ]; then
   for n in "${names[@]}"; do echo "would write $DEST/$n/SKILL.md"; done
   echo "dry-run: ${#names[@]} skills into $DEST, {{KIT}} = $KITP"
+  hermes_tail
   exit 0
 fi
 
@@ -161,4 +185,5 @@ else
   echo "pointers: NOT checked - no kit at $KITABS: vendor it there (a submodule or a copy), or reinstall with --kit <where it is>; until then the skills name files that are not there"
 fi
 echo "installed: ${#names[@]} skills into $DEST, {{KIT}} = $KITP"
+hermes_tail
 exit "$rc"

@@ -86,6 +86,7 @@ contract DeltaAccountingTest is V4Harness {
 
     function setUp() public {
         _setUpV4();
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to fewer bits on purpose (K46)
         hook = HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), DELTA_FLAGS));
         vm.label(address(hook), "HostileHook(deltas)");
         key = _initPool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1);

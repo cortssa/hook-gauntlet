@@ -47,7 +47,7 @@ BENCH_ROOT CACHE_FILE CENSUS_FORGE_LOG CENSUS_TABLE_ONLY COPY_ROOT CORE DEPTH EX
 GUARD_EXCLUDE HASH_PYTHON KEEP LABEL LINK_FROM LINK_LIB MATCH MIN_INIT_MARGIN MIN_MARGIN MIN_PCT OUT_DIR REACH RUNS SEED \
 SRC_DIRS TEST_FLAGS USE_BENCH ESTIMATE_ONLY V4_ALLOW_UNTRACKED V4_CORE_SUBMODULES V4_FORCE V4_LOCAL_SRC V4_WITH_PERIPHERY \
 V4_MANAGER V4_FIXTURE FORK_BLOCK GAUNTLET_CENSUS GAUNTLET_SIM SIM_SEED RPC_URL ETH_RPC_URL KIT_PROJECT \
-BACKTEST_LOGS_CHUNK BACKTEST_FIXTURE NEXT_SELFTEST"
+BACKTEST_LOGS_CHUNK BACKTEST_FIXTURE NEXT_SELFTEST PENDING_RED CITED_FILES SETUP_DEPS_KEEP_LIB HERMES_HOME"
 selftest_clears() { # selftest_clears <name>: 0 when the name is one this run removes
   case "$1" in [Ff][Oo][Uu][Nn][Dd][Rr][Yy]_* | [Ff][Oo][Rr][Gg][Ee]_* | [Dd][Aa][Pp][Pp]_*) return 0 ;; esac
   case " $SELFTEST_CLEARED " in *" $1 "*) return 0 ;; esac
@@ -1820,12 +1820,18 @@ nx "$NX" "$FIX/state-case-closing-blackbox-stopped.md" --judge 5=false,8=false,1
 if grep -q '^next: row 11b - .*blackbox: stopped (<round id>).*black-box: stopped at <step>' "$TMP/o626"; then
   echo "  ok    row 11b's action says what a black-box round stopped twice sets: blackbox: stopped (<round id>), and the dossier's words"; else
   echo "  FAIL  row 11b's action does not name blackbox: stopped (<round id>) and black-box: stopped at <step>:"; sed "s/^/        | /" "$TMP/o626"; fails=$((fails + 1)); fi
-# the kit's example STATE.md: its own prose says row 3 is true but blocks nothing, and the black-box (row 12) is next
-nx "$NX" "$HERE/../state/STATE.md" > "$TMP/o443" 2>&1; check "next.sh: the example state/STATE.md, no answers: rows needing judgement first" 3 $? "$TMP/o443"
-[ "$(nx_rows "$TMP/o443")" = "5,8,9,9b,11b,12,13" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o443")', not 5,8,9,9b,11b,12,13"; fails=$((fails + 1)); }
-nx "$NX" "$HERE/../state/STATE.md" --judge 5=false,8=false,9=false,9b=false,11b=false,12=true > "$TMP/o444" 2>&1
-check "next.sh: the example state/STATE.md with its prose's answers gives row 12, the black-box" 0 $? "$TMP/o444"
-[ "$(nx_rows "$TMP/o444")" = "12" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o444")', not 12"; fails=$((fails + 1)); }
+# the kit's example STATE.md is refused (K40: its marker line, BlockCapHook in its title - the K40/K41 cases below), and
+# so is a copy without either and with one more space after the name of five of its non-generic flags: the same
+# values (K49: the example's values are compared with the spacing collapsed - V41 walked a re-spaced copy to row 13).
+# Its rows are no longer read here; a project's starting values (state/README.md) are the must-pass instead.
+sed '/Example file. The project is fictional/d; 1s/BlockCapHook/ExampleHook/; s/^\(last_audit_round\|open_findings\|ceiling\|waiting_on_owner\|notes\): /\1:  /' \
+  "$HERE/../state/STATE.md" > "$TMP/state-example-flags.md"
+nx "$NX" "$TMP/state-example-flags.md" > "$TMP/o443" 2>&1; check "next.sh refuses the example state/STATE.md re-spaced, unmarked and retitled: the same values (K49)" 2 $? "$TMP/o443"
+grep -qxF "next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$HERE/../state/STATE.md" | grep -m 1 '^bytecode_changed_since:'))" "$TMP/o443" \
+  || { echo "  FAIL  and not with the FIRST line of the example's values:"; sed "s/^/        | /" "$TMP/o443"; fails=$((fails + 1)); }
+{ echo '# STATE - ExampleHook'; echo; LC_ALL=C awk '/^## Installing/ { s = 1 } s && /^```$/ { if (b) exit; b = 1; print; next } b { print }' "$HERE/../state/README.md"; echo '```'; } > "$TMP/state-start-flags.md"
+nx "$NX" "$TMP/state-start-flags.md" > "$TMP/o444" 2>&1; check "next.sh: a project's starting values (state/README.md), no answers: the row" 0 $? "$TMP/o444"
+grep -q '^next: row 4 - ' "$TMP/o444" || { echo "  FAIL  and it did not give row 4:"; sed "s/^/        | /" "$TMP/o444"; fails=$((fails + 1)); }
 # refusals: rc 2, one line, naming the flag
 NP="$FIX/state-new-project.md"; nn=450
 nx_refused() { # nx_refused <label> <the words the refusal must say> <sed script applied to the new-project fixture> [next.sh args]
@@ -2090,7 +2096,9 @@ NEXT_SELFTEST=yes "$KMN" "$FIX/state-new-project.md" > "$TMP/o912" 2>&1; check "
 grep -qF "NEXT_SELFTEST='yes' is not 1" "$TMP/o912" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o912")"; fails=$((fails + 1)); }
 # K31, decision 2: a test in pending/ that STATE.md does not name is refused, and a pending: note with no file. The
 # project is the STATE.md's directory, or its parent for .gauntlet/STATE.md. The fixture is a real walk's end: four
-# pending: notes, and here their four files
+# pending: notes, and here their four files. These cases are about the notes: the red records (K41) are not checked in
+# them - PENDING_RED=0, said on stderr every run - and are the K40/K41 cases' own
+export PENDING_RED=0
 PJ="$TMP/pendp"; mkdir -p "$PJ/.gauntlet" "$PJ/pending/lib"
 cp "$FIX/state-case-round-end-owner-absent.md" "$PJ/.gauntlet/STATE.md"
 for i in 1 2 3 4; do printf '// pending F-%s\n' "$i" > "$PJ/pending/F-$i.t.sol"; done
@@ -2101,7 +2109,7 @@ nx "$NX" "$PJ/.gauntlet/STATE.md" --judge "$PJJ" > "$TMP/o920" 2>&1; check "next
 printf '// a fifth\n' > "$PJ/pending/F-5.t.sol"
 nx "$NX" "$PJ/.gauntlet/STATE.md" --judge "$PJJ" > "$TMP/o921" 2>&1; check "next.sh refuses a test in pending/ that no pending: note names" 2 $? "$TMP/o921"
 if grep -qF "$PJ/pending/F-5.t.sol is a test in pending/, and STATE.md's notes have no 'pending: F-5 ...' for it: write it in STATE.md notes and in open_findings before anything else - NEXT.md row 6b." "$TMP/o921" \
-  && [ "$(wc -l < "$TMP/o921" | tr -d ' ')" = 1 ]; then echo "  ok    one line, naming the file, and what to do"; else
+  && [ "$(grep -vc '^next: PENDING_RED=0 - ' "$TMP/o921")" = 1 ]; then echo "  ok    one line, naming the file, and what to do (besides PENDING_RED=0's own)"; else
   echo "  FAIL  not the refusal naming pending/F-5.t.sol:"; sed "s/^/        | /" "$TMP/o921"; fails=$((fails + 1)); fi
 nx "$NX" "$PJ/.gauntlet/STATE.md" > "$TMP/o922" 2>&1; check "next.sh: the same, no answers: refused before any row is asked" 2 $? "$TMP/o922"
 grep -q '^needs judgement' "$TMP/o922" && { echo "  FAIL  and rows were asked:"; sed "s/^/        | /" "$TMP/o922"; fails=$((fails + 1)); }
@@ -2162,6 +2170,7 @@ nx "$NX" "$PQ/.gauntlet/STATE.md" --judge "$PJJ" > "$TMP/o940" 2>&1; check "next
 pj_reset; pq_note "TBD - "
 nx "$NX" "$PQ/.gauntlet/STATE.md" --judge "$PJJ" > "$TMP/o941" 2>&1; check "next.sh refuses a pending: note whose first word is not an id ('pending: TBD - ...')" 2 $? "$TMP/o941"
 grep -qF "notes: a pending: note names no id ('pending: TBD - " "$TMP/o941" || { echo "  FAIL  not the refusal naming the note:"; sed "s/^/        | /" "$TMP/o941"; fails=$((fails + 1)); }
+unset PENDING_RED
 # K31, decision 3 (K31b: the whole workspace - bench/, backtests/, rounds/ too, V31): row 10 does not count the route's
 # own files. The same end state, row 10 not answered: its question
 # says the skeleton, STATE.md and the rest do not make it true (a walker answered it false against the letter, to reach
@@ -3887,6 +3896,544 @@ for nm in dash short header twice sum; do
   [ -z "$out" ] || { echo "  FAIL  and it printed rows: $out"; fails=$((fails + 1)); }
 done
 parse_backtest_totals "$FIX/backtest-report-nm-none.txt" > /dev/null; check "parse_backtest_totals: no totals table at all" 1 $?
+
+# --- K40/K41 ---
+# ================================================================= next.sh refuses the kit's example, a pending test not
+# seen red, a cited file that does not exist; pending-red.sh (K40, K41: what the local-model walk's agent wrote that nothing read, judged 2026-09-30)
+echo "== next.sh: the kit's example, pending/ seen red, cited files (K40/K41) =="
+# shellcheck source=lib/pending-record.sh
+. "$HERE/lib/pending-record.sh" || { echo "selftest: $HERE/lib/pending-record.sh is missing"; exit 1; }
+KX_KIT="$(cd "$HERE/.." && pwd)"
+KX_FIRST='next: FIRST - fill STATE.md: it is still the kit'"'"'s example (state/README.md, "empty the examples")'
+kx_one() { # kx_one <n> <label> <expected rc> <the exact line it must print, alone> <next.sh args...>
+  local n="$1" label="$2" rc="$3" line="$4"; shift 4
+  nx "$NX" "$@" > "$TMP/o$n" 2>&1; check "$label" "$rc" $? "$TMP/o$n"
+  if [ "$(cat "$TMP/o$n")" = "$line" ]; then echo "  ok    one line: ${line:0:150}"; else
+    echo "  FAIL  not the one line '${line:0:150}':"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); fi
+}
+kx_row() { # kx_row <n> <label> <the row it must give> <next.sh args...>: rc 0 and that row
+  local n="$1" label="$2" row="$3"; shift 3
+  nx "$NX" "$@" > "$TMP/o$n" 2>&1; check "$label" 0 $? "$TMP/o$n"
+  grep -q "^next: row $row - " "$TMP/o$n" || { echo "  FAIL  and it did not give row $row:"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); }
+}
+kx_proj() { # kx_proj <dir>: a project with .gauntlet/STATE.md, a new project's (row 4), and nothing else
+  rm -rf "$1"; mkdir -p "$1/.gauntlet"; cp "$FIX/state-new-project.md" "$1/.gauntlet/STATE.md"
+}
+# ---- K40: the kit's example is not a state (the local-model walk, at 00:48 and 00:55: "next: row 13 - a REGRESSION round ... r05")
+kx_one 4001 "next.sh refuses the kit's example state/STATE.md (it answered row 13 on it, twice, in the local-model walk)" 2 "$KX_FIRST" "$HERE/../state/STATE.md"
+PENDING_RED=0 CITED_FILES=0 nx "$NX" "$HERE/../state/STATE.md" > "$TMP/o4002" 2>&1; check "... and no escape turns that off (PENDING_RED=0 CITED_FILES=0)" 2 $? "$TMP/o4002"
+grep -qxF "$KX_FIRST" "$TMP/o4002" || { echo "  FAIL  and not with the FIRST line"; fails=$((fails + 1)); }
+KX="$TMP/kx"; kx_proj "$KX"
+kx_row 4003 "next.sh: a new project's STATE.md, no DECISIONS.md or LOG.md beside it: the row" 4 "$KX/.gauntlet/STATE.md"
+sed '/Example file. The project is fictional/d' "$HERE/../state/STATE.md" > "$KX/.gauntlet/STATE.md"
+kx_one 4004 "next.sh refuses the example without its marker line: BlockCapHook in the title" 2 "$KX_FIRST" "$KX/.gauntlet/STATE.md"
+sed '1s/BlockCapHook/SomeHook/' "$HERE/../state/STATE.md" > "$KX/.gauntlet/STATE.md"
+kx_one 4005 "next.sh refuses the example with another title: its marker line" 2 "$KX_FIRST" "$KX/.gauntlet/STATE.md"
+kx_proj "$KX"; printf '\nThe owner'"'"'s notes compare this hook with the kit'"'"'s example, BlockCapHook.\n' >> "$KX/.gauntlet/STATE.md"
+kx_row 4006 "next.sh: a real STATE.md that names BlockCapHook in its prose, not in its title: the row" 4 "$KX/.gauntlet/STATE.md"
+kx_proj "$KX"; cp "$HERE/../state/LOG.md" "$KX/.gauntlet/LOG.md"
+kx_one 4007 "next.sh refuses a filled STATE.md beside the kit's example LOG.md" 2 "${KX_FIRST/STATE.md:/LOG.md:}" "$KX/.gauntlet/STATE.md"
+kx_proj "$KX"; cp "$HERE/../state/DECISIONS.md" "$KX/.gauntlet/DECISIONS.md"
+kx_one 4008 "next.sh refuses a filled STATE.md beside the kit's example DECISIONS.md" 2 "${KX_FIRST/STATE.md:/DECISIONS.md:}" "$KX/.gauntlet/STATE.md"
+for f in STATE LOG DECISIONS; do
+  if grep -qxF '*Example file. The project is fictional. Delete this and start yours.*' "$HERE/../state/$f.md"; then
+    echo "  ok    the kit's example state/$f.md keeps its marker line"; else echo "  FAIL  state/$f.md has lost its marker line"; fails=$((fails + 1)); fi
+done
+# ---- K41: a file the record cites must exist (the local-model walk's judge: DECISIONS.md cited five pending tests and a fork test that never existed)
+KX_CITE='next: DECISIONS.md cites a file that does not exist: pending/F-2_units.t.sol'
+kx_cite() { # kx_cite <n> <label> <expected rc> <DECISIONS.md body>: the new project, a DECISIONS.md, next.sh
+  local n="$1" label="$2" rc="$3"
+  kx_proj "$KX"; mkdir -p "$KX/src" "$KX/test" "$KX/.gauntlet/reports"; echo "contract Hook {}" > "$KX/src/Hook.sol"; echo "contract HookTest {}" > "$KX/test/Hook.t.sol"   # K48: a cited file is a non-empty one
+  printf '# DECISIONS - SomeHook\n\n%s\n' "$4" > "$KX/.gauntlet/DECISIONS.md"
+  nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o$n" 2>&1; check "$label" "$rc" $? "$TMP/o$n"
+}
+kx_cite 4010 "next.sh refuses a DECISIONS.md citing pending/F-2_units.t.sol, which does not exist" 2 'D-02: the test is `pending/F-2_units.t.sol` (red).'
+if grep -q "^$KX_CITE (line 3 of " "$TMP/o4010" && grep -q 'CITED_FILES=0' "$TMP/o4010" && [ "$(wc -l < "$TMP/o4010" | tr -d ' ')" = 1 ]; then
+  echo "  ok    one line, naming the file, the path, its line and the escape"; else echo "  FAIL  not the line:"; sed "s/^/        | /" "$TMP/o4010"; fails=$((fails + 1)); fi
+kx_cite 4011 "next.sh: the files it cites exist (src/, test/): the row" 0 'The hook is `src/Hook.sol`, its tests ./test/Hook.t.sol and the round report .gauntlet/reports/ (a directory).'
+kx_cite 4012 "next.sh: the missing path inside a fenced code block is not a citation" 0 "$(printf '```\npending/F-2_units.t.sol\n```')"
+for w in "to write" "planned" "TODO"; do
+  kx_cite 4013 "next.sh: the missing path after '$w' on its line is not a citation" 0 "The finding's test, $w: \`pending/F-2_units.t.sol\`."
+done
+kx_cite 4014 "next.sh: a pattern (pending/F-*.t.sol), a placeholder (pending/<id>.t.sol) and a range (pending/F-1..F-4.t.sol) are not citations" 0 \
+  'Run `pending/F-*.t.sol`; each finding in pending/<id>.t.sol; the tests pending/F-1..F-4.t.sol.'
+kx_cite 4015 "next.sh: a missing path inside a longer one (lib/forge-std/src/Nope.sol) is not a citation" 0 'Imports lib/forge-std/src/Nope.sol and ../v4-core/src/Nope.sol.'
+kx_cite 4016 "next.sh refuses the missing path before 'TODO' on the same line" 2 'The test is pending/F-2_units.t.sol (TODO: the fork test test/fork/Fork.t.sol).'
+grep -q "^$KX_CITE " "$TMP/o4016" || { echo "  FAIL  and not for the path before TODO: $(head -1 "$TMP/o4016")"; fails=$((fails + 1)); }
+mkdir -p "$KX/.gauntlet/bench/v01/test/verify"; echo "contract V01 {}" > "$KX/.gauntlet/bench/v01/test/verify/V01.t.sol"
+printf '# DECISIONS - SomeHook\n\nReproduced in bench `.gauntlet/bench/v01`, `test/verify/V01.t.sol`.\n' > "$KX/.gauntlet/DECISIONS.md"
+kx_row 4017 "next.sh: a path found in one of the project's benches (.gauntlet/bench/v01/test/verify/V01.t.sol) exists" 4 "$KX/.gauntlet/STATE.md"
+# K47: LOG.md is history - a file it names may have been moved or deleted since, legitimately; it is not read for citations
+kx_proj "$KX"; printf '# LOG - SomeHook\n\nr01 closed: .gauntlet/reports/r01.md.\n' > "$KX/.gauntlet/LOG.md"
+kx_row 4018 "next.sh: a LOG.md citing .gauntlet/reports/r01.md, which does not exist, is not refused (a LOG is history)" 4 "$KX/.gauntlet/STATE.md"
+printf '# LOG - SomeHook\n\n2026-09-01: wrote `pending/F-3_fee.t.sol` and `src/OldHook.sol`.\n2026-09-02: F-3 fixed, `pending/F-3_fee.t.sol` moved to `test/F-3_fee.t.sol`; `src/OldHook.sol` deleted.\n' > "$KX/.gauntlet/LOG.md"
+kx_row 4024 "next.sh: a LOG.md naming files deleted or moved since (pending/F-3_fee.t.sol, src/OldHook.sol, test/F-3_fee.t.sol) is not refused" 4 "$KX/.gauntlet/STATE.md"
+grep -q 'cites a file' "$TMP/o4024" && { echo "  FAIL  and a cited file was reported: $(grep 'cites a file' "$TMP/o4024")"; fails=$((fails + 1)); }
+printf '# DECISIONS - SomeHook\n\nD-03: F-3 is fixed; its test is `test/F-3_fee.t.sol`.\n' > "$KX/.gauntlet/DECISIONS.md"
+nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o4025" 2>&1; check "... but the DECISIONS.md beside it citing test/F-3_fee.t.sol, which does not exist, still is" 2 $? "$TMP/o4025"
+grep -q '^next: DECISIONS.md cites a file that does not exist: test/F-3_fee.t.sol ' "$TMP/o4025" || { echo "  FAIL  and not naming DECISIONS.md and the path: $(head -1 "$TMP/o4025")"; fails=$((fails + 1)); }
+# K47: next.sh <proj> - the project's directory reads its .gauntlet/STATE.md, then its STATE.md (the entry skill's last line)
+kx_proj "$KX"
+kx_row 4026 "next.sh <proj>: a project directory with .gauntlet/STATE.md - the row" 4 "$KX"
+KXR="$TMP/kxr"; rm -rf "$KXR"; mkdir -p "$KXR"; cp "$FIX/state-new-project.md" "$KXR/STATE.md"
+kx_row 4027 "next.sh <proj>: a project directory with STATE.md at its root - the row" 4 "$KXR"
+cp "$HERE/../state/STATE.md" "$KXR/STATE.md"
+kx_one 4028 "next.sh <proj>: the kit's example there is refused as the file is" 2 "$KX_FIRST" "$KXR"
+rm -f "$KXR/STATE.md"
+nx "$NX" "$KXR" > "$TMP/o4029" 2>&1; check "next.sh <proj>: a directory with no STATE.md is refused" 2 $? "$TMP/o4029"
+grep -qF "$KXR has no .gauntlet/STATE.md and no STATE.md" "$TMP/o4029" || { echo "  FAIL  and not naming the directory and both places: $(head -1 "$TMP/o4029")"; fails=$((fails + 1)); }
+kx_proj "$KX"; sed 's/^notes: .*/notes:                     pending: F-7 - see test\/Gone.t.sol, owner undecided/' "$FIX/state-new-project.md" > "$KX/.gauntlet/STATE.md"
+nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o4019" 2>&1; check "next.sh refuses a pending: note in the flag block citing test/Gone.t.sol, which does not exist (the fence does not hide the notes)" 2 $? "$TMP/o4019"
+grep -q '^next: STATE.md cites a file that does not exist: test/Gone.t.sol ' "$TMP/o4019" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4019")"; fails=$((fails + 1)); }
+sed 's/^notes: .*/notes:                     see test\/Gone.t.sol/' "$FIX/state-new-project.md" > "$KX/.gauntlet/STATE.md"
+kx_row 4020 "next.sh: another note in the flag block (a fenced block) citing test/Gone.t.sol is not read" 4 "$KX/.gauntlet/STATE.md"
+kx_cite 4021 "next.sh refuses the missing citation again, for the escape's case" 2 'D-02: `pending/F-2_units.t.sol`.'
+CITED_FILES=0 nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o4022" 2>&1; check "next.sh with CITED_FILES=0: the row" 0 $? "$TMP/o4022"
+grep -q '^next: CITED_FILES=0 - ' "$TMP/o4022" || { echo "  FAIL  and CITED_FILES=0 was not said"; fails=$((fails + 1)); }
+CITED_FILES=no nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o4023" 2>&1; check "next.sh refuses CITED_FILES set to anything but 0" 2 $? "$TMP/o4023"
+grep -qF "CITED_FILES='no' is not 0" "$TMP/o4023" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4023")"; fails=$((fails + 1)); }
+# ---- K41: a pending test needs its record of being seen red on src/ as it stands (no forge: the records are written here)
+KP="$TMP/kp"; kx_proj "$KP"; mkdir -p "$KP/src" "$KP/pending"; printf 'contract H {}\n' > "$KP/src/H.sol"; printf '// F-1\n' > "$KP/pending/F-1.t.sol"
+sed 's/^notes: .*/notes:                     pending: F-1 - a stranger takes a registered id, owner undecided/' "$FIX/state-new-project.md" > "$KP/.gauntlet/STATE.md"
+KPA="$(cd "$KP" && pwd)"
+KP_LINE="next: pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol (PENDING_RED=0 skips this check, and says so)"
+kx_one 4030 "next.sh refuses pending/F-1.t.sol with no record of being seen red" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
+kp_rec="$(pending_record_path "$KPA" pending/F-1.t.sol)"; mkdir -p "$(dirname "$kp_rec")"; pending_record_head pending/F-1.t.sol "${kp_rec##*.}" > "$kp_rec"
+kx_row 4031 "next.sh: the record for the file and src/ as they stand: the row" 4 "$KP/.gauntlet/STATE.md"
+echo '// edited' >> "$KP/src/H.sol"
+kx_one 4032 "next.sh: src/ edited since the record - not current, refused" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
+printf 'contract H {}\n' > "$KP/src/H.sol"; echo '// edited' >> "$KP/pending/F-1.t.sol"
+kx_one 4033 "next.sh: the test edited since the record - not current, refused" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
+printf '// F-1\n' > "$KP/pending/F-1.t.sol"
+kx_row 4034 "next.sh: both as recorded again - the record is current again: the row" 4 "$KP/.gauntlet/STATE.md"
+mkdir -p "$KP/src/lib"; printf 'library L {}\n' > "$KP/src/lib/L.sol"
+kx_one 4035 "next.sh: a file added below src/ - not current, refused" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
+PENDING_RED=0 nx "$NX" "$KP/.gauntlet/STATE.md" > "$TMP/o4036" 2>&1; check "next.sh with PENDING_RED=0: the row" 0 $? "$TMP/o4036"
+grep -q '^next: PENDING_RED=0 - ' "$TMP/o4036" || { echo "  FAIL  and PENDING_RED=0 was not said"; fails=$((fails + 1)); }
+PENDING_RED=1 nx "$NX" "$KP/.gauntlet/STATE.md" > "$TMP/o4037" 2>&1; check "next.sh refuses PENDING_RED set to anything but 0" 2 $? "$TMP/o4037"
+grep -qF "PENDING_RED='1' is not 0" "$TMP/o4037" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4037")"; fails=$((fails + 1)); }
+# ---- pending-red.sh on a small forge project: red -> record; green -> refused; a compile error -> refused; setUp -> refused
+KPF="$HERE/../foundry-kit"
+if command -v forge > /dev/null 2>&1 && [ -e "$KPF/lib" ]; then
+  KR="$TMP/kr"; rm -rf "$KR"; mkdir -p "$KR/src" "$KR/pending" "$KR/.gauntlet"; ln -s "$(cd "$KPF/lib" && pwd -P)" "$KR/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[profile.pending]\ntest = "pending"\n' > "$KR/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract Reg {\n    error Taken();\n    mapping(uint256 => address) public ownerOf;\n    function register(uint256 id) external {\n        ownerOf[id] = msg.sender;\n    }\n}\n' > "$KR/src/Reg.sol"
+  kr_red() { # kr_red [<a line to put first in the contract>]: the finding's test (red on Reg) and its control (green)
+    printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/Reg.sol";\ncontract F1 is Test {\n%s\n' "${1:-}"
+    printf '    function test_F1_a_stranger_cannot_take_a_registered_id() public { Reg r = new Reg(); vm.prank(address(0xA11CE)); r.register(1); vm.prank(address(0xB0B)); vm.expectRevert(Reg.Taken.selector); r.register(1); }\n'
+    printf '    function test_F1_control_a_free_id_is_taken() public { Reg r = new Reg(); vm.prank(address(0xB0B)); r.register(2); assertEq(r.ownerOf(2), address(0xB0B)); }\n}\n'
+  }
+  kr_red > "$KR/pending/F-1.t.sol"
+  sed 's/^notes: .*/notes:                     pending: F-1 - a stranger takes a registered id, owner undecided/' "$FIX/state-new-project.md" > "$KR/.gauntlet/STATE.md"
+  KRA="$(cd "$KR" && pwd)"
+  kr_recs() { find "$KR/.gauntlet/pending-red" -type f -name 'F-1.t.sol.*' ! -name '*.log' 2> /dev/null | wc -l | tr -d ' '; }
+  nx "$NX" "$KR/.gauntlet/STATE.md" > "$TMP/o4040" 2>&1; check "next.sh on the small project before pending-red.sh: not seen red" 2 $? "$TMP/o4040"
+  "$HERE/pending-red.sh" "$KR" > "$TMP/o4041" 2>&1; check "pending-red.sh: the finding's test fails on the code (its control passes): RED, the record written" 0 $? "$TMP/o4041"
+  kr_rec="$(pending_record_path "$KRA" pending/F-1.t.sol)"
+  if [ -f "$kr_rec" ] && grep -q '^result: 1 passed, 1 failed' "$kr_rec"; then
+    echo "  ok    the record is the one next.sh reads, and holds the counts"; else echo "  FAIL  no current record, or not its counts:"; ls -a "$KR/.gauntlet/pending-red" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  kx_row 4042 "next.sh on the small project after it: the row" 4 "$KR/.gauntlet/STATE.md"
+  cp "$KR/src/Reg.sol" "$TMP/kr-Reg.sol"; printf '// edited after the red\n' >> "$KR/src/Reg.sol"
+  nx "$NX" "$KR/.gauntlet/STATE.md" > "$TMP/o4043" 2>&1; check "next.sh: src/ edited after the red: the record is stale, refused" 2 $? "$TMP/o4043"
+  grep -q '^next: pending/F-1.t.sol - not seen red on the code as it stands: ' "$TMP/o4043" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4043")"; fails=$((fails + 1)); }
+  cp "$TMP/kr-Reg.sol" "$KR/src/Reg.sol"
+  kr_red | grep -v 'a_stranger_cannot' > "$KR/pending/F-1.t.sol"
+  "$HERE/pending-red.sh" "$KR" pending/F-1.t.sol > "$TMP/o4044" 2>&1; check "pending-red.sh refuses a pending test that PASSES on the code" 2 $? "$TMP/o4044"
+  grep -qF "pending/F-1.t.sol passes on the code: it is not a finding's test (EVIDENCE.md section 2)" "$TMP/o4044" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4044")"; fails=$((fails + 1)); }
+  if [ "$(kr_recs)" = 0 ]; then echo "  ok    and no record of F-1 is left (the earlier red's went first)"; else echo "  FAIL  a record of F-1 is left: $(kr_recs)"; fails=$((fails + 1)); fi
+  kr_red | sed 's/r.register(1); }/r.register(1) }/' > "$KR/pending/F-1.t.sol"
+  "$HERE/pending-red.sh" "$KR" F-1.t.sol > "$TMP/o4045" 2>&1; check "pending-red.sh refuses a pending test that does not compile" 2 $? "$TMP/o4045"
+  grep -q 'pending/F-1.t.sol does not compile' "$TMP/o4045" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4045")"; fails=$((fails + 1)); }
+  [ "$(kr_recs)" = 0 ] || { echo "  FAIL  a record of F-1 is left after a compile error"; fails=$((fails + 1)); }
+  kr_red '    function setUp() public { revert("the bench is broken"); }' > "$KR/pending/F-1.t.sol"
+  "$HERE/pending-red.sh" "$KR" "$KR/pending/F-1.t.sol" > "$TMP/o4046" 2>&1; check "pending-red.sh refuses a pending test whose setUp() fails (the harness, not the code)" 2 $? "$TMP/o4046"
+  grep -q 'setUp() failed' "$TMP/o4046" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4046")"; fails=$((fails + 1)); }
+  [ "$(kr_recs)" = 0 ] || { echo "  FAIL  a record of F-1 is left after a setUp failure"; fails=$((fails + 1)); }
+  nx "$NX" "$KR/.gauntlet/STATE.md" > "$TMP/o4047" 2>&1; check "next.sh after those refusals: still not seen red" 2 $? "$TMP/o4047"
+  kr_red > "$KR/pending/F-1.t.sol"; printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n' > "$KR/foundry.toml"
+  "$HERE/pending-red.sh" "$KR" > "$TMP/o4048" 2>&1; check "pending-red.sh refuses a project with no [profile.pending] (NEXT.md row 6b)" 2 $? "$TMP/o4048"
+  "$HERE/pending-red.sh" "$KR" src/Reg.sol > "$TMP/o4049" 2>&1; check "pending-red.sh refuses a file that is not below pending/" 2 $? "$TMP/o4049"
+else
+  echo "  SKIPPED - no forge or no foundry-kit/lib here: pending-red.sh's runs are NOT proven on this machine"; skipped=1
+fi
+if [ -s "$TMP/nx-silent" ]; then echo "  FAIL  next.sh ran with NEXT_SELFTEST=1 and did not say so (K40/K41 cases):"; sed "s/^/        | /" "$TMP/nx-silent"; fails=$((fails + 1)); fi
+# --- end K40/K41 ---
+
+# --- K48 ---
+# ================================================================= what the verifier of v0.4 found (V40): the example known
+# by its values, the marker only as a whole line in DECISIONS.md and LOG.md, a cited file that is empty or a directory,
+# a directory in pending/, a record that is read, a key that covers test/, pending/, foundry.toml and remappings.txt,
+# a pending-red.sh that builds from nothing, and the harness's permission-bits refusal named as a finding
+echo "== next.sh and pending-red.sh: the example by its values, whole-line markers, records read, builds from nothing (K48) =="
+K8_EX="$HERE/../state/STATE.md"
+K8_FIRST_VAL="next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$K8_EX" | grep -m 1 '^bytecode_changed_since:'))"
+K8="$TMP/k8"
+# ---- the example by its values (V40: its marker deleted, as the line says, and retitled, as QUICKSTART 5 says: row 13)
+kx_proj "$K8"; sed '/Example file. The project is fictional/d; 1s/BlockCapHook/VolumeRewardsHook/' "$K8_EX" > "$K8/.gauntlet/STATE.md"
+kx_one 4801 "next.sh refuses the example with its marker deleted AND retitled: its values are the example's" 2 "$K8_FIRST_VAL" "$K8/.gauntlet/STATE.md"
+PENDING_RED=0 CITED_FILES=0 nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4802" 2>&1; check "... and no escape turns that off" 2 $? "$TMP/o4802"
+grep -qxF "$K8_FIRST_VAL" "$TMP/o4802" || { echo "  FAIL  and not with the FIRST line: $(tail -1 "$TMP/o4802")"; fails=$((fails + 1)); }
+sed 's/$/\r/' "$K8/.gauntlet/STATE.md" > "$K8/.gauntlet/STATE.crlf"; mv "$K8/.gauntlet/STATE.crlf" "$K8/.gauntlet/STATE.md"
+kx_one 4803 "next.sh refuses the same with CRLF line ends" 2 "$K8_FIRST_VAL" "$K8/.gauntlet/STATE.md"
+k8_with() { # k8_with <flag> ...: the new project's STATE.md with those flags' lines taken from the kit's example, byte for byte
+  local f l; kx_proj "$K8"
+  for f in "$@"; do
+    l="$(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 "^$f:")"
+    LC_ALL=C awk -v f="$f" -v l="$l" 'index($0, f ":") == 1 { print l; next } { print }' "$K8/.gauntlet/STATE.md" > "$K8/s" && mv "$K8/s" "$K8/.gauntlet/STATE.md"
+  done
+}
+k8_with notes
+kx_row 4804 "next.sh: a real project sharing two of the example's non-generic lines (last_other_round: none, and its notes) - not refused: the row" 4 "$K8/.gauntlet/STATE.md"
+k8_with notes waiting_on_owner
+nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4805" 2>&1; check "next.sh refuses three shared lines (last_other_round, waiting_on_owner, notes), naming the first" 2 $? "$TMP/o4805"
+grep -qxF "next: FIRST - fill STATE.md: its values are still the kit's example's ($(grep -m 1 '^last_other_round:' "$K8/.gauntlet/STATE.md"))" "$TMP/o4805" \
+  && echo "  ok    the line names last_other_round's, the first shared in the file's order" || { echo "  FAIL  not the line: $(cat "$TMP/o4805")"; fails=$((fails + 1)); }
+k8_with open_findings blackbox dossier rehearsal location
+kx_row 4806 "next.sh: the example's generic lines (blackbox, dossier, rehearsal, location) do not count: two non-generic shared (last_other_round, open_findings), the row" 4 "$K8/.gauntlet/STATE.md"
+# the starting values state/README.md gives, as a STATE.md: not the example
+kx_proj "$K8"; { echo '# STATE - SomeHook'; echo; LC_ALL=C awk '/^## Installing/ { s = 1 } s && /^```$/ { if (b) exit; b = 1; print; next } b { print }' "$HERE/../state/README.md"; echo '```'; } > "$K8/.gauntlet/STATE.md"
+kx_row 4807 "next.sh: state/README.md's starting values of a new project, as a STATE.md: the row" 4 "$K8/.gauntlet/STATE.md"
+grep -q '^phase:  *0$' "$K8/.gauntlet/STATE.md" || { echo "  FAIL  state/README.md's Installing section has no starting values block:"; sed "s/^/        | /" "$K8/.gauntlet/STATE.md"; fails=$((fails + 1)); }
+grep -q 'keep its flag block' "$HERE/../state/README.md" && echo "  ok    state/README.md says to keep the flag block" || { echo "  FAIL  state/README.md does not say to keep the flag block"; fails=$((fails + 1)); }
+# ---- the marker counts only as a whole line in DECISIONS.md and LOG.md (V40: an honest LOG.md quoting it was refused)
+kx_proj "$K8"; printf '# LOG - SomeHook\n\n## 2026-09-30 - examples emptied\nDeleted the line "*Example file. The project is fictional. Delete this and start yours.*" from the three files.\n' > "$K8/.gauntlet/LOG.md"
+kx_row 4810 "next.sh: an honest LOG.md that quotes the marker it deleted, inside a line: the row" 4 "$K8/.gauntlet/STATE.md"
+printf '# DECISIONS - SomeHook\n\nD-01: emptied the examples (their line *Example file. The project is fictional. Delete this and start yours.* gone).\n' > "$K8/.gauntlet/DECISIONS.md"
+kx_row 4811 "next.sh: an honest DECISIONS.md that quotes it inside a line: the row" 4 "$K8/.gauntlet/STATE.md"
+printf '# LOG - SomeHook\n\n*Example file. The project is fictional. Delete this and start yours.*\n\n## 2026-09-30 - state installed\n' > "$K8/.gauntlet/LOG.md"
+kx_one 4812 "next.sh still refuses a LOG.md that keeps the marker as a line of its own" 2 "${KX_FIRST/STATE.md:/LOG.md:}" "$K8/.gauntlet/STATE.md"
+# ---- a cited file must be a non-empty regular file (V40: test/fork/Fork.t.sol 0 bytes, or a directory, passed)
+kx_proj "$K8"; mkdir -p "$K8/test/fork"; : > "$K8/test/fork/Fork.t.sol"
+printf '# DECISIONS - SomeHook\n\n**Test:** `test/fork/Fork.t.sol` written for the hook, run against a fork.\n' > "$K8/.gauntlet/DECISIONS.md"
+nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4820" 2>&1; check "next.sh refuses a cited test/fork/Fork.t.sol of 0 bytes" 2 $? "$TMP/o4820"
+grep -q '^next: DECISIONS.md cites a file that is empty: test/fork/Fork.t.sol (line 3 of .*CITED_FILES=0' "$TMP/o4820" || { echo "  FAIL  and not the line: $(cat "$TMP/o4820")"; fails=$((fails + 1)); }
+rm -f "$K8/test/fork/Fork.t.sol"; mkdir -p "$K8/test/fork/Fork.t.sol"
+nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4821" 2>&1; check "next.sh refuses a cited test/fork/Fork.t.sol that is a directory" 2 $? "$TMP/o4821"
+grep -q '^next: DECISIONS.md cites a file that is a directory: test/fork/Fork.t.sol (line 3 of ' "$TMP/o4821" || { echo "  FAIL  and not the line: $(cat "$TMP/o4821")"; fails=$((fails + 1)); }
+rmdir "$K8/test/fork/Fork.t.sol"; echo 'contract ForkTest {}' > "$K8/test/fork/Fork.t.sol"
+kx_row 4822 "next.sh: the same file with content: the row" 4 "$K8/.gauntlet/STATE.md"
+# ---- a directory in pending/ named *.sol is not a test (V40: it passed the walk, which saw files only)
+kx_proj "$K8"; mkdir -p "$K8/pending/F-13_dir.t.sol"
+sed 's/^notes: .*/notes:                     pending: F-13_dir - x, owner undecided/' "$FIX/state-new-project.md" > "$K8/.gauntlet/STATE.md"
+nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4823" 2>&1; check "next.sh refuses a directory pending/F-13_dir.t.sol" 2 $? "$TMP/o4823"
+grep -qF 'pending/F-13_dir.t.sol is a directory: a test in pending/ is a file' "$TMP/o4823" || { echo "  FAIL  and not for that: $(cat "$TMP/o4823")"; fails=$((fails + 1)); }
+# ---- the record is read: its first line (V40: an empty file with the key's name was taken, for a test that PASSES)
+K8P="$TMP/k8p"; kx_proj "$K8P"; mkdir -p "$K8P/src" "$K8P/pending" "$K8P/test" "$K8P/lib/dep"; printf 'contract H {}\n' > "$K8P/src/H.sol"
+printf '// F-1\n' > "$K8P/pending/F-1.t.sol"; printf 'abstract contract Helper {}\n' > "$K8P/test/Helper.sol"; printf '[profile.default]\n' > "$K8P/foundry.toml"; printf 'contract D {}\n' > "$K8P/lib/dep/D.sol"
+sed 's/^notes: .*/notes:                     pending: F-1 - a stranger takes a registered id, owner undecided/' "$FIX/state-new-project.md" > "$K8P/.gauntlet/STATE.md"
+K8PA="$(cd "$K8P" && pwd)"
+k8_rec() { pending_record_path "$K8PA" pending/F-1.t.sol; }
+k8_unread() { # k8_unread <n> <label>: next.sh says the record is unreadable
+  nx "$NX" "$K8P/.gauntlet/STATE.md" > "$TMP/o$1" 2>&1; check "$2" 2 $? "$TMP/o$1"
+  grep -q '^next: pending/F-1.t.sol: record unreadable - run scripts/pending-red.sh again' "$TMP/o$1" || { echo "  FAIL  and not 'record unreadable': $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
+}
+r="$(k8_rec)"; mkdir -p "$(dirname "$r")"; : > "$r"
+k8_unread 4830 "next.sh refuses an EMPTY record at the current key (a handwritten one)"
+echo '# a record' > "$r"
+k8_unread 4831 "next.sh refuses a record whose first line is not pending-red's"
+pending_record_head pending/F-2.t.sol "${r##*.}" > "$r"
+k8_unread 4832 "next.sh refuses a record whose first line names another file"
+pending_record_head pending/F-1.t.sol "$(printf '%064d' 0)" > "$r"
+k8_unread 4833 "next.sh refuses a record whose first line carries another key than its name"
+pending_record_head pending/F-1.t.sol "${r##*.}" > "$r"; echo 'failed: test_x()' >> "$r"
+kx_row 4834 "next.sh: a record with pending-red's first line for that file and key: the row" 4 "$K8P/.gauntlet/STATE.md"
+# ---- the key covers test/, pending/, foundry.toml and remappings.txt (V40: a helper in test/ edited kept the record current)
+k8_stale() { # k8_stale <n> <label>: the record is not the current one any more
+  nx "$NX" "$K8P/.gauntlet/STATE.md" > "$TMP/o$1" 2>&1; check "$2" 2 $? "$TMP/o$1"
+  grep -q '^next: pending/F-1.t.sol - not seen red on the code as it stands: ' "$TMP/o$1" || { echo "  FAIL  and not for that: $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
+}
+k8_again() { r="$(k8_rec)"; pending_record_head pending/F-1.t.sol "${r##*.}" > "$r"; }
+echo '// edited' >> "$K8P/test/Helper.sol"; k8_stale 4835 "next.sh: a helper in test/ edited since the record - not current"
+k8_again; mkdir -p "$K8P/pending/lib"; echo 'abstract contract PH {}' > "$K8P/pending/lib/PH.sol.txt"; k8_stale 4836 "next.sh: a file added below pending/ - not current"
+rm -rf "$K8P/pending/lib"; k8_again; echo '[profile.pending]' >> "$K8P/foundry.toml"; k8_stale 4837 "next.sh: foundry.toml edited - not current"
+k8_again; echo 'dep/=lib/dep/' > "$K8P/remappings.txt"; k8_stale 4838 "next.sh: remappings.txt added - not current"
+k8_again; echo '// edited' >> "$K8P/lib/dep/D.sol"
+kx_row 4839 "next.sh: a library edited is NOT in the key (said in the docs): the record stays current" 4 "$K8P/.gauntlet/STATE.md"
+grep -qF 'src/, test/, pending/, foundry.toml and remappings.txt' "$HERE/lib/pending-record.sh" && grep -qF '`test/`, `pending/`, `foundry.toml` and `remappings.txt`' "$HERE/../state/README.md" \
+  && echo "  ok    the docs list what the key covers" || { echo "  FAIL  the docs do not list what the key covers"; fails=$((fails + 1)); }
+# ---- pending-red.sh on a small forge project: builds from nothing (a helper in test/ edited, both ways), the record's
+# content, a directory in pending/, the harness's permission-bits refusal
+if command -v forge > /dev/null 2>&1 && [ -e "$KPF/lib" ]; then
+  K8R="$TMP/k8r"; rm -rf "$K8R"; mkdir -p "$K8R/src" "$K8R/pending" "$K8R/test" "$K8R/.gauntlet"; ln -s "$(cd "$KPF/lib" && pwd -P)" "$K8R/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[profile.pending]\ntest = "pending"\n' > "$K8R/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract Reg {\n    mapping(uint256 => address) public ownerOf;\n    function register(uint256 id) external {\n        ownerOf[id] = msg.sender;\n    }\n}\n' > "$K8R/src/Reg.sol"
+  k8_helper() { printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nabstract contract Pb is Test {\n    function _who() internal pure returns (address) { return address(%s); }\n}\n' "$1" > "$K8R/test/Pb.sol"; }
+  k8_helper 0xA11CE
+  printf 'pragma solidity ^0.8.26;\nimport "../test/Pb.sol";\nimport "../src/Reg.sol";\ncontract F1 is Pb {\n' > "$K8R/pending/F-1.t.sol"
+  printf '    function test_F1_the_registrant_owns_it() public { Reg r = new Reg(); vm.prank(address(0xB0B)); r.register(1); assertEq(r.ownerOf(1), _who()); }\n' >> "$K8R/pending/F-1.t.sol"
+  printf '    function test_F1_control() public { Reg r = new Reg(); r.register(2); assertEq(r.ownerOf(2), address(this)); }\n}\n' >> "$K8R/pending/F-1.t.sol"
+  mkdir -p "$K8R/cache/fuzz" "$K8R/cache/invariant/failures/S"; echo x > "$K8R/cache/fuzz/failures"; echo y > "$K8R/cache/invariant/failures/S/x"
+  "$HERE/pending-red.sh" "$K8R" > "$TMP/o4850" 2>&1; check "pending-red.sh: the helper in test/ says 0xA11CE, the test asserts the registrant 0xB0B: RED" 0 $? "$TMP/o4850"
+  K8RA="$(cd "$K8R" && pwd)"; r="$(pending_record_path "$K8RA" pending/F-1.t.sol)"
+  if pending_record_ok "$r" pending/F-1.t.sol "${r##*.}" && grep -q '^failed: test_F1_the_registrant_owns_it()$' "$r" && grep -q 'failing test' "$r"; then
+    echo "  ok    the record: pending-red's first line, the failing test, the end of forge's output"; else echo "  FAIL  the record is not that:"; sed "s/^/        | /" "$r" 2> /dev/null | head -12; fails=$((fails + 1)); fi
+  [ "$(sed -n '/^# the last 20 lines/,$p' "$r" | sed 1d | wc -l | tr -d ' ')" -le 20 ] || { echo "  FAIL  more than 20 lines of forge's output in the record"; fails=$((fails + 1)); }
+  k8_helper 0xB0B
+  "$HERE/pending-red.sh" "$K8R" > "$TMP/o4851" 2>&1; check "pending-red.sh: the helper edited to 0xB0B - the test now PASSES, and is refused (not the old red of a stale build)" 2 $? "$TMP/o4851"
+  grep -qF "pending/F-1.t.sol passes on the code" "$TMP/o4851" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4851")"; fails=$((fails + 1)); }
+  k8_helper 0xA11CE
+  "$HERE/pending-red.sh" "$K8R" > "$TMP/o4852" 2>&1; check "pending-red.sh: the helper back to 0xA11CE - RED again (not the old pass of a stale build)" 0 $? "$TMP/o4852"
+  if [ -f "$K8R/cache/fuzz/failures" ] && [ -f "$K8R/cache/invariant/failures/S/x" ] && [ ! -e "$K8R/out" ] && [ ! -e "$K8R/cache/solidity-files-cache.json" ]; then
+    echo "  ok    the project's persisted fuzz and invariant failures kept, its out/ and forge's cache record untouched (the build is pending-red's own)"; else
+    echo "  FAIL  the project's cache/ or out/ was touched:"; find "$K8R/cache" "$K8R/out" 2> /dev/null | sed "s/^/        | /" | head; fails=$((fails + 1)); fi
+  mkdir -p "$K8R/pending/F-13_dir.t.sol"
+  "$HERE/pending-red.sh" "$K8R" > "$TMP/o4853" 2>&1; check "pending-red.sh refuses a directory pending/F-13_dir.t.sol when it walks pending/" 2 $? "$TMP/o4853"
+  grep -qF 'pending/F-13_dir.t.sol is a directory' "$TMP/o4853" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4853")"; fails=$((fails + 1)); }
+  "$HERE/pending-red.sh" "$K8R" pending/F-13_dir.t.sol > "$TMP/o4854" 2>&1; check "... and when it is named" 2 $? "$TMP/o4854"
+  grep -qF 'pending/F-13_dir.t.sol is a directory' "$TMP/o4854" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4854")"; fails=$((fails + 1)); }
+  rmdir "$K8R/pending/F-13_dir.t.sol"
+  K8_BITS='V4Harness: afterInitialize implemented but its permission bit is not set on 0x0000000000000000000000000000000000001000 - the manager never calls it. That is a finding (the owner decides its fix, doctrine/NEXT.md row 6b): see doctrine/EVIDENCE.md section 2; a suite that deploys a mis-flagged hook on purpose sets _skipPermissionCheck'
+  { printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract F1 is Test {\n    function setUp() public { revert("%s"); }\n' "$K8_BITS"
+    printf '    function test_F1_x() public { assertTrue(false); }\n}\n'; } > "$K8R/pending/F-1.t.sol"
+  "$HERE/pending-red.sh" "$K8R" pending/F-1.t.sol > "$TMP/o4855" 2>&1; check "pending-red.sh: setUp() fails on the harness's permission-bits refusal - no record" 2 $? "$TMP/o4855"
+  if grep -qF "$K8_BITS" "$TMP/o4855" \
+    && grep -qxF 'pending-red: the harness refused the deploy: that IS the finding - record it, then doctrine/EVIDENCE.md section 2 "while a permission-bits finding is open" (_skipPermissionCheck) for the other pending tests' "$TMP/o4855" \
+    && ! grep -q 'the harness broke' "$TMP/o4855"; then
+    echo "  ok    the harness's whole line (no cut), and the line that names the finding and EVIDENCE.md section 2"; else echo "  FAIL  not those lines:"; sed "s/^/        | /" "$TMP/o4855"; fails=$((fails + 1)); fi
+  grep -qiF 'while a permission-bits finding is open' "$HERE/../doctrine/EVIDENCE.md" || { echo "  FAIL  doctrine/EVIDENCE.md has no paragraph 'while a permission-bits finding is open'"; fails=$((fails + 1)); }
+  grep -qF 'see doctrine/EVIDENCE.md section 2' "$HERE/../foundry-kit/v4/src/V4Harness.sol" && ! grep -qF 'Declare the bit and mine for it' "$HERE/../foundry-kit/v4/src/V4Harness.sol" \
+    && echo "  ok    the harness's refusal points at doctrine/EVIDENCE.md section 2, not at a fix" || { echo "  FAIL  the harness's refusal does not point at EVIDENCE.md section 2"; fails=$((fails + 1)); }
+else
+  echo "  SKIPPED - no forge or no foundry-kit/lib here: pending-red.sh's builds from nothing are NOT proven on this machine"; skipped=1
+fi
+if [ -s "$TMP/nx-silent" ]; then echo "  FAIL  next.sh ran with NEXT_SELFTEST=1 and did not say so (K48 cases):"; sed "s/^/        | /" "$TMP/nx-silent"; fails=$((fails + 1)); fi
+# --- end K48 ---
+
+# --- K49 ---
+# ================================================================= the example's values, whatever the spacing (V41: the
+# example unmarked, retitled and re-aligned - one space after each colon, the same values - answered "row 13 - a
+# REGRESSION round" again, the local-model walk's answer); and what pending-red.sh leaves in the project (V41: its
+# header said the project's cache/ was not touched; forge writes cache/test-failures there)
+echo "== next.sh: the example's values whatever the spacing; what pending-red.sh leaves in the project (K49) =="
+K9="$TMP/k9"
+k9_tabs() { # k9_tabs: stdin, each flag line's spacing changed: a tab after its colon, runs of spaces in it one, two spaces at its end
+  LC_ALL=C sed -E '/^[a-z_]+:/ { s/^([a-z_]+):[[:space:]]*/\1:	/; s/  +/ /g; s/$/  /; }'
+}
+kx_proj "$K9"; LC_ALL=C sed -E '/Example file. The project is fictional/d; 1s/BlockCapHook/VolumeRewardsHook/; s/^([a-z_]+):[[:space:]]+/\1: /' "$K8_EX" > "$K9/.gauntlet/STATE.md"
+kx_one 4901 "next.sh refuses the example unmarked, retitled and re-aligned (one space after each colon: V41's case), with the same line" 2 "$K8_FIRST_VAL" "$K9/.gauntlet/STATE.md"
+kx_proj "$K9"; LC_ALL=C sed -E '/Example file. The project is fictional/d; 1s/BlockCapHook/VolumeRewardsHook/' "$K8_EX" | k9_tabs > "$K9/.gauntlet/STATE.md"
+if grep -q '^bytecode_changed_since:	last_battery=no last_long_fuzz=no .*  $' "$K9/.gauntlet/STATE.md"; then echo "  ok    (the copy has a tab after each colon, one space inside, two at the end)"; else
+  echo "  FAIL  the re-spaced copy is not re-spaced:"; grep '^bytecode' "$K9/.gauntlet/STATE.md" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+kx_one 4902 "next.sh refuses the same with tabs, the runs inside a value made one space, and spaces at the ends: the same line" 2 "$K8_FIRST_VAL" "$K9/.gauntlet/STATE.md"
+# a project's starting values, re-spaced: they share ONE non-generic line with the example (last_other_round: none)
+kx_proj "$K9"; { echo '# STATE - SomeHook'; echo; LC_ALL=C awk '/^## Installing/ { s = 1 } s && /^```$/ { if (b) exit; b = 1; print; next } b { print }' "$HERE/../state/README.md" | k9_tabs; echo '```'; } > "$K9/.gauntlet/STATE.md"
+kx_row 4903 "next.sh: a project's starting values (state/README.md) re-spaced - one line shared with the example, last_other_round: none: the row" 4 "$K9/.gauntlet/STATE.md"
+k9_with() { # k9_with <flag> ...: the new project's STATE.md with those flags' lines the kit's example's, then every flag line re-spaced
+  local f l; kx_proj "$K9"
+  for f in "$@"; do
+    l="$(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 "^$f:")"
+    LC_ALL=C awk -v f="$f" -v l="$l" 'index($0, f ":") == 1 { print l; next } { print }' "$K9/.gauntlet/STATE.md" > "$K9/s" && mv "$K9/s" "$K9/.gauntlet/STATE.md"
+  done
+  k9_tabs < "$K9/.gauntlet/STATE.md" > "$K9/s" && mv "$K9/s" "$K9/.gauntlet/STATE.md"
+}
+k9_with notes
+kx_row 4904 "next.sh: two lines shared with the example, re-spaced (last_other_round, notes): not refused, the row" 4 "$K9/.gauntlet/STATE.md"
+k9_with notes waiting_on_owner
+kx_one 4905 "next.sh refuses three lines shared with the example with other spacing (last_other_round, waiting_on_owner, notes), naming the example's own first line" \
+  2 "next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 '^last_other_round:'))" "$K9/.gauntlet/STATE.md"
+grep -qF 'the same values, whatever the spacing' "$HERE/../state/README.md" && echo "  ok    state/README.md says the example's values count whatever the spacing" \
+  || { echo "  FAIL  state/README.md does not say \"the same values, whatever the spacing\""; fails=$((fails + 1)); }
+# ---- pending-red.sh: its own build directory emptied each run; the project's cache/fuzz, cache/invariant,
+# cache/solidity-files-cache.json and out/ untouched; forge writes cache/test-failures, and nothing in the kit reads it
+K9_PR="$HERE/pending-red.sh"
+if sed -n '2,/^set -uo pipefail/p' "$K9_PR" | grep -q 'cache/test-failures' && sed -n '2,/^set -uo pipefail/p' "$K9_PR" | grep -q -- '--rerun'; then
+  echo "  ok    pending-red.sh's header names cache/test-failures, what forge writes in the project, and --rerun"; else
+  echo "  FAIL  pending-red.sh's header does not name cache/test-failures and --rerun (V41: forge writes it; the header said cache/ was not touched)"; fails=$((fails + 1)); fi
+k9_rerun="$(for f in "$HERE"/*.sh "$HERE"/lib/*; do [ "$f" = "$HERE/selftest.sh" ] && continue; grep -HnE -- '--rerun|test-failures' "$f" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; done)"
+[ -z "$k9_rerun" ] && echo "  ok    no script of the kit runs forge with --rerun or reads cache/test-failures (comments aside)" \
+  || { echo "  FAIL  a script uses --rerun or cache/test-failures:"; printf '%s\n' "$k9_rerun" | sed "s/^/        | /"; fails=$((fails + 1)); }
+if command -v forge > /dev/null 2>&1 && [ -e "$KPF/lib" ]; then
+  K9R="$TMP/k9r"; rm -rf "$K9R"; mkdir -p "$K9R/src" "$K9R/pending" "$K9R/.gauntlet"; ln -s "$(cd "$KPF/lib" && pwd -P)" "$K9R/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[profile.pending]\ntest = "pending"\n' > "$K9R/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract Reg {\n    error Taken();\n    mapping(uint256 => address) public ownerOf;\n    function register(uint256 id) external {\n        ownerOf[id] = msg.sender;\n    }\n}\n' > "$K9R/src/Reg.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/Reg.sol";\ncontract F1 is Test {\n' > "$K9R/pending/F-1.t.sol"
+  printf '    function test_F1_a_stranger_cannot_take_a_registered_id() public { Reg r = new Reg(); vm.prank(address(0xA11CE)); r.register(1); vm.prank(address(0xB0B)); vm.expectRevert(Reg.Taken.selector); r.register(1); }\n' >> "$K9R/pending/F-1.t.sol"
+  printf '    function test_F1_control_a_free_id_is_taken() public { Reg r = new Reg(); vm.prank(address(0xB0B)); r.register(2); assertEq(r.ownerOf(2), address(0xB0B)); }\n}\n' >> "$K9R/pending/F-1.t.sol"
+  mkdir -p "$K9R/cache/fuzz" "$K9R/cache/invariant/failures/F1" "$K9R/out/Reg.sol" "$K9R/.gauntlet/pending-red-build/out"
+  printf 'k49 a persisted fuzz failure\n' > "$K9R/cache/fuzz/failures"; printf 'k49 a persisted invariant failure\n' > "$K9R/cache/invariant/failures/F1/invariant_x"
+  printf '{"k49": "the project build record"}\n' > "$K9R/cache/solidity-files-cache.json"; printf '{"k49": "an artifact"}\n' > "$K9R/out/Reg.sol/Reg.json"
+  printf 'k49 stale\n' > "$K9R/.gauntlet/pending-red-build/out/k49-stale"
+  k9_sum() { (cd "$K9R" && find cache/fuzz cache/invariant cache/solidity-files-cache.json out | LC_ALL=C sort | while IFS= read -r f; do echo "$f"; [ ! -f "$f" ] || cat "$f"; done) | cksum; }
+  k9_before="$(k9_sum)"
+  "$K9_PR" "$K9R" pending/F-1.t.sol > "$TMP/o4910" 2>&1; check "pending-red.sh on a project with its own cache/ and out/: RED, the record written" 0 $? "$TMP/o4910"
+  [ "$(k9_sum)" = "$k9_before" ] && echo "  ok    the project's cache/fuzz, cache/invariant, cache/solidity-files-cache.json and out/: untouched, byte for byte" \
+    || { echo "  FAIL  the project's cache/ or out/ changed:"; (cd "$K9R" && find cache out -type f | sed "s/^/        | /"); fails=$((fails + 1)); }
+  [ ! -e "$K9R/.gauntlet/pending-red-build/out/k49-stale" ] && echo "  ok    its own build directory was emptied first (a stale artifact planted there is gone)" \
+    || { echo "  FAIL  a stale artifact in .gauntlet/pending-red-build/ survived the run"; fails=$((fails + 1)); }
+  grep -q 'test_F1_a_stranger_cannot_take_a_registered_id' "$K9R/cache/test-failures" 2> /dev/null \
+    && echo "  ok    forge wrote the project's cache/test-failures, the pending failures (the header says so)" \
+    || { echo "  FAIL  no cache/test-failures naming the failing pending test (the header says forge writes it):"; ls -la "$K9R/cache" | sed "s/^/        | /"; fails=$((fails + 1)); }
+else
+  echo "  SKIPPED - no forge or no foundry-kit/lib here: what pending-red.sh leaves in the project is NOT proven on this machine"; skipped=1
+fi
+# --- end K49 ---
+
+# --- K42/K43 ---
+# ================================================================= setup-deps.sh, doctor.sh's deps line, install-skills.sh --harness hermes (no forge needed)
+# setup-deps.sh writes a project's remappings.txt and foundry.toml for the vendored layout (QUICKSTART.md step 7b) and
+# then runs `forge build`. Here the kit it finds is a FAKE one (the directories its remappings name, empty), and the
+# forge on the PATH is a stub that writes its arguments and directory to a log and exits with what the case asks
+# (K42_FORGE_RC): what is proven is what the script writes, refuses and runs - not that forge compiles it (that was
+# measured on real projects, LOG). Then install-skills.sh --harness hermes into a temporary HERMES_HOME and projects.
+echo "== setup-deps.sh, doctor.sh's deps line, install-skills.sh --harness hermes (K42/K43) =="
+k42_has() { # k42_has <label> <file> <fixed string>...: every string is in the file
+  local label="$1" f="$2" s miss=""; shift 2
+  for s in "$@"; do grep -qF -- "$s" "$f" || miss="$miss [$s]"; done
+  if [ -z "$miss" ]; then echo "  ok    $label"; else echo "  FAIL  $label: not found:$miss"; sed "s/^/        | /" "$f" | tail -n 12; fails=$((fails + 1)); fi
+}
+k42_not() { # k42_not <label> <file> <fixed string>: the string is NOT in the file
+  if grep -qF -- "$3" "$2"; then echo "  FAIL  $1: found [$3]"; sed "s/^/        | /" "$2" | tail -n 12; fails=$((fails + 1)); else echo "  ok    $1"; fi
+}
+K42="$TMP/k42"; mkdir -p "$K42/bin"
+# the stub forge: its arguments and directory, one line per call
+printf '#!/usr/bin/env bash\necho "forge $* in $PWD" >> "%s/forge.log"\nexit "${K42_FORGE_RC:-0}"\n' "$K42" > "$K42/bin/forge"; chmod +x "$K42/bin/forge"
+k42_kit() { # k42_kit <dir>: a fake kit there - the files setup-deps.sh checks, and every directory the v4 module's remappings name
+  local k="$1" line t
+  mkdir -p "$k/foundry-kit/src" "$k/foundry-kit/v4/src" "$k/scripts"
+  cp "$HERE/../foundry-kit/v4/remappings.txt" "$k/foundry-kit/v4/"; : > "$k/foundry-kit/v4/src/V4Harness.sol"
+  while IFS= read -r line; do
+    t="${line#*=}"; case "$t" in ../*) continue ;; esac
+    case "$line" in v4-periphery/* | permit2/* | openzeppelin-contracts/*) continue ;; esac
+    mkdir -p "$k/foundry-kit/v4/$t"
+  done < "$HERE/../foundry-kit/v4/remappings.txt"
+  mkdir -p "$k/foundry-kit/v4/lib/v4-core/src"; : > "$k/foundry-kit/v4/lib/v4-core/src/PoolManager.sol"
+}
+k42_run() { # k42_run <output file> [args...]: setup-deps.sh with the stub forge first on the PATH, SETUP_DEPS_KEEP_LIB unset unless given
+  local o="$1"; shift
+  : > "$K42/forge.log"
+  env -u SETUP_DEPS_KEEP_LIB PATH="$K42/bin:$PATH" "$@" > "$o" 2>&1
+}
+SD="$HERE/setup-deps.sh"
+# the ../ layout: a proj/ beside lib/hook-gauntlet, no remappings.txt, no foundry.toml
+W1="$K42/w1"; k42_kit "$W1/lib/hook-gauntlet"; mkdir -p "$W1/proj/src"; W1="$(cd "$W1" && pwd)"
+k42_run "$TMP/k42-o01" "$SD" "$W1/proj"; check "setup-deps.sh: a proj/ beside lib/hook-gauntlet, nothing set up yet" 0 $? "$TMP/k42-o01"
+k42_exp="$TMP/k42-exp01"
+printf '%s\n' 'forge-std/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/lib/forge-std/src/' \
+  'ds-test/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/lib/forge-std/lib/ds-test/src/' \
+  'solmate/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/lib/solmate/' \
+  '@openzeppelin/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/lib/openzeppelin-contracts/' \
+  'v4-core/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/' '@uniswap/v4-core/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/' \
+  'gauntlet-kit/=../lib/hook-gauntlet/foundry-kit/src/' 'gauntlet-v4/=../lib/hook-gauntlet/foundry-kit/v4/src/' > "$k42_exp"
+if cmp -s "$k42_exp" "$W1/proj/remappings.txt"; then echo "  ok    remappings.txt is the eight lines of the 7b recipe, through ../lib/hook-gauntlet (FR16's, measured)"; else
+  echo "  FAIL  remappings.txt is not the eight lines:"; diff "$k42_exp" "$W1/proj/remappings.txt" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+k42_has "foundry.toml has the 7b lines, allow_paths for ../" "$W1/proj/foundry.toml" '[profile.default]' 'libs = []' \
+  'solc_version = "0.8.26"' 'evm_version = "cancun"' 'allow_paths = ["../lib/hook-gauntlet/foundry-kit"]' \
+  'additional_compiler_profiles = [{ name = "manager", via_ir = true, optimizer_runs = 44444444 }]' \
+  '{ paths = "../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/src/PoolManager.sol", via_ir = true, optimizer_runs = 44444444 },'
+k42_has "and it printed each line it wrote, then the build it ran" "$TMP/k42-o01" \
+  'setup-deps: remappings.txt: + gauntlet-v4/=../lib/hook-gauntlet/foundry-kit/v4/src/' \
+  'setup-deps: foundry.toml [profile.default]: + allow_paths = ["../lib/hook-gauntlet/foundry-kit"]' 'setup-deps: running: forge build' \
+  'setup-deps: DONE'
+if [ "$(cat "$K42/forge.log")" = "forge build in $W1/proj" ]; then echo "  ok    forge build ran once, in the project"; else
+  echo "  FAIL  forge calls: $(tr '\n' ';' < "$K42/forge.log")"; fails=$((fails + 1)); fi
+if [ ! -e "$W1/proj/lib" ] && [ "$(find "$W1/proj" -type f | wc -l | tr -d ' ')" = 2 ]; then echo "  ok    and nothing was copied into the project: remappings.txt and foundry.toml only"; else
+  echo "  FAIL  the project holds: $(cd "$W1/proj" && find . -type f | tr '\n' ' ')"; fails=$((fails + 1)); fi
+k42_h1="$(hash_of "$W1/proj/remappings.txt")$(hash_of "$W1/proj/foundry.toml")"
+k42_run "$TMP/k42-o02" "$SD" "$W1/proj"; check "setup-deps.sh again: nothing to change" 0 $? "$TMP/k42-o02"
+k42_has "it says so for both files and still builds" "$TMP/k42-o02" 'setup-deps: remappings.txt: nothing to change' 'setup-deps: foundry.toml: nothing to change' 'setup-deps: running: forge build'
+[ "$(hash_of "$W1/proj/remappings.txt")$(hash_of "$W1/proj/foundry.toml")" = "$k42_h1" ] || { echo "  FAIL  and the files changed"; fails=$((fails + 1)); }
+# --check (what doctor.sh reads) and doctor.sh's line
+k42_run "$TMP/k42-o03" "$SD" --check "$W1/proj"; check "setup-deps.sh --check on the project it set up" 0 $? "$TMP/k42-o03"
+"$HERE/doctor.sh" "$W1/proj" > "$TMP/k42-o04" 2>&1
+k42_has "doctor.sh <proj>: deps: ok" "$TMP/k42-o04" 'deps: ok'
+mkdir -p "$K42/w1/proj2/src"
+"$HERE/doctor.sh" "$W1/proj2" > "$TMP/k42-o05" 2>&1; k42_rc=$?
+check "doctor.sh <proj> on a project not set up: not ready" 1 "$k42_rc" "$TMP/k42-o05"
+k42_has "and it names the command" "$TMP/k42-o05" "deps: $W1/proj2: not set up - scripts/setup-deps.sh $W1/proj2"
+if tail -n 1 "$TMP/k42-o05" | grep -qE '^doctor: missing: (.*, )?deps$'; then echo "  ok    and its last line lists deps as missing"; else
+  echo "  FAIL  last line: $(tail -n 1 "$TMP/k42-o05")"; fails=$((fails + 1)); fi
+k42_run "$TMP/k42-o06" "$SD" --check "$W1/proj2"; check "setup-deps.sh --check on a project not set up" 1 $? "$TMP/k42-o06"
+# --dry-run: printed, nothing written, nothing built
+k42_run "$TMP/k42-o07" "$SD" --dry-run "$W1/proj2"; check "setup-deps.sh --dry-run" 0 $? "$TMP/k42-o07"
+k42_has "it prints what it would write and the build it would run" "$TMP/k42-o07" \
+  'setup-deps: dry-run - remappings.txt: + v4-core/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/' 'setup-deps: dry-run - would run: forge build'
+if [ "$(find "$W1/proj2" -type f | wc -l | tr -d ' ')" = 0 ] && [ ! -s "$K42/forge.log" ]; then echo "  ok    and nothing was written, forge never called"; else
+  echo "  FAIL  written: $(find "$W1/proj2" -type f | tr '\n' ' '); forge: $(tr '\n' ';' < "$K42/forge.log")"; fails=$((fails + 1)); fi
+# the project's own lib/v4-core (the local-model walk's copy of the kit's): refused, nothing written; SETUP_DEPS_KEEP_LIB=1 goes ahead
+mkdir -p "$W1/proj2/lib/v4-core/src" "$W1/proj2/lib/forge-std"
+k42_run "$TMP/k42-o08" "$SD" "$W1/proj2"; check "setup-deps.sh: a project with its own lib/v4-core and lib/forge-std is refused" 2 $? "$TMP/k42-o08"
+k42_has "and the refusal says which, and the way out" "$TMP/k42-o08" \
+  "setup-deps: $W1/proj2/lib/v4-core exists - a copy of the kit's? remove it or SETUP_DEPS_KEEP_LIB=1" \
+  "setup-deps: $W1/proj2/lib/forge-std exists - a copy of the kit's? remove it or SETUP_DEPS_KEEP_LIB=1"
+if [ ! -e "$W1/proj2/remappings.txt" ] && [ ! -e "$W1/proj2/foundry.toml" ] && [ ! -s "$K42/forge.log" ]; then echo "  ok    nothing written, nothing built"; else
+  echo "  FAIL  something was written or built"; fails=$((fails + 1)); fi
+k42_run "$TMP/k42-o09" env SETUP_DEPS_KEEP_LIB=1 "$SD" "$W1/proj2"; check "SETUP_DEPS_KEEP_LIB=1: the same project goes ahead" 0 $? "$TMP/k42-o09"
+k42_has "and it says the lib/ was kept and is not what the remappings reach" "$TMP/k42-o09" 'SETUP_DEPS_KEEP_LIB=1' 'kept'
+if cmp -s "$k42_exp" "$W1/proj2/remappings.txt"; then echo "  ok    and the remappings still point at the kit, not at the project's lib/"; else
+  echo "  FAIL  remappings.txt differs"; fails=$((fails + 1)); fi
+# repair: the local-model walk's shape - remappings into the project's lib/, a line of the owner's, libs = ["lib"], the restriction under lib/
+W3="$W1/proj3"; mkdir -p "$W3/src"
+printf '%s\n' 'v4-core/=lib/v4-core/' 'forge-std/=lib/v4-core/lib/forge-std/src/' 'mine/=src/' 'v4-core/=lib/v4-core/' > "$W3/remappings.txt"
+printf '%s\n' '[profile.default]' 'src = "src"' 'libs = ["lib"]' 'optimizer_runs = 800' 'allow_paths = [' '  "../lib/hook-gauntlet/foundry-kit/src",' \
+  '  "../elsewhere",' ']' 'compilation_restrictions = [' '  { paths = "lib/v4-core/src/PoolManager.sol", via_ir = true, optimizer_runs = 44444444 },' ']' \
+  '' '[profile.pending]' 'test = "pending"' 'libs = ["lib"]' > "$W3/foundry.toml"
+k42_run "$TMP/k42-o10" "$SD" "$W3"; check "setup-deps.sh repairs the local-model walk's shape (remappings into lib/, libs = [\"lib\"])" 0 $? "$TMP/k42-o10"
+k42_has "each changed line is printed with what it was" "$TMP/k42-o10" \
+  'setup-deps: remappings.txt: ~ v4-core/=../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/   (was: v4-core/=lib/v4-core/)' \
+  'setup-deps: remappings.txt: - v4-core/=lib/v4-core/   (a second v4-core/ line)' \
+  'setup-deps: foundry.toml [profile.default]: ~ libs = []   (was: libs = ["lib"])' \
+  'setup-deps: foundry.toml [profile.default]: ~ allow_paths = ["../elsewhere", "../lib/hook-gauntlet/foundry-kit"]' \
+  'foundry.toml:15 [profile.pending]'
+k42_has "the owner's lines stay" "$W3/remappings.txt" 'mine/=src/'
+k42_has "and in foundry.toml" "$W3/foundry.toml" 'optimizer_runs = 800' 'src = "src"' '[profile.pending]' \
+  '{ paths = "../lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/src/PoolManager.sol", via_ir = true, optimizer_runs = 44444444 },'
+k42_not "and no restriction under the project's lib/ is left" "$W3/foundry.toml" '"lib/v4-core/src/PoolManager.sol"'
+if [ "$(grep -c '^v4-core/=' "$W3/remappings.txt")" = 1 ] && [ "$(grep -c '^libs = ' "$W3/foundry.toml")" = 2 ]; then echo "  ok    one v4-core/ line; one libs per table"; else
+  echo "  FAIL  duplicated lines"; fails=$((fails + 1)); fi
+# a build that fails: rc 1, said
+k42_run "$TMP/k42-o11" env K42_FORGE_RC=1 "$SD" "$W3"; check "setup-deps.sh: forge build fails after the files are written" 1 $? "$TMP/k42-o11"
+k42_has "and it says so" "$TMP/k42-o11" 'setup-deps: forge build FAILED'
+# remappings set in foundry.toml's default profile: refused (forge would read them before remappings.txt's)
+W4="$W1/proj4"; mkdir -p "$W4"; printf '%s\n' '[profile.default]' 'remappings = ["v4-core/=lib/v4-core/"]' > "$W4/foundry.toml"
+k42_run "$TMP/k42-o12" "$SD" "$W4"; check "setup-deps.sh: remappings in foundry.toml's [profile.default] are refused" 2 $? "$TMP/k42-o12"
+k42_has "and it says why" "$TMP/k42-o12" 'remappings'
+[ ! -e "$W4/remappings.txt" ] || { echo "  FAIL  and it wrote remappings.txt"; fails=$((fails + 1)); }
+# the flat layout: the kit inside the project as lib/hook-gauntlet - no ../, no allow_paths
+W5="$K42/w5"; k42_kit "$W5/lib/hook-gauntlet"; W5="$(cd "$W5" && pwd)"
+k42_run "$TMP/k42-o13" "$SD" "$W5"; check "setup-deps.sh: the flat layout (the kit at the project's lib/hook-gauntlet)" 0 $? "$TMP/k42-o13"
+k42_has "remappings through lib/hook-gauntlet" "$W5/remappings.txt" 'v4-core/=lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/' 'gauntlet-v4/=lib/hook-gauntlet/foundry-kit/v4/src/'
+k42_not "and no allow_paths" "$W5/foundry.toml" 'allow_paths'
+k42_not "and no ../ anywhere" "$W5/remappings.txt" '../'
+# a project inside the kit, a project outside any kit's reach, a kit without Uniswap's sources, --kit
+k42_run "$TMP/k42-o14" "$SD" "$W5/lib/hook-gauntlet/foundry-kit/v4"; check "setup-deps.sh: a project inside the kit itself is refused" 2 $? "$TMP/k42-o14"
+mkdir -p "$K42/lone/proj"
+k42_run "$TMP/k42-o15" "$SD" "$K42/lone/proj"; check "setup-deps.sh: no lib/hook-gauntlet in the project or above it is refused" 2 $? "$TMP/k42-o15"
+k42_has "and it says the project is outside the kit's reach, and the way out" "$TMP/k42-o15" "outside the kit's reach" '--kit'
+W6="$K42/w6"; k42_kit "$W6/lib/hook-gauntlet"; rm -rf "$W6/lib/hook-gauntlet/foundry-kit/v4/lib"; mkdir -p "$W6/proj"
+k42_run "$TMP/k42-o16" "$SD" "$W6/proj"; check "setup-deps.sh: a kit whose foundry-kit/v4/lib is not installed is refused" 2 $? "$TMP/k42-o16"
+k42_has "and it points at install-v4.sh" "$TMP/k42-o16" 'scripts/install-v4.sh'
+[ ! -e "$W6/proj/remappings.txt" ] || { echo "  FAIL  and it wrote remappings.txt"; fails=$((fails + 1)); }
+k42_run "$TMP/k42-o17" "$SD" --kit "$W1/lib/hook-gauntlet" "$K42/lone/proj"; check "setup-deps.sh --kit: a kit elsewhere, reached by ../" 0 $? "$TMP/k42-o17"
+k42_has "remappings relative to the project, allow_paths for it" "$K42/lone/proj/remappings.txt" 'v4-core/=../../w1/lib/hook-gauntlet/foundry-kit/v4/lib/v4-core/'
+k42_has "and allow_paths" "$K42/lone/proj/foundry.toml" 'allow_paths = ["../../w1/lib/hook-gauntlet/foundry-kit"]'
+
+# install-skills.sh --harness hermes: HERMES_HOME and HOME temporary, never the machine's
+KH="$K42/hermes-home"; KHP="$K42/hproj"; mkdir -p "$KHP"; KHP="$(cd "$KHP" && pwd)"; KKIT="$(cd "$HERE/.." && pwd)"
+HOME="$K42/home" HERMES_HOME="$KH" "$HERE/install-skills.sh" --harness hermes --user --kit "$KKIT" --dry-run > "$TMP/k42-o20" 2>&1
+check "install-skills.sh --harness hermes --user --dry-run" 0 $? "$TMP/k42-o20"
+k42_has "into \$HERMES_HOME/skills, and the start line last" "$TMP/k42-o20" "would write $KH/skills/hook-gauntlet/SKILL.md" "dry-run: 9 skills into $KH/skills"
+if tail -n 1 "$TMP/k42-o20" | grep -qF 'start Hermes with: hermes chat -s hook-gauntlet (the entry skill stays in the system prompt, which Hermes'"'"'s compression protects)'; then
+  echo "  ok    its last line is the start line"; else echo "  FAIL  last line: $(tail -n 1 "$TMP/k42-o20")"; fails=$((fails + 1)); fi
+[ ! -e "$KH" ] || { echo "  FAIL  and the dry run wrote $KH"; fails=$((fails + 1)); }
+env -u HERMES_HOME HOME="$K42/home" "$HERE/install-skills.sh" --harness hermes --user --kit "$KKIT" --dry-run > "$TMP/k42-o21" 2>&1
+check "install-skills.sh --harness hermes --user --dry-run, HERMES_HOME unset" 0 $? "$TMP/k42-o21"
+k42_has "into ~/.hermes/skills" "$TMP/k42-o21" "would write $K42/home/.hermes/skills/hook-gauntlet/SKILL.md"
+HOME="$K42/home" HERMES_HOME="$KH" "$HERE/install-skills.sh" --harness hermes --user > "$TMP/k42-o22" 2>&1
+check "install-skills.sh --harness hermes --user with the default (relative) --kit is refused" 2 $? "$TMP/k42-o22"
+k42_has "and it says why" "$TMP/k42-o22" '--user needs an absolute --kit'
+HOME="$K42/home" HERMES_HOME="$KH" "$HERE/install-skills.sh" --harness hermes --project "$KHP" --dry-run > "$TMP/k42-o23" 2>&1
+check "install-skills.sh --harness hermes --project --dry-run" 0 $? "$TMP/k42-o23"
+k42_has "into the project's .agents/skills, with the two lines Hermes needs" "$TMP/k42-o23" "would write $KHP/.agents/skills/hook-gauntlet/SKILL.md" \
+  'skills:' "  external_dirs: [$KHP/.agents/skills]" 'start Hermes with: hermes chat -s hook-gauntlet'
+[ ! -e "$KHP/.agents" ] || { echo "  FAIL  and the dry run wrote $KHP/.agents"; fails=$((fails + 1)); }
+HOME="$K42/home" HERMES_HOME="$KH" "$HERE/install-skills.sh" --harness hermes --project "$KHP" > "$TMP/k42-o24" 2>&1
+check "install-skills.sh --harness hermes --project" 0 $? "$TMP/k42-o24"
+k42_has "the external_dirs lines printed after the install" "$TMP/k42-o24" "installed: 9 skills into $KHP/.agents/skills" "  external_dirs: [$KHP/.agents/skills]"
+if [ "$(find "$KHP/.agents/skills" -name SKILL.md | wc -l | tr -d ' ')" = 9 ] && [ ! -e "$KH" ] && [ ! -e "$K42/home/.hermes" ]; then
+  echo "  ok    nine skills in the project, nothing in any Hermes home"; else echo "  FAIL  the install wrote elsewhere"; fails=$((fails + 1)); fi
+if tail -n 1 "$TMP/k42-o24" | grep -qF 'start Hermes with: hermes chat -s hook-gauntlet'; then echo "  ok    and its last line is the start line"; else
+  echo "  FAIL  last line: $(tail -n 1 "$TMP/k42-o24")"; fails=$((fails + 1)); fi
+
 
 echo
 echo "selftest ran in $((SECONDS - started)) s"

@@ -12,7 +12,37 @@ LOG.md          one entry per change                           - append only
 ## Installing
 
 Copy the three files into the project (a `.gauntlet/` directory works well, or the project root), then **empty the
-examples**. Copy `state/.gitignore` into `<project>/.gauntlet/` too, wherever the three files go: the benches live in
+examples**: `scripts/next.sh` refuses a `STATE.md`, or the `DECISIONS.md` and `LOG.md` beside it, that is still the
+example - its line "Example file. The project is fictional." (in `DECISIONS.md` and `LOG.md` only as a line of its own:
+a log entry that quotes it is not the example) or `BlockCapHook` in its title - with `next: FIRST - fill STATE.md: it is
+still the kit's example (state/README.md, "empty the examples")` (exit 2, no escape). Emptying `STATE.md` means:
+keep its flag block (the fenced block at the top: `next.sh` reads nothing else) and its section headers, retitle it for
+your hook, delete the example's prose, and write the starting values of a new project into the flags:
+
+```
+phase:                     0
+bytecode_changed_since:    last_battery=yes  last_long_fuzz=yes  last_other_free_judges=yes  last_audit_round=yes  last_promotion=n/a
+battery:                   never
+blackbox:                  never_run
+open_findings:             high=0 medium=0 low=0 reasoned_high_or_medium=0
+last_audit_round:          none
+last_other_round:          none
+real_manager_battery:      n/a (chain not chosen)
+ceiling:                   not agreed (phase 0)
+waiting_on_owner:          none
+location:                  .gauntlet/
+dossier:                   none
+rehearsal:                 n/a (no runbook)
+notes:
+```
+
+(`location:` is where you put the three files - `.gauntlet/` or `root`; `ceiling:` stays `not agreed (phase 0)` until
+the owner agrees one, then says it as agreed; `notes:` starts empty.) A `STATE.md` whose flag block still shares three
+or more lines with the example's - the same values, whatever the spacing (each line trimmed and its runs of spaces and
+tabs made one, on both sides) - counting `last_audit_round`, `last_other_round`, `open_findings`, `ceiling`,
+`waiting_on_owner`, `notes` and `bytecode_changed_since`, not the flags a new project can share by chance - is the
+example with its marker deleted and its title changed, and is refused the same way: `next: FIRST - fill STATE.md: its
+values are still the kit's example's (<the first shared line, as the example has it>)`. Copy `state/.gitignore` into `<project>/.gauntlet/` too, wherever the three files go: the benches live in
 `<project>/.gauntlet/bench/` (`scripts/bench.sh`, `fuzz-long.sh`, `mutate.sh`: inside the project, never `$HOME` - and
 only once `.gauntlet/` exists: in a tree without it the scripts refuse and ask for `BENCH_ROOT` outside it), and it
 keeps them out of git while the state files and reports stay committable. The examples in this directory describe a fictional hook called `BlockCapHook`, which caps how much
@@ -43,6 +73,7 @@ and the long fuzz runs again (row 7); the other `bytecode_changed_since` flags a
 ```sh
 scripts/next.sh .gauntlet/STATE.md
 scripts/next.sh .gauntlet/STATE.md --judge 5=false,8=false,12=true    # the answers to the rows that need judgement
+scripts/next.sh <proj>                # a project's directory: its .gauntlet/STATE.md, then its STATE.md
 ```
 
 Before any row it checks that the kit's own tools are proven on this machine. `scripts/selftest.sh`, when it ends
@@ -75,6 +106,31 @@ no note `pending: <id> ...` names - "write it in STATE.md notes and in open_find
 `pending/` is a test here - in a subdirectory, without `.t`, hidden, a helper - because row 6b's profile compiles and
 runs them all (forge 1.8.1, measured); its id is its name without `.t.sol` or `.sol`. A note may name several ids,
 `pending: F-4, F-5 - <promise>, owner undecided` (commas, `and` or `&` between them), and each needs its file.
+Each of those files needs a record of being seen RED on `src/` as it stands, which `scripts/pending-red.sh <proj>
+[pending/<file>]` writes to `.gauntlet/pending-red/` only when the file compiles and at least one of its tests fails
+(not `setUp()`) under row 6b's profile - one that passes on the code is refused, "it is not a finding's test". It
+builds from nothing on every run, in a build directory of its own (`.gauntlet/pending-red-build/`, emptied each run),
+so the verdict is never forge's stale artifacts' (a helper in `test/` edited after an incremental build ran as it was
+before); the project's `cache/fuzz`, `cache/invariant`, `cache/solidity-files-cache.json` and `out/` are not touched
+(measured). Forge itself writes the project's `cache/test-failures` (the pending tests that failed), which nothing in
+the kit reads (`--rerun` is never used). The record's key is the SHA-256 of the file list and contents of `src/`,
+`test/`, `pending/`, `foundry.toml` and `remappings.txt`, so an edit to any of them - a helper the test imports
+included - needs a new run (not keyed: the libraries and the compiler). The record says what it is on its first line,
+`pending-red: red <file> key=<key> <date>`, then the failing tests and the last 20 lines of forge's output; `next.sh`
+reads that line. Without a current record: `next: pending/<file> - not seen red on the code as it stands:
+<kit>/scripts/pending-red.sh <proj> pending/<file>`; with one whose first line is not that, for that file and the key in
+its name (an empty or handwritten file): `next: pending/<file>: record unreadable - run scripts/pending-red.sh again`
+(exit 2 both; `PENDING_RED=0` skips them and says so on stderr). A directory below `pending/` named `*.sol` is refused:
+a test there is a file. When the v4 harness refuses the deploy in `setUp()` (`V4Harness: ... permission bit ...`),
+`pending-red.sh` prints the harness's whole line and says that refusal IS the finding: record it, then
+`doctrine/EVIDENCE.md` section 2, "while a permission-bits finding is open", for the other pending tests. And a file
+that `STATE.md` or `DECISIONS.md` cites must be a non-empty regular file (not `LOG.md`'s: a log is history, and a file
+it names may have been moved or deleted since, legitimately): a path starting `pending/`, `test/`, `src/` or
+`.gauntlet/reports/` whose last part has an extension, looked up from the project and in its benches
+(`.gauntlet/bench/<name>/`), else `next: DECISIONS.md cites a file that does not exist: <path>` - or `that is empty`,
+`that is a directory` (exit 2; `CITED_FILES=0` skips it and says so). Not a citation: a path in a fenced code block (the flag block's `pending:`
+notes are read), after `to write`, `planned` or `TODO` on its line, followed by `*`, `?`, `<`, `{` or `[`, or with
+`..` in it.
 Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`
 the flags that made it true (exit 0). With the owner absent, nothing below row 3 standing AND no row left to judge -
 typically once row 9b's skeleton names the open findings, `waiting_on_owner` asks for their triage, and rows 5, 8, 9, 10

@@ -65,7 +65,9 @@ A test is evidence only after it has failed on code that is wrong in the way the
   every low-level call, so that a harness that silently does nothing cannot report a green.
 - **A finding's test gets past TESTED on a FIX variant, not on a mutant - by two runs, and a named failure.** A
   finding's test is red on the code as it is - the code is the broken version - and that red alone does not show the
-  test fails FOR the claim. It is **MUTATION-TESTED** when all three hold, the outputs pasted:
+  test fails FOR the claim. `scripts/pending-red.sh` runs a test in `pending/` and records its red, keyed by the file
+  and `src/`: the record is what makes "red on the code" a fact the route can read (`next.sh` refuses a pending test
+  without a current one, and `pending-red.sh` refuses one that passes on the code: it is not a finding's test). It is **MUTATION-TESTED** when all three hold, the outputs pasted:
   1. **Red on the code, green on a fix variant.** A plausible fix of THIS claim, one line, built by `scripts/mutate.sh`
      on a throwaway copy - never applied to `src/`, the owner absent or not (the fix is the owner's decision, `NEXT.md`
      row 6b) - with `TEST_FLAGS` naming that test's file (its control runs with it): `FOUNDRY_PROFILE=pending EXPECT=green BASELINE_MAY_BE_RED=1
@@ -99,6 +101,14 @@ A test is evidence only after it has failed on code that is wrong in the way the
      plausible fix. The first run warns on a test file that accepts any revert (`mutate: WARNING - ... accepts any
      revert`), reading its code, not its comments or strings - a heuristic that knows a few shapes only: its silence is
      not evidence, and not the control.
+
+  **While a permission-bits finding is open** (the v4 harness refuses to deploy a hook that implements a callback
+  without its bit - `V4Harness: <callback> implemented but its permission bit is not set`), every test that deploys
+  that hook fails in `setUp()`, the pending tests of OTHER findings included, and `scripts/pending-red.sh` records no
+  `setUp()` failure as red - on this refusal it prints the harness's whole line and points here. The path: the bits finding's own test deploys with
+  `_skipPermissionCheck = true` and shows the callback never running (red on the code); the other pending tests set
+  the same flag and say so in their header (`// _skipPermissionCheck: <finding id> open`) until the fix lands, and
+  drop it then. A pending test that keeps the flag after the fix is a smell the round names.
 
   In the layout `QUICKSTART.md` 7b recommends - the kit vendored beside the project, remappings through `../` - BOTH runs
   need `COPY_ROOT=<the directory that holds the project and the kit>` (run from the project: `COPY_ROOT=..`): without

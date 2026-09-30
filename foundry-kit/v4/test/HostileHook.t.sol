@@ -132,8 +132,10 @@ contract HostileHookTest is V4Harness {
         _setUpV4();
 
         // Only `beforeSwap`. That is the entry point every switch below is observed through, and a hook with
-        // fewer flags is a hook with fewer things that could explain a failure.
-        hostile = HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG));
+        // fewer flags is a hook with fewer things that could explain a failure. It answers all ten callbacks, so the
+        // harness's bits-against-callbacks check is off for this suite (K46).
+        _skipPermissionCheck = true;
+        hostile =HostileHook(_deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG));
         vm.label(address(hostile), "HostileHook");
 
         _fundAndApprove(provider, 1_000_000e18);

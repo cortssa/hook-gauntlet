@@ -1,5 +1,78 @@
 # Changelog
 
+## Unreleased (v0.4) - discipline moved from text into scripts that refuse
+
+Written for a small model on a local machine to follow: one run of the route by a 27B model in Hermes
+(`adapters/local-models/README.md`) left the kit's example `STATE.md` unfilled, answered by `next.sh` as a real state;
+cited tests that never existed; copied the kit's libraries into the project by hand; and had its planted clock bug
+hidden by a harness timestamp of 1. Each of those is now a script that refuses, and each refusal names its escape.
+
+- **`scripts/next.sh` refuses the kit's example:** a `STATE.md`, or the `DECISIONS.md` or `LOG.md` beside it, that
+  still carries the example's marker line (in `DECISIONS.md` and `LOG.md` as a line of its own: a log that quotes it
+  is not the example) or `BlockCapHook` in its title - `next: FIRST - fill STATE.md: it is still the kit's example`
+  (exit 2, no escape: an example is never a state) - or a `STATE.md` whose flag block shares three or more
+  non-generic lines with the example's, whatever the spacing (the example with its marker deleted and retitled): `next:
+  FIRST - fill STATE.md: its values are still the kit's example's (<line>)`. `doctrine/NEXT.md` row 0 says so;
+  `state/README.md` gives the starting values a new project writes.
+- **A test in `pending/` must have been seen red on the code as it stands:** `scripts/pending-red.sh <proj>
+  [pending/<file>]` runs each file under row 6b's profile and writes a record to `.gauntlet/pending-red/` only when it
+  compiles and at least one of its tests fails - not `setUp()`: a broken harness is not a finding - keyed by the
+  SHA-256 of the file list and contents of `src/`, `test/`, `pending/`, `foundry.toml` and `remappings.txt`. Every
+  run builds from nothing in a build directory of its own (forge's incremental build ran an edited helper in `test/`
+  as it was before). A test that passes on the code is refused, "it is not a finding's test". The record's first line
+  is `pending-red: red <file> key=<key> <date>`, then the failing tests and the last 20 lines of forge's output.
+  `next.sh` refuses a pending test without a current record, or with one whose first line is not that ("record
+  unreadable"), and a directory in `pending/` named `*.sol` (`PENDING_RED=0` skips the record check, and says so).
+  When the v4 harness refuses the deploy on a permission bit, `pending-red.sh` prints the harness's whole line and
+  says that refusal is the finding.
+- **A file the record cites must exist:** a path under `pending/`, `test/`, `src/` or `.gauntlet/reports/` that
+  `STATE.md` or `DECISIONS.md` cites and that is not a non-empty regular file - not there, empty, or a directory - is
+  refused, saying which (`CITED_FILES=0` skips it, and says so).
+  `LOG.md` is not read for this: a log is history, and a file it names may have been moved or deleted since.
+- **`next.sh <proj>`:** a project's directory reads its `.gauntlet/STATE.md`, then its `STATE.md`.
+- **One command for a project's dependencies:** `scripts/setup-deps.sh <proj>` writes or repairs `remappings.txt` and
+  the `[profile.default]` lines of `foundry.toml` for the kit vendored in the project (relative paths), prints every
+  line it wrote, and builds; it never copies a library into the project and refuses one that has its own
+  `lib/forge-std` or `lib/v4-core` (`SETUP_DEPS_KEEP_LIB=1`). `--dry-run`, `--check`. `scripts/doctor.sh <proj>`
+  gains a `deps:` line. QUICKSTART steps 3 and 7b point at it.
+- **`scripts/install-skills.sh --harness hermes`:** `--user` installs into `${HERMES_HOME:-~/.hermes}/skills`;
+  `--project` into `.agents/skills` and prints the two `skills.external_dirs` lines Hermes needs; both print the start
+  line `hermes chat -s hook-gauntlet`. `skills/README.md` has a table of harnesses with what was measured on each.
+- **Local models:** `adapters/local-models/README.md` - the server and agent configuration of the one run, what was
+  measured and what was not; `AGENTS.md` section 7 points at it. A measurement, not a supported path.
+- **`V4Harness`, a realistic clock and the permission bits checked:** the source manager's setup warps to `V4_T0`
+  (2026-01-02 03:10:57 UTC, off every minute, hour, day and week boundary) and a matching block, so time-keyed state
+  is exercised (the fork keeps the chain's clock). `_deployHook` calls the ten callbacks as the manager would and
+  fails with the callback's name when one is implemented and its permission bit is not set; a bit set on a callback
+  that is not implemented is a warning. Escape: `_skipPermissionCheck` (the kit's hostile hooks, which answer every
+  callback, use it). Two suites of their own; the v4 battery 271 -> 287.
+- **The entry skill ends with the first command:** "Your next command is `lib/hook-gauntlet/scripts/next.sh <proj>`.
+  Run it; do not read it." (the kit's path as installed), and a new step 2 says to run `scripts/setup-deps.sh <proj>` -
+  both sentences of `AGENTS.md` (sections 3b and 4), quoted by the generator and checked there.
+
+Known gaps, each written where it lives:
+- `setup-deps.sh` does not write the periphery's remappings (`v4-periphery/`, `permit2/`, `openzeppelin-contracts/`):
+  a project that uses the periphery adds them by hand (QUICKSTART 7b). A Hermes that reads the user-level install
+  (`HERMES_HOME/skills`) was not run; the `external_dirs` lines are the ones that worked in the one run.
+- An honest `DECISIONS.md` that names a file moved or deleted since is refused: rewrite the entry to the file's new
+  place, or `CITED_FILES=0`. A path written `reports/...` without `.gauntlet/` is not read; `scripts/round.sh` does
+  not check citations. The red record's key does not include the libraries or the compiler (the run itself is a
+  build from nothing, so its verdict is not a stale one; a record is just not staled by them).
+- A callback that only returns its selector counts as implemented: the check fails on it (remove it, set its bit, or
+  `_skipPermissionCheck`). A finding's fix that leaves a callback implemented without its bit - a dead one, kept -
+  fails in `setUp()`, so a finding's test that must pass on the fixed code needs the fix to remove or declare that
+  callback. The harness's refusal now points at `doctrine/EVIDENCE.md` section 2, not at a fix: the owner decides the
+  fix (row 6b).
+- The two checks meet on a hook whose finding IS such a callback: every suite's `setUp()` fails, and `pending-red.sh`
+  does not count a `setUp()` failure as red. Measured on FR16's project with this kit: `setup-deps.sh` rewrote its
+  eight remappings byte for byte and built; then all five of its pending tests failed in `setUp()` on the permission
+  check (a real defect of that hook), none got a record, and `next.sh` refused the first. The way out is written in
+  `doctrine/EVIDENCE.md` section 2, "while a permission-bits finding is open" (and in `foundry-kit/v4/README.md`, the
+  harness's section): the bits finding's own test deploys with `_skipPermissionCheck` and shows the callback never
+  running; the other pending tests set the same flag, say so in their header, and drop it with the fix.
+  `pending-red.sh` names that section when the harness refuses the deploy. Measured on a copy of FR16's project:
+  with the flag in the five pending tests as that section says, 5/5 red, each on its own assertion.
+
 ## v0.3 - 2026-09-29 - skills as the way in, a window of real swaps, and a finding's test that must discriminate
 
 - **Thin skills** (`skills/`, `scripts/install-skills.sh`): nine skills - the entry one and one per phase or role -

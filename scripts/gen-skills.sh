@@ -12,7 +12,8 @@
 #   - "This phase": the NEXT.md rows the skill owns, each with its "do this" cell, read from the table by id;
 #   - "Gate": the phase's cell of AGENTS.md section 3;
 #   - "Read on entry": the path, and AGENTS.md section 7's own line for it when it has one;
-#   - the entry skill's steps: sentences of AGENTS.md, each checked to be there before it is written;
+#   - the entry skill's steps and its last line (the first command to run): sentences of AGENTS.md, each checked to be
+#     there before it is written;
 #   - the doctor's checks: each script's own first line (line 3 of its header).
 # What is NOT extracted is short and kept as DATA below: which skill owns which rows, the trigger words of each
 # description, and the "Read on entry" / "Read when" lists. The only prose this script adds is structure: headings,
@@ -141,11 +142,15 @@ DOCTOR_SCRIPTS='doctor.sh selftest.sh install-v4.sh next.sh skills-check.sh'
 # checked to be in AGENTS.md (whitespace aside) before anything is written
 STEPS='
 With skills | do not read `AGENTS.md`, `doctrine/NEXT.md` or `QUICKSTART.md` whole: read the section a skill names, when it names it.
+The project'"'"'s dependencies | run `scripts/setup-deps.sh <proj>` - it writes the project'"'"'s `remappings.txt` and `foundry.toml` lines for the kit'"'"'s libraries and builds it; never copy a library into the project (`QUICKSTART.md` steps 3 and 7b).
 A hook that already exists | An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after `AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
 A new project | Before phase 0, install the state convention in the owner'"'"'s project: copy the three files from `state/`, and its `.gitignore`, into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook
 Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`) | Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
-Where next | `scripts/next.sh <STATE.md>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first
+Where next | `scripts/next.sh <proj>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first
 '
+# the entry skill's last line: a sentence of AGENTS.md (section 3b), quoted and checked like the steps - the first
+# command, so that a model that loaded the skill runs the script before it reads anything else (K45)
+LASTLINE='Your next command is `scripts/next.sh <proj>`. Run it; do not read it.'
 
 # ------------------------------------------------------------------------------------------------ helpers
 trim() { local s="$1"; s="${s#"${s%%[![:space:]]*}"}"; printf '%s' "${s%"${s##*[![:space:]]}"}"; }
@@ -277,6 +282,10 @@ while IFS='|' read -r q_label q_text; do
     *) refuse "the entry skill's step '$q_label' quotes a sentence AGENTS.md no longer has: '${q_text:0:80}...'." ;;
   esac
 done <<< "$STEPS"
+case "$(squash "$(cat "$AGENTS")")" in
+  *"$(squash "$LASTLINE")"*) ;;
+  *) refuse "the entry skill's last line quotes a sentence AGENTS.md no longer has: '$LASTLINE'." ;;
+esac
 
 # partcell <cell> <bytes>: the cell up to its last sentence that ends within <bytes> (a ".", "?" or "!", a closing "**"
 # or ")" after it, then a space); nothing when no sentence ends that early
@@ -411,7 +420,7 @@ render() {
   echo "## Done when"
   echo
   if [ "$s" = hook-gauntlet ]; then
-    echo 'The row you took is closed and its flags are updated from outputs you read. Run `{{KIT}}/scripts/next.sh <STATE.md>` (default `.gauntlet/STATE.md`, then `./STATE.md`) and load the skill its row names:'
+    echo 'The row you took is closed and its flags are updated from outputs you read. Run `{{KIT}}/scripts/next.sh <proj>` (the project'"'"'s directory: its `.gauntlet/STATE.md`, then its `STATE.md`) and load the skill its row names:'
     echo
     echo "| NEXT.md row | skill |"
     echo "|---|---|"
@@ -419,6 +428,8 @@ render() {
       r="$(rowlist "$n")"; [ -n "$r" ] || r="none: next.sh refused, or the machine or the kit is not yet trusted"
       printf '| %s | `%s` |\n' "$r" "$n"
     done
+    echo
+    kitpaths "$LASTLINE"; echo
   elif [ "${OWNS[$s]}" = "-" ]; then
     echo 'Run `{{KIT}}/scripts/next.sh <STATE.md>` and load the skill its row names (the table is in `hook-gauntlet`).'
   else

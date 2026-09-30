@@ -177,6 +177,8 @@ behaviour, the upstream one is right.
 | `test/TokenReentry.t.sol` | a currency's own transfer hook re-entering the manager DURING SETTLEMENT (`TokenCallbackActor`): every door before and after the balances move, a topping-up payer, a hook paying its own delta, a stale synced slot |
 | `test/ManagerSelection.t.sol` | tests of the harness's own decision about which manager |
 | `test/HookFlags.t.sol` | the mining, and the two different refusals of a wrong address |
+| `test/HookPermissions.t.sol` | the third refusal, the harness's (K46): a callback implemented with no bit fails `_deployHook` by name; what the probe sees and that it leaves nothing; `_skipPermissionCheck` |
+| `test/HarnessClock.t.sol` | the clock every suite starts at, `V4_T0` / `V4_BLOCK0` (K46) |
 | `test/HostileHook.t.sol` | one test per switch on the hostile hook, plus all ten entry points driven once |
 | `test/Harness.t.sol` | the fixtures' own smoke test |
 | `test-periphery/PeripheryHarness.sol` | `V4Harness` plus Uniswap's periphery: `_deployPeriphery()` (the pinned one on source, the deployed one on the fork), liquidity through the PositionManager, swaps through the router, every party's books and every callback the hook received, read off the calldata. Only under `FOUNDRY_PROFILE=periphery` / `periphery-fork` ("The periphery") |
@@ -979,6 +981,45 @@ hook in their own body went up by 5 550 to 67 112 gas each against the hand-writ
 in memory, and memory costs more the more a test already holds); a test that deploys nothing moved by -12 to +88 (its
 contract's own bytecode changed). `setUp` is not in a test's gas.
 
+**The clock starts at a realistic time (K46).** forge starts every test at timestamp 1 and block 1, and a hook that keys
+state on time then reads 0 where it should have written a time: "never set" and "set at the start" look the same, and a
+hook whose clock never started passed a suite for exactly that reason. So `_setUpManager()` - and with it `_setUpV4()` - warps to **`V4_T0` = 1 767 323 457** (2026-01-02 03:10:57 UTC)
+and rolls to **`V4_BLOCK0` = 24 137 911**, once per set-up, before any hook is deployed, and the manager's banner prints
+both. `V4_T0` is on no minute, hour, day or week boundary on purpose: a start on one would line a hook's epochs up with
+the calendar and hide an off-by-one at the edge (`test/HarnessClock.t.sol`). A test that means "the start" reads
+`V4_T0`, or `block.timestamp` in its own `setUp`; a suite that sets its own time warps after `setUp` and wins, and a
+second set-up does not send the clock back. The fork is left alone: its clock is the chain's at the pinned block. The
+simulation sandbox and the backtest set their own clocks per step, as before.
+
+**The permission bits are held against the callbacks (K46).** The address is the permission set, and a callback the
+hook implements whose bit is not on the address is never called by the manager: dead in production, alive in any unit
+test that calls it by hand. (It is easy to miss by reading: `key.hooks.afterInitialize(...)` in the manager reads like
+an unconditional call, and it is not - `Hooks` checks the bit first.) So `_deployHook` calls each of the ten callbacks as the manager - under STATICCALL first, so that nothing it does stays;
+a callback whose bit is NOT set and that reverts with no data there is called once more for real inside a state snapshot
+reverted straight after, which is how a callback that writes is seen - and fails naming it: `V4Harness: afterInitialize
+implemented but its permission bit is not set on 0x... - the manager never calls it. That is a finding ...: see
+doctrine/EVIDENCE.md section 2` - in a project that refusal is a finding, the owner decides its fix (`doctrine/NEXT.md`
+row 6b), and `scripts/pending-red.sh` prints it whole and names that section. "Implemented" means it returned or reverted with an error of its
+own; `NotImplemented()`, `HookNotImplemented()` (the examples', v4-periphery's and OpenZeppelin's `BaseHook`'s), no data,
+or what a selector no hook has gets, mean not implemented (override `_isNotImplementedRevert` for another name). A bit set
+for a callback that reverts on the probe is a log line, not a failure (`WARNING` when it is not implemented: every pool of
+the hook reverts there; `note` when it is an error of the hook's own, usually a guard against the probe's pool). What it
+cannot see, and says or leaves: a hook with a fallback that answers anything (logged, not checked), a guard that reverts
+with no data on the probe's arguments, and an unused callback that returns its selector and does nothing - that one
+FAILS (make it revert, as the examples do, or declare the bit). **The escape:** a suite that deploys a mis-flagged hook
+on purpose sets `_skipPermissionCheck = true` around that deployment and back (`HostileHook` answers all ten callbacks,
+so the suites that mine it to one bit do). A hook deployed by hand (`deployCodeTo`, `new` at a mined salt) can be held to
+the same check with `_checkHookPermissions(address(hook))`. The probe runs once per deployment; it is in a test's gas only
+when the test deploys in its own body. A callback that writes burns the whole of the probe's cap under STATICCALL, which
+is why the cap is 5 M (measured, forge 1.8.1, 2026-09-30: `HostileHook` at one bit, 322.7 M gas with a 30 M cap, 72.7 M
+with 5 M). On this module the three tests that deploy an example hook in their body went up by 0.22 M to 0.53 M gas; the
+figure above for the hand-written pair is from before the check.
+
+While a permission-bits finding is OPEN on the hook under test, every suite that deploys it fails in `setUp()` - the
+pending tests of other findings included. The route's path (`doctrine/EVIDENCE.md` section 2): the bits finding's own
+test sets `_skipPermissionCheck = true` and shows the callback never running; the other pending tests set the same flag,
+say so in their header, and drop it when the fix lands.
+
 ### Which refusal catches what
 
 This is the part that is easy to get wrong, so the tests state both halves:
@@ -988,6 +1029,7 @@ This is the part that is easy to get wrong, so the tests state both halves:
 | a "returns delta" bit with no matching action bit | **the manager**, at `initialize` | `test_manager_refuses_a_delta_flag_with_no_action_flag` |
 | no flag bits at all, on a static-fee pool | **the manager**, at `initialize` | `test_manager_refuses_a_flagless_hook_on_a_static_fee_pool` |
 | an EXTRA action flag the hook did not declare | **the hook's own constructor**, via `Hooks.validateHookPermissions` | `test_an_address_with_one_extra_flag_is_refused_by_the_hooks_constructor` |
+| a MISSING flag for a callback the hook implements (the hook declared it wrong too, so its constructor agrees) | **the harness**, at `_deployHook` (K46); nothing on chain refuses it | `test/HookPermissions.t.sol`, `test_an_implemented_callback_without_its_bit_fails_naming_it` |
 
 The third row is why every hook should call `validateHookPermissions` in its constructor: the manager does
 **not** check it. `test_manager_accepts_an_extra_action_flag_which_is_why_the_constructor_check_matters`

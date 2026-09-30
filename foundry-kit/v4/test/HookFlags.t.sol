@@ -159,6 +159,7 @@ contract HookFlagsTest is V4Harness {
     /// helper says so by name instead of returning address zero
     function test_deployHook_twice_is_refused_by_name() public {
         uint160 flags = Hooks.BEFORE_SWAP_FLAG;
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to one bit on purpose (K46)
         address first = _deployHook(type(HostileHook).creationCode, abi.encode(manager), flags);
         vm.expectRevert(abi.encodeWithSelector(V4Harness.HookNotDeployed.selector, first));
         this.deployHook(type(HostileHook).creationCode, abi.encode(manager), flags);
@@ -201,6 +202,7 @@ contract DeployHookOrderTest is V4Harness {
 
     function test_deployHook_after_the_routers_runs() public {
         _setUpV4();
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to one bit on purpose (K46)
         address hook = this.deployHook(type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG);
         assertTrue(HookMiner.carriesExactly(hook, Hooks.BEFORE_SWAP_FLAG), "not at a mined address");
         assertGt(hook.code.length, 0, "nothing deployed");

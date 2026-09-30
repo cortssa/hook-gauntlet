@@ -213,6 +213,7 @@ contract TokenReentryTest is V4Harness {
 
     // ------------------------------------------------------------------ a HOOK paying its own delta
     function _payingHook() internal returns (HostileHook hook, PoolKey memory k) {
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to fewer bits on purpose (K46)
         hook = HostileHook(
             _deployHook(
                 type(HostileHook).creationCode,
@@ -221,6 +222,7 @@ contract TokenReentryTest is V4Harness {
                     | Hooks.AFTER_SWAP_RETURNS_DELTA_FLAG
             )
         );
+        _skipPermissionCheck = false;
         k = _initPool(IHooks(address(hook)), 3000, 60, SQRT_PRICE_1_1);
         _addFullRangeLiquidity(k, provider, 100e18);
         token0.mint(address(hook), 10e18);

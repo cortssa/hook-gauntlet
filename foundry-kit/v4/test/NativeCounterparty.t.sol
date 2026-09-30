@@ -45,6 +45,7 @@ contract NativeCounterpartyTest is V4Harness {
         _setUpV4();
         _fundAndApprove(provider, 1_000_000e18);
         _fundNative(provider, 1_000e18);
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to fewer bits on purpose (K46)
         hook = HostileHook(
             _deployHook(
                 type(HostileHook).creationCode, abi.encode(manager), Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG

@@ -18,7 +18,7 @@ generator's data, then run `scripts/gen-skills.sh`.
 ## Install them into your project
 
 ```sh
-<kit>/scripts/install-skills.sh --harness claude --project <your project>    # or codex, devin, agents
+<kit>/scripts/install-skills.sh --harness claude --project <your project>    # or codex, devin, agents, hermes
 ```
 
 It copies each `SKILL.md` - only that file - into the harness's project directory (`.claude/skills/`,
@@ -28,6 +28,13 @@ that every file the skills name exists there, and says so when the kit is not th
 directory that is not one of these skills, replaces its own only with `--force`, and writes a user-level directory
 (`~/.claude/skills`, ...) only with `--user` and an absolute `--kit`. Then tell your agent: *"Use the hook-gauntlet
 skills."* The entry skill puts it on the right row; `scripts/next.sh` names the next one.
+
+| harness | `--project` writes | `--user` writes | measured with these skills |
+|---|---|---|---|
+| Claude Code (`claude`) | `.claude/skills/` | `~/.claude/skills/` | A/B round 3 and FR16 (2026-09-28): used from the first minutes, below |
+| Codex and the agents convention (`codex`, `agents`) | `.agents/skills/` | `~/.agents/skills/` | not measured |
+| Devin (`devin`) | `.devin/skills/` | `${XDG_CONFIG_HOME:-~/.config}/devin/skills/` | not measured |
+| Hermes 0.17 (`hermes`) | `.agents/skills/`, and it prints the two lines to add to Hermes's `config.yaml` (`skills:` / `external_dirs: [<project>/.agents/skills]`): Hermes reads no project directory of its own | `${HERMES_HOME:-~/.hermes}/skills/` | one run (2026-09-29/30, a 27B local model, `adapters/local-models/`): the nine seen only through `external_dirs`; four loaded in the run's second minute, none after the context was compressed. Start it with `hermes chat -s hook-gauntlet`, which keeps the entry skill in the system prompt, the part Hermes's compression keeps |
 
 A harness without skills: read `AGENTS.md` in full, as before. The skills add no rule of their own.
 

@@ -95,6 +95,7 @@ contract HostileDeltaHookTest is V4Harness {
 
     function setUp() public {
         _setUpV4();
+        _skipPermissionCheck = true; // HostileHook answers all ten callbacks, mined to fewer bits on purpose (K46)
         hook = HostileHook(
             _deployHook(
                 type(HostileHook).creationCode,

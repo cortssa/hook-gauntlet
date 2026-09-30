@@ -96,14 +96,44 @@
 #     row 6b's profile compiles and runs them all) needs a note `pending: <id> ...`, the id its name without .t.sol or
 #     .sol, and each id of such a note (`pending: F-4, F-5 - ...` names two) its file (NEXT.md row 6b); no pending/,
 #     nothing is checked.
+# And three more before any row (K40, K41), for what a walker of the route wrote that nothing read (the local-model walk, judged 2026-09-30):
+#   - STATE.md still the kit's example is refused before it is parsed (exit 2, no escape: an example is never a state):
+#     `next: FIRST - fill STATE.md: it is still the kit's example (state/README.md, "empty the examples")`. The example
+#     is known by its marker line, `*Example file. The project is fictional. Delete this and start yours.*` (anywhere
+#     in STATE.md; in DECISIONS.md and LOG.md only as a whole line - a log that quotes it is not the example, K48), or
+#     by the example hook's name, BlockCapHook, in the title (the first `# ` line). The same for the DECISIONS.md and
+#     LOG.md beside it. And STATE.md by its values (K48): a flag block that shares three or more lines with the kit's
+#     own state/STATE.md's, whatever the spacing (K49: each line trimmed and its runs of spaces and tabs made one, on
+#     both sides) - counting only the non-generic flags (last_audit_round, last_other_round, open_findings, ceiling,
+#     waiting_on_owner, notes, bytecode_changed_since) - is the example with its marker deleted and its title changed:
+#     `next: FIRST - fill STATE.md: its values are still the kit's example's (<the first shared line, as the example
+#     has it>)`. (the local-model walk: STATE.md stayed the example for 2 h 20 min, and next.sh answered "row 13 - a
+#     REGRESSION round" on it, twice);
+#   - each .sol file below pending/ needs its record of being seen RED on src/ as it stands, written by
+#     scripts/pending-red.sh (scripts/lib/pending-record.sh: keyed by the SHA-256 of the file list and contents of src/,
+#     test/, pending/, foundry.toml and remappings.txt - edit any and the record is not the current one): without it
+#     `next: pending/<file> - not seen red on the code as it stands: <kit>/scripts/pending-red.sh <proj> pending/<file>`
+#     (exit 2). The record is read: its first line `pending-red: red <file> key=<key> <date>`, for that file and the
+#     key in its name, else `next: pending/<file>: record unreadable - run scripts/pending-red.sh again` (exit 2). A
+#     directory below pending/ named *.sol is refused (it is not a test file). Escape: PENDING_RED=0, said on stderr;
+#   - a file STATE.md or DECISIONS.md cites under the project - a path starting `pending/`, `test/`, `src/` or
+#     `.gauntlet/reports/` (or the same after `./`) whose last part has an extension - must be a non-empty regular file
+#     (not LOG.md's: a LOG is history, and a file it names may be gone since, legitimately - K47):
+#     `next: <file> cites a file that does not exist: <path>`, `... that is empty: <path>`, `... that is a directory:
+#     <path>` (exit 2). Not a citation: a path inside a fenced code
+#     block (the flag block's `pending:` notes excepted: they are read), one after `to write`, `planned` or `TODO` on
+#     the same line, one followed by `*`, `?`, `<`, `{` or `[` (a pattern or a placeholder), one with `..` (a range),
+#     one inside a longer path (`lib/forge-std/src/Test.sol`); one found in a bench (.gauntlet/bench/<name>/) exists.
+#     Escape: CITED_FILES=0, said on stderr.
 # Readings of NEXT.md this script makes, each from NEXT.md's own words: `phase` advances only when a phase's gate is met,
 # so rows 4 and 4b are `phase` 0-1 and 2-3; "promoted" is `last_promotion=no` (`yes` = changed since, no longer promoted;
 # `n/a` = never promoted); "the loop is over" (rows 15-18b) is row 14's condition; a finding from outside the fuzzer
 # (row 8) comes from a round, so row 8 is false before any round has run.
 #
-# Usage:   scripts/next.sh [STATE.md] [--judge <row>=true|false[,<row>=true|false...]]... [--table <NEXT.md>]
+# Usage:   scripts/next.sh [STATE.md | <proj>] [--judge <row>=true|false[,<row>=true|false...]]... [--table <NEXT.md>]
 #          scripts/next.sh --check-table [<NEXT.md>]     the drift guard alone
-#   STATE.md defaults to .gauntlet/STATE.md, then ./STATE.md. --table defaults to the kit's doctrine/NEXT.md.
+#   STATE.md defaults to .gauntlet/STATE.md, then ./STATE.md; a project's directory <proj> reads <proj>/.gauntlet/STATE.md,
+#   then <proj>/STATE.md. --table defaults to the kit's doctrine/NEXT.md.
 #   Before any row: the kit's selftest marker (above); without it, or not for these scripts, this machine and this
 #   forge, the one line `next: FIRST - ...` and exit 0.
 #   --judge answers a row that needs judgement: `true` makes it true (it is then given, if it is the first), `false`
@@ -117,10 +147,16 @@
 #          "if every answer is false: STOP - paused, waiting on the owner: <items>" (exit 3: answer them, run it again).
 # Env:     NEXT_SELFTEST=1  the selftest's own cases: the marker is not checked, and the first line on stderr says so
 #          every time it is set (a user never sets it; any other value is refused)
+#          PENDING_RED=0  the tests in pending/ are not checked for their red record; said on stderr every time (any
+#          other value is refused)
+#          CITED_FILES=0  the files STATE.md and DECISIONS.md cite are not checked (LOG.md never is); said on stderr
+#          every time (any other value is refused)
 # Exit:    0 the row given is the first true one, or the pause, or FIRST (the kit not proven here); 1 no row is true and
 #          nothing waits on the owner: the table has a hole or a flag is stale (NEXT.md's STOP rule); 2 REFUSED - a flag
 #          missing, of an unknown value, a malformed line, a bad --judge, a pending/ test and the notes disagreeing, or the
-#          table and NEXT.md disagree: one line on stderr naming what; 3 a row above the one given needs judgement
+#          table and NEXT.md disagree: one line on stderr naming what - and, one line on stderr too, a state file that is
+#          still the kit's example (next: FIRST - fill ...), a pending/ test with no current, readable red record, a cited file
+#          that is not a non-empty regular file; 3 a row above the one given needs judgement
 #          (named), or rows still need judgement before the pause can be given.
 
 set -uo pipefail
@@ -137,6 +173,17 @@ case "${NEXT_SELFTEST-}" in
   1) echo "next: NEXT_SELFTEST=1 - the kit's selftest marker is NOT checked (the selftest's own cases set this; a user never does)" >&2 ;;
   *) refuse "NEXT_SELFTEST='${NEXT_SELFTEST}' is not 1: it is set by the kit's selftest for its own cases only - unset it." ;;
 esac
+# the two escapes of K41's checks - each said on stderr every time it is set, never silently
+case "${PENDING_RED-}" in
+  "") ;;
+  0) echo "next: PENDING_RED=0 - the tests in pending/ are NOT checked for a record of being seen red on the code as it stands (scripts/pending-red.sh)" >&2 ;;
+  *) refuse "PENDING_RED='${PENDING_RED}' is not 0: it turns off the pending/ red-record check (0), or it is unset." ;;
+esac
+case "${CITED_FILES-}" in
+  "") ;;
+  0) echo "next: CITED_FILES=0 - the files STATE.md and DECISIONS.md cite are NOT checked to exist" >&2 ;;
+  *) refuse "CITED_FILES='${CITED_FILES}' is not 0: it turns off the cited-file check (0), or it is unset." ;;
+esac
 
 # ------------------------------------------------------------------------------------------------ the rows, as data
 # id | NEXT.md hash | kind | turns off | condition | the question, when the flags cannot decide the row ("-": they can)
@@ -149,7 +196,7 @@ esac
 #   <name>=<v>[,<v>...] (one of) | <name>!=<v> | <name>><n> (a number above n) | row:<id> (that row's condition) | -
 #   (always). Names: the flags of STATE.md, and the parts parse_state below derives from them.
 ROWS='
-0   | 8d05b8e0 | act  | -                   | phase=sketch | -
+0   | 25f90dc5 | act  | -                   | phase=sketch | -
 1   | 7b9700dd | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high: {highs_not_recorded} not recorded to tell) that the owner has not been told of? The owner present: false once they have been told (a told: note is not read); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
 2   | 64c00456 | gate | 11,11b,12,13,13b,15 | ceiling=reached | -
 3   | 8949c656 | act  | -                   | waiting_on_owner!=none | -
@@ -301,13 +348,16 @@ pairs() {
   for k in "$@"; do [ -n "${seen[$k]+x}" ] || refuse "$f: $k= is missing."; done
 }
 
-parse_state() {
-  local st="$1" block line n=0 name val prev=""
-  block="$(LC_ALL=C awk '
+flag_block() { # flag_block <STATE.md>: the flag block's lines (the first fenced block with a phase: line); exit 1 when none
+  LC_ALL=C awk '
     { sub(/\r$/, "") }
     /^```/ { if (inb && has) { found = 1; exit } inb = !inb; n = 0; has = 0; next }
     inb { buf[++n] = $0; if ($0 ~ /^phase:/) has = 1 }
-    END { if (!found) exit 1; for (i = 1; i <= n; i++) print buf[i] }' "$st")" \
+    END { if (!found) exit 1; for (i = 1; i <= n; i++) print buf[i] }' "$1"
+}
+parse_state() {
+  local st="$1" block line n=0 name val prev=""
+  block="$(flag_block "$st")" \
     || refuse "$st has no flag block (a fenced block with a 'phase:' line, doctrine/NEXT.md)."
   while IFS= read -r line; do
     n=$((n + 1))
@@ -625,7 +675,62 @@ if [ -z "$STATE" ]; then
   for c in .gauntlet/STATE.md STATE.md; do [ -f "$c" ] && { STATE="$c"; break; }; done
   [ -n "$STATE" ] || refuse "no STATE.md given, and none at .gauntlet/STATE.md or ./STATE.md."
 fi
+# a project's directory (next.sh <proj>, the entry skill's last line): its .gauntlet/STATE.md, then its STATE.md (K47)
+if [ -d "$STATE" ]; then
+  if [ -f "${STATE%/}/.gauntlet/STATE.md" ]; then STATE="${STATE%/}/.gauntlet/STATE.md"
+  elif [ -f "${STATE%/}/STATE.md" ]; then STATE="${STATE%/}/STATE.md"
+  else refuse "$STATE has no .gauntlet/STATE.md and no STATE.md: give the STATE.md, or install the state convention (state/README.md)."; fi
+fi
 [ -f "$STATE" ] || refuse "$STATE does not exist."
+
+# ------------------------------------------------------------------------------------------------ the kit's example
+# K40: a STATE.md that is still the kit's example is not a state, and no row is read from it (the local-model walk: next.sh answered
+# "row 13 - a REGRESSION round ... r05" on the example BlockCapHook, twice, and the walker gave up on next.sh). Known by
+# its marker line, or by the example hook's name in the title (the first "# " line); the DECISIONS.md and LOG.md beside
+# it likewise. In STATE.md the marker counts anywhere; in DECISIONS.md and LOG.md only as a whole line (K48: an honest
+# LOG.md that quoted the line it had deleted was refused, with no way out but editing an append-only file - V40).
+# And STATE.md by its values (K48: the example with its marker deleted, as the line itself says, and retitled, as
+# QUICKSTART 5 says, answered "row 13 - a REGRESSION round" again - V40): a flag block that shares three or more
+# non-generic lines with the kit's own state/STATE.md (found from this script's place) is the example. The lines are
+# compared with the spacing collapsed on both sides - each trimmed, its runs of spaces and tabs one space (K49: the
+# example re-aligned, one space after each colon, the same values, walked to row 13 again - V41) - and the refusal
+# names the example's own line, whatever the spacing of the copy.
+# The generic flags (phase, battery, blackbox, dossier, rehearsal, real_manager_battery, location) are left out: a new
+# project's can match the example's by chance. No escape: an example is never a state.
+EXAMPLE_MARKER='*Example file. The project is fictional. Delete this and start yours.*'
+is_kit_example() { # is_kit_example <file> <1: the marker counts only as a whole line>: 0 when it is the kit's example
+  LC_ALL=C awk -v whole="$2" -v marker="$EXAMPLE_MARKER" '{ sub(/\r$/, "") }
+    whole != 1 && index($0, "Example file. The project is fictional.") { found = 1; exit }
+    whole == 1 && $0 == marker { found = 1; exit }
+    !titled && /^# / { titled = 1; if ($0 ~ /BlockCapHook/) { found = 1; exit } }
+    END { exit found ? 0 : 1 }' "$1"
+}
+EXAMPLE_NONGENERIC='^(last_audit_round|last_other_round|open_findings|ceiling|waiting_on_owner|notes|bytecode_changed_since):'
+example_values() { # example_values <STATE.md>: the example's own lines for its flag block's non-generic lines that are
+  # the kit's example's once the spacing is collapsed (each trimmed, runs of spaces and tabs one space), in its order
+  local ex="$KIT/state/STATE.md" mine theirs
+  [ -f "$ex" ] || return 0
+  theirs="$(flag_block "$ex" | grep -E "$EXAMPLE_NONGENERIC")" || return 0
+  mine="$(flag_block "$1" | grep -E "$EXAMPLE_NONGENERIC")" || return 0
+  LC_ALL=C awk 'function sq(s) { gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s); return s }
+    NR == FNR { k = sq($0); if (!(k in ex)) ex[k] = $0; next }
+    { k = sq($0) } (k in ex) && !seen[k]++ { print ex[k] }' <(printf '%s\n' "$theirs") - <<< "$mine"
+}
+ST_DIR="$(cd "$(dirname "$STATE")" && pwd)" || refuse "cannot read the directory of $STATE."
+for c_f in "$STATE" "$ST_DIR/DECISIONS.md" "$ST_DIR/LOG.md"; do
+  [ -f "$c_f" ] || continue
+  c_whole=1; [ "$c_f" != "$STATE" ] || c_whole=0
+  if is_kit_example "$c_f" "$c_whole"; then
+    echo "next: FIRST - fill $(basename "$c_f"): it is still the kit's example (state/README.md, \"empty the examples\")" >&2
+    exit 2
+  fi
+  [ "$c_f" = "$STATE" ] || continue
+  c_same="$(example_values "$c_f")"
+  if [ "$(grep -c . <<< "$c_same")" -ge 3 ]; then
+    echo "next: FIRST - fill STATE.md: its values are still the kit's example's ($(head -1 <<< "$c_same"))" >&2
+    exit 2
+  fi
+done
 parse_state "$STATE"
 
 # ------------------------------------------------------------------------------------------------ pending/ and the notes
@@ -665,6 +770,9 @@ check_pending() {
   st_dir="$(cd "$(dirname "$1")" && pwd)" || refuse "cannot read the directory of $1."
   if [ "$(basename "$st_dir")" = ".gauntlet" ]; then proj="$(dirname "$st_dir")"; else proj="$st_dir"; fi
   [ -d "$proj/pending" ] || return 0
+  # a directory named *.sol is not a test: the walk below sees files only, so it is refused here (K48)
+  f="$(pending_sol_dirs "$proj" | head -1)"
+  [ -z "$f" ] || refuse "$proj/$f is a directory: a test in pending/ is a file, pending/<id>.t.sol (NEXT.md row 6b) - move what is in it out, or rename it."
   for line in ${NOTE_LINES[@]+"${NOTE_LINES[@]}"}; do
     IFS=';' read -ra items <<< "${line//$'\302\267'/;}"
     for item in ${items[@]+"${items[@]}"}; do
@@ -690,7 +798,91 @@ check_pending() {
       || refuse "STATE.md's notes name 'pending: ${note[$key]}', and $proj/pending/${note[$key]}.t.sol does not exist (nor any ${note[$key]}.sol below pending/): a pending finding's test is pending/<id>.t.sol - put it there, or, if the finding is closed, take the note out and the finding out of open_findings - NEXT.md row 6b."
   done
 }
+# shellcheck source=lib/pending-record.sh
+. "$HERE/lib/pending-record.sh" || refuse "$HERE/lib/pending-record.sh is missing (the pending/ red records)."
 check_pending "$STATE"
+if [ "$(basename "$ST_DIR")" = ".gauntlet" ]; then PROJ="$(dirname "$ST_DIR")"; else PROJ="$ST_DIR"; fi
+
+# ------------------------------------------------------------------------------------------------ pending/: seen red (K41)
+# A test in pending/ is a finding's test only once it has been seen RED on src/ as it stands (EVIDENCE.md section 2):
+# scripts/pending-red.sh runs it under row 6b's profile and, when it is red, writes the record this reads
+# (scripts/lib/pending-record.sh: keyed by the SHA-256 of the file list and contents of src/, test/, pending/,
+# foundry.toml and remappings.txt, so an edit to any of them leaves no current record). the local-model walk's judge:
+# the one pending test of the local-model walk did not compile, and mended it PASSED on the planted code; DECISIONS.md
+# called it red. The first file with no current record is refused. A current record is READ (K48: an empty file with
+# the key's name was taken - V40): its first line must be `pending-red: red <file> key=<key> <date>`, for that file and
+# the key its name carries; an empty or handwritten one is "unreadable". PENDING_RED=0 turns this off, and says so on
+# stderr (above).
+if [ "${PENDING_RED-}" != 0 ]; then
+  while IFS= read -r c_f; do
+    c_rec="$(pending_record_path "$PROJ" "$c_f")" || continue
+    if [ -e "$c_rec" ]; then
+      pending_record_ok "$c_rec" "$c_f" "${c_rec##*.}" && continue
+      echo "next: $c_f: record unreadable - run scripts/pending-red.sh again ($KIT/scripts/pending-red.sh $PROJ $c_f; PENDING_RED=0 skips this check, and says so)" >&2
+      exit 2
+    fi
+    echo "next: $c_f - not seen red on the code as it stands: $KIT/scripts/pending-red.sh $PROJ $c_f (PENDING_RED=0 skips this check, and says so)" >&2
+    exit 2
+  done < <(pending_files "$PROJ")
+fi
+
+# ------------------------------------------------------------------------------------------------ cited files exist (K41)
+# A file the route's own record cites must exist (the local-model walk's judge: DECISIONS.md cited five tests in pending/ and a fork test
+# that never existed). Read: STATE.md, and the DECISIONS.md beside it - not LOG.md: a LOG is history, and a file it
+# names may have been moved or deleted since, legitimately (K47). A citation is a path under the
+# project that starts `pending/`, `test/`, `src/` or `.gauntlet/reports/` (after `./` too), not inside a longer path,
+# whose last part has an extension - a file, not a directory. Not a citation: a path inside a fenced code block (in
+# STATE.md the flag block's `pending:` notes are read all the same), one after `to write`, `planned` or `TODO` on the
+# same line (any case), one followed by `*`, `?`, `<`, `{` or `[` (a pattern, a placeholder), one with `..` in it (a
+# range, `pending/F-1..F-4.t.sol`: FR16's LOG.md). The first that is a non-empty regular file neither from the
+# project's directory nor in one of its benches (.gauntlet/bench/<name>/: a verifier's `test/verify/V01.t.sol` in its
+# bench, A/B round 3) is refused, saying whether it does not exist, is empty or is a directory (K48: a 0-byte
+# test/fork/Fork.t.sol, or a directory by that name, passed as "exists" - V40). CITED_FILES=0 turns this off, and says
+# so on stderr (above).
+cited_paths() { # cited_paths <file> <1 when it is STATE.md>: "<line number> TAB <path>" per citation
+  LC_ALL=C awk -v isstate="$2" '
+    { sub(/\r$/, "") }
+    /^ ? ? ?(```|~~~)/ { fence = !fence; next }
+    {
+      line = $0
+      if (fence) {
+        if (isstate != 1 || !match(line, /(^|[^A-Za-z0-9_-])pending:/)) next
+        line = substr(line, RSTART)
+      }
+      low = tolower(line)
+      if (match(low, /(^|[^a-z])(to write|planned|todo)([^a-z]|$)/)) line = substr(line, 1, RSTART)
+      rest = line
+      while (match(rest, /(^|[^A-Za-z0-9_.\/-])(\.\/)?(pending|test|src|\.gauntlet\/reports)\/[A-Za-z0-9_.@+\/-]*/)) {
+        tok = substr(rest, RSTART, RLENGTH); after = substr(rest, RSTART + RLENGTH, 1)
+        rest = substr(rest, RSTART + RLENGTH)
+        sub(/^[^A-Za-z0-9_.\/-]/, "", tok); sub(/^\.\//, "", tok)
+        if (after ~ /[*?<{[]/ || tok ~ /\.\./) continue
+        while (tok ~ /[.-]$/) tok = substr(tok, 1, length(tok) - 1)
+        n = split(tok, part, "/")
+        if (part[n] !~ /[^.]\.[A-Za-z0-9]+$/) continue
+        print NR "\t" tok
+      }
+    }' "$1"
+}
+if [ "${CITED_FILES-}" != 0 ]; then
+  for c_f in "$STATE" "$ST_DIR/DECISIONS.md"; do
+    [ -f "$c_f" ] || continue
+    c_is=0; [ "$c_f" != "$STATE" ] || c_is=1
+    while IFS=$'\t' read -r c_n c_p; do
+      # a non-empty regular file (K48: an empty file or a directory at the cited path passed as "exists" - V40)
+      [ -f "$PROJ/$c_p" ] && [ -s "$PROJ/$c_p" ] && continue
+      c_hit=""   # a path written relative to a bench named on its line (`.gauntlet/bench/v01`, `test/verify/V01.t.sol`)
+      for c_b in "$PROJ"/.gauntlet/bench/*/; do [ -f "$c_b$c_p" ] && [ -s "$c_b$c_p" ] && { c_hit=1; break; }; done
+      [ -z "$c_hit" ] || continue
+      if [ -d "$PROJ/$c_p" ]; then c_what="is a directory"
+      elif [ -f "$PROJ/$c_p" ]; then c_what="is empty"
+      elif [ -e "$PROJ/$c_p" ]; then c_what="is not a regular file"
+      else c_what="does not exist"; fi
+      echo "next: $(basename "$c_f") cites a file that $c_what: $c_p (line $c_n of $c_f; CITED_FILES=0 skips this check, and says so)" >&2
+      exit 2
+    done < <(cited_paths "$c_f" "$c_is")
+  done
+fi
 
 # ------------------------------------------------------------------------------------------------ the table, top to bottom
 # The gates first (NEXT.md: a gate that is true turns its rows off wherever they stand - row 14's are above it), then
