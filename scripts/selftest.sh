@@ -86,10 +86,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SELFTEST_KIT="$(cd "$HERE/.." && pwd)"
 selftest_hash0="$(kit_scripts_sha256 "$SELFTEST_KIT")"   # the scripts this run proves: checked again at the end
 selftest_marker_write() { # selftest_marker_write <kit> <the scripts' sha256>: the marker next.sh reads (lib/kit-proof.sh)
-  local m mh fv; m="$(kit_marker "$1")"
+  local m mh fv t; m="$(kit_marker "$1")"
   mh="$(kit_machine_sha256)" || return 1     # the machine (hashed) and forge next.sh will compare: both, or no marker
   fv="$(kit_forge_version)"; [ -n "$fv" ] || return 1
   mkdir -p "$(dirname "$m")" || return 1
+  # a temporary file of this run's own (v0.4.2): two selftests in one kit shared one fixed name - one truncated it under the
+  # other, whose rename then found nothing, and both ended FAILED (measured, 2026-10-02). mktemp, then one rename
+  t="$(mktemp "$m.XXXXXX")" || return 1
   {
     echo "# the kit's selftest PASSED on this machine for these scripts: written by scripts/selftest.sh, read by scripts/next.sh"
     echo "scripts_sha256: $2"
@@ -97,7 +100,7 @@ selftest_marker_write() { # selftest_marker_write <kit> <the scripts' sha256>: t
     echo "machine_sha256: $mh (of $(kit_machine_source), hashed - never written as it is)"
     echo "date: $(date +%F)"
     echo "forge: $fv"
-  } > "$m.tmp" && mv "$m.tmp" "$m"
+  } > "$t" && mv -f "$t" "$m" || { rm -f "$t"; return 1; }
 }
 FIX="$HERE/test/fixtures"
 started=$SECONDS
@@ -229,7 +232,7 @@ if command -v git > /dev/null 2>&1 && [ -f "$DK/scripts/doctor.sh" ]; then
   # doc <out> <dirs before the base, colon-separated> [VAR=value...]: the doctor on the fake machine, RPC_URL unset unless given
   doc() { local o="$1" p="$2"; shift 2; env -u RPC_URL -u ETH_RPC_URL HOME="$DH" PATH="$p:$DR/trap:$DB" "$@" "$BASH" "$DK/scripts/doctor.sh" > "$o" 2>&1; }
   # every line is `ok|missing|optional-missing <name> ...`, an indented line (a command, a step), or the last line
-  doc_shape() { ! grep -vE '^(ok|missing|optional-missing) [A-Za-z0-9_.-]+( |$)|^  |^doctor: (ready|missing: .+)$' "$1"; }
+  doc_shape() { ! grep -vE '^(ok|missing|optional-missing) [A-Za-z0-9_.-]+( |$)|^  |^kit: (no MANIFEST|[0-9]+ files not in MANIFEST: .+)$|^doctor: (ready|missing: .+)$' "$1"; }
   expect_line() { # expect_line <label> <file> <grep -E pattern>...: every pattern is found
     local label="$1" f="$2" pat miss=""; shift 2
     for pat in "$@"; do grep -qE -- "$pat" "$f" || miss="$miss [$pat]"; done
@@ -1479,6 +1482,19 @@ if [ "$(wc -l < "$TMP/o148" | tr -d ' ')" = "1" ] && [ "$(wc -l < "$TMP/o149" | 
 # 12b, 12a): a row added to the table with no fixture is a red here, as it is (with no entry in next.sh) in its drift guard.
 echo "== next.sh =="
 NX="$HERE/next.sh"; NXT="$HERE/../doctrine/NEXT.md"
+# v0.4.1 (K50, D2): next.sh refuses `phase:` 2 or higher without a green build record, <proj>/.gauntlet/reports/01-build.txt
+# (the project: the STATE.md's directory, or its parent when that is .gauntlet/). The fixtures are states of projects
+# whose hook compiles: in this section they are read from a copy (NXFIX) in a directory that has that record - forge's
+# real output, build-real-compiled.txt - and so is $TMP, where the cases write their variants (removed at the end of the
+# section). The rule itself, and a fixture refused without the record: the K50 cases.
+NXFIX="$TMP/nxfix"; mkdir -p "$NXFIX/.gauntlet/reports" "$TMP/.gauntlet/reports"
+cp "$FIX"/state-*.md "$NXFIX/"; cp "$FIX/build-real-compiled.txt" "$NXFIX/.gauntlet/reports/01-build.txt"; cp "$FIX/build-real-compiled.txt" "$TMP/.gauntlet/reports/01-build.txt"
+# v0.4.2 (K60): and the records the flags claim from phase 3 on - a green test record (`battery: green`, and tests that ran
+# for phase 3+), an invariant suite under test/, a census report (phase 4+); the fork question is a note in each fixture
+for d in "$NXFIX" "$TMP"; do
+  cp "$FIX/summary-real-many-suites.txt" "$d/.gauntlet/reports/02-test.txt"; printf 'the everyday campaign'"'"'s census\n' > "$d/.gauntlet/reports/06-census.txt"
+  mkdir -p "$d/test"; printf 'contract Inv { function invariant_fixture() public {} }\n' > "$d/test/Inv.t.sol"
+done
 # next.sh names no row until the kit's selftest has PASSED here (K31) - and this IS the selftest, which has not passed
 # yet: its cases run with NEXT_SELFTEST=1, which next.sh names in the first line of its stderr every time it is set. nx
 # runs next.sh (or a copy) so, checks that line is there - a run that did not print it is written down, and one is a
@@ -1486,9 +1502,19 @@ NX="$HERE/next.sh"; NXT="$HERE/../doctrine/NEXT.md"
 # prints for a user whose kit is proven. The marker itself, its absence and next.sh honouring it: the K31 cases below.
 NX_NOTICE="next: NEXT_SELFTEST=1 - the kit's selftest marker is NOT checked (the selftest's own cases set this; a user never does)"
 : > "$TMP/nx-silent"
+# K50: the kit's own next.sh adds a note after its answer when the kit has a MANIFEST and a file under it is not listed
+# (D6) - the kit's own battery's reports, a MANIFEST not regenerated after an edit. That note is the kit's state, not the
+# case's: nx takes it out of what a case reads from the kit's own next.sh, and keeps it ($TMP/nx-kitnotes; the K50
+# section says it). A copy of next.sh in a kit copy keeps its note: the K50 cases read it.
+: > "$TMP/nx-kitnotes"
 nx() { # nx <next.sh or a copy> [its arguments]: its stdout as printed; its stderr, without the notice line, after it
   local bin="$1" rc; shift
-  NEXT_SELFTEST=1 "$bin" "$@" 2> "$TMP/nx-stderr"; rc=$?
+  NEXT_SELFTEST=1 "$bin" "$@" 2> "$TMP/nx-stderr" > "$TMP/nx-stdout"; rc=$?
+  if [ "$bin" = "$NX" ] && grep -q '^next: note - the kit has ' "$TMP/nx-stdout"; then
+    grep '^next: note - the kit has ' "$TMP/nx-stdout" >> "$TMP/nx-kitnotes"
+    grep -v '^next: note - the kit has ' "$TMP/nx-stdout" > "$TMP/nx-stdout2"; mv "$TMP/nx-stdout2" "$TMP/nx-stdout"
+  fi
+  cat "$TMP/nx-stdout"
   if [ "$(sed -n 1p "$TMP/nx-stderr")" = "$NX_NOTICE" ]; then sed 1d "$TMP/nx-stderr" >&2
   else echo "$bin $*" >> "$TMP/nx-silent"; cat "$TMP/nx-stderr" >&2; fi
   return "$rc"
@@ -1507,7 +1533,7 @@ if [ -n "$(nx_ids "$NXT")" ] && grep -qF " rows, $(nx_ids "$NXT" | tr '\n' ' ' |
   echo "  FAIL  the fixture list ($(nx_ids "$NXT" | tr '\n' ' ')) and next.sh (below) do not read the same rows:"; sed "s/^/        | /" "$TMP/o400"; fails=$((fails + 1)); fi
 nn=400
 for id in $(nx_ids "$NXT"); do
-  f="$FIX/state-row-$id.md"; nn=$((nn + 1))
+  f="$NXFIX/state-row-$id.md"; nn=$((nn + 1))
   if [ ! -f "$f" ]; then echo "  FAIL  NEXT.md row $id has no fixture (state-row-$id.md)"; fails=$((fails + 1)); continue; fi
   j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
   a=(); [ "$j" = "none" ] || a=(--judge "$j")
@@ -1525,14 +1551,14 @@ for id in $(nx_ids "$NXT"); do
       || { echo "  FAIL  and the first row needing judgement is not row $id"; sed "s/^/        | /" "$TMP/o${nn}j"; fails=$((fails + 1)); } ;;
   esac
 done
-nx "$NX" "$FIX/state-row-6.md" --judge 5=false > "$TMP/o440" 2>&1
+nx "$NX" "$NXFIX/state-row-6.md" --judge 5=false > "$TMP/o440" 2>&1
 if grep -q '^next: row 6 - run the battery$' "$TMP/o440" && grep -q '^because: .*bytecode_changed_since.last_battery=yes' "$TMP/o440"; then
   echo "  ok    the row is printed with its action as NEXT.md words it, and the flag that made it true"; else
   echo "  FAIL  row 6 was not printed as 'next: row 6 - run the battery' with its flag:"; sed "s/^/        | /" "$TMP/o440"; fails=$((fails + 1)); fi
 # the second branch of a row, and a note that quiets one
 nx_variant() { # nx_variant <n> <label> <fixture> <sed script> <judge|-> <rc> <rows>
   local n="$1" label="$2" fx="$3" sc="$4" j="$5" wrc="$6" want="$7"; local -a a=()
-  sed "$sc" "$FIX/$fx" > "$TMP/state-$n.md"; [ "$j" = "-" ] || a=(--judge "$j")
+  sed "$sc" "$NXFIX/$fx" > "$TMP/state-$n.md"; [ "$j" = "-" ] || a=(--judge "$j")
   nx "$NX" "$TMP/state-$n.md" "${a[@]}" > "$TMP/o$n" 2>&1; check "next.sh: $label" "$wrc" $? "$TMP/o$n"
   [ "$(nx_rows "$TMP/o$n")" = "$want" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o$n")', not '$want'"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); }
 }
@@ -1540,19 +1566,19 @@ nx_variant 445 "row 13b by its second branch: a clean discovery round, a REASONE
   's/^last_audit_round: .*/last_audit_round: r04 discovery 0H 0M 0L/; s/^open_findings: .*/open_findings: high=0 medium=1 low=0 reasoned_high_or_medium=1/' \
   5=false,8=false,9=false,9b=false,10=false,11b=false 0 13b
 nx_variant 446 "a pending: note does not make row 1 by itself: a provisional high is counted in open_findings high (row 6b)" state-row-5.md \
-  's/^notes: .*/notes: pending: F-3 - no fee-on-transfer loss, owner undecided/' - 3 "5,8,10,11b,13b"
+  's/^notes: .*/notes: pending: F-3 - no fee-on-transfer loss, owner undecided; fork: n\/a - a next.sh fixture, no chain/' - 3 "5,8,10,11b,13b"
 nx_variant 447 "row 7b is quiet when notes: says what replaced the real manager" state-row-7b.md \
   's/^notes: .*/notes: fork: n\/a - its own manager; real manager: the hook runs on its own manager, dossier section 8/' \
   5=false 3 "8,10,11b,13b"
 nx_variant 448 "phase 2 is row 4b's, not row 4's" state-row-4b.md 's/^phase: .*/phase: 2/' - 0 4b
-nx "$NX" "$FIX/state-new-project.md" > "$TMP/o441" 2>&1; check "next.sh: a new project, NEXT.md's starting values, gives row 4" 0 $? "$TMP/o441"
+nx "$NX" "$NXFIX/state-new-project.md" > "$TMP/o441" 2>&1; check "next.sh: a new project, NEXT.md's starting values, gives row 4" 0 $? "$TMP/o441"
 [ "$(nx_rows "$TMP/o441")" = "4" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o441")', not 4"; fails=$((fails + 1)); }
 # cases beyond one per row, and the hole (state-case-*.md, state-hole*.md): the same first line, `rc=1` for a hole. The
 # hole left is a STALE flag: open_findings says a medium is open at the ceiling, the answers say no finding waits (9 and
 # 9b false) - no row is true, and neither the black-box (row 12, off at the ceiling) nor promotion (row 14 is not in
 # force while a finding is open) may be given instead.
 nn=500
-for f in "$FIX"/state-case-*.md "$FIX"/state-hole*.md; do
+for f in "$NXFIX"/state-case-*.md "$NXFIX"/state-hole*.md; do
   nn=$((nn + 1)); j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
   a=(); [ "$j" = "none" ] || a=(--judge "$j")
   nx "$NX" "$f" "${a[@]}" > "$TMP/o$nn" 2>&1; nrc=$?   # before the label's $(...), which would reset $?
@@ -1571,7 +1597,7 @@ done
 # `pending`, `1`, `TBD.`, `None.` - quieted row 1: STOP rc 0) are run the same way: an id has at least one letter and one
 # digit, and a word that is not one is refused where it stands (`refused=not-an-id` in the first line, K29).
 nn=840
-for f in "$FIX"/state-v26b-*.md "$FIX"/state-v28-*.md; do
+for f in "$NXFIX"/state-v26b-*.md "$NXFIX"/state-v28-*.md; do
   nn=$((nn + 1)); j="$(nx_meta "$f" judge)"; want="$(nx_meta "$f" rows)"; wrc="$(nx_meta "$f" rc)"
   a=(); [ "$j" = "none" ] || a=(--judge "$j")
   nx "$NX" "$f" "${a[@]}" > "$TMP/o$nn" 2>&1; nrc=$?
@@ -1665,31 +1691,31 @@ nx_variant 831 "two highs open, one per item: row 1 is quiet" state-row-1.md \
 nx_variant 832 "the ids after a key other than first (medium=0 high=1 (F-1) ...), a comment after: row 1 is quiet" state-row-1.md \
   's/^open_findings: .*/open_findings: medium=0 high=1 (F-1) low=0 reasoned_high_or_medium=0   (F-1: the fee cap; see the report)/; s/^waiting_on_owner: .*/waiting_on_owner: high F-1 - to tell/' \
   5=false,8=false,9=true 0 9
-nx "$NX" "$FIX/state-case-high-not-all-told.md" --judge 5=false,8=false,9=false > "$TMP/o833" 2>&1
+nx "$NX" "$NXFIX/state-case-high-not-all-told.md" --judge 5=false,8=false,9=false > "$TMP/o833" 2>&1
 if grep -q '^needs judgement: row 1 - .*F-2 not recorded to tell' "$TMP/o833" && ! grep -q 'F-1 not recorded' "$TMP/o833"; then
   echo "  ok    one high of two recorded: row 1's question names the one not recorded (F-2), not the one recorded"; else
   echo "  FAIL  row 1's question does not name F-2 as the high not recorded to tell:"; sed "s/^/        | /" "$TMP/o833"; fails=$((fails + 1)); fi
-nx "$NX" "$FIX/state-case-high-not-all-told.md" > "$TMP/o632" 2>&1
+nx "$NX" "$NXFIX/state-case-high-not-all-told.md" > "$TMP/o632" 2>&1
 if [ "$(sed -n 1p "$TMP/o632" | cut -c1-24)" = "needs judgement: row 1 -" ] && grep -q '^needs judgement: row 1 - .*high <id>' "$TMP/o632" \
   && [ "$(tail -1 "$TMP/o632")" = "if every answer is false: STOP - paused, waiting on the owner: high F-1 - to tell" ]; then
   echo "  ok    one high of two recorded to tell: row 1 is ASKED (the flags quiet it only when every open high is recorded)"; else
   echo "  FAIL  one high of two recorded: row 1 is not asked:"; sed "s/^/        | /" "$TMP/o632"; fails=$((fails + 1)); fi
 # ... and when the flags quiet it, the because: line names the ids that did (V26: a stale entry quieted it without a trace)
-nx "$NX" "$FIX/state-case-high-recorded-to-tell.md" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o675" 2>&1
+nx "$NX" "$NXFIX/state-case-high-recorded-to-tell.md" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o675" 2>&1
 if grep -q '^because: .*row 1 is quiet: the 1 high open is recorded to tell in waiting_on_owner (F-1)' "$TMP/o675"; then
   echo "  ok    row 1 quiet by the flags: the because: line names the id that quieted it"; else
   echo "  FAIL  row 1 quiet, and the because: line does not name the id:"; sed "s/^/        | /" "$TMP/o675"; fails=$((fails + 1)); fi
-nx "$NX" "$FIX/state-case-walk-ids-space.md" --judge 5=false,8=false,9=false,9b=true,10=false > "$TMP/o676" 2>&1
+nx "$NX" "$NXFIX/state-case-walk-ids-space.md" --judge 5=false,8=false,9=false,9b=true,10=false > "$TMP/o676" 2>&1
 if grep -q '^because: .*row 1 is quiet: the 6 highs open are recorded to tell in waiting_on_owner (F1, F3, F4, R01-1, R01-2, R01-5)' "$TMP/o676"; then
   echo "  ok    and on a row given below it too (the real walk's six ids, in the order written)"; else
   echo "  FAIL  the row given does not say which ids quieted row 1:"; sed "s/^/        | /" "$TMP/o676"; fails=$((fails + 1)); fi
 # row 9 (NEXT.md): a finding triaged "fix at the cause" whose fix is not written is still open - its question says so,
 # and its action is to write the fix
-nx "$NX" "$FIX/state-case-fix-not-written.md" --judge 5=false,8=false > "$TMP/o608" 2>&1
+nx "$NX" "$NXFIX/state-case-fix-not-written.md" --judge 5=false,8=false > "$TMP/o608" 2>&1
 check "next.sh: a medium triaged fix-at-the-cause, not written: row 9 needs judgement" 3 $? "$TMP/o608"
 grep -q '^needs judgement: row 9 - .*fix at the cause' "$TMP/o608" \
   || { echo "  FAIL  and row 9's question does not name a fix at the cause not yet written"; sed "s/^/        | /" "$TMP/o608"; fails=$((fails + 1)); }
-nx "$NX" "$FIX/state-case-fix-not-written.md" --judge 5=false,8=false,9=true > "$TMP/o609" 2>&1
+nx "$NX" "$NXFIX/state-case-fix-not-written.md" --judge 5=false,8=false,9=true > "$TMP/o609" 2>&1
 check "next.sh: the same, row 9 answered true: row 9" 0 $? "$TMP/o609"
 grep -q '^next: row 9 - .*a fix already decided: write it' "$TMP/o609" \
   || { echo "  FAIL  and row 9's action does not say: a fix already decided: write it";sed "s/^/        | /" "$TMP/o609"; fails=$((fails + 1)); }
@@ -1721,13 +1747,13 @@ nx_variant 624 "at the ceiling too: the black-box not run, 16 off while 7b waits
   state-case-ceiling-full-blackbox-never.md \
   's/^real_manager_battery: .*/real_manager_battery: never/; s/^waiting_on_owner: .*/waiting_on_owner: RPC_URL for the real-manager battery/' \
   5=false,8=false,10=false,16=true,18b=false 0 "2,14,STOP"
-nx "$NX" "$FIX/state-case-real-manager-owed-before-16.md" --judge 5=false,8=false,10=false,11b=false,16=true,18b=false > "$TMP/o615" 2>&1
+nx "$NX" "$NXFIX/state-case-real-manager-owed-before-16.md" --judge 5=false,8=false,10=false,11b=false,16=true,18b=false > "$TMP/o615" 2>&1
 if grep -qx 'next: STOP - paused, waiting on the owner: RPC_URL for the real-manager battery' "$TMP/o615" && grep -q '^because: .*RPC_URL.*7b' "$TMP/o615"; then
   echo "  ok    and the pause says what is waiting, and that row 7b waits on it"; else
   echo "  FAIL  the pause was not given with its reason (7b waits on the answer; 12 and 16 wait on 7b):"; sed "s/^/        | /" "$TMP/o615"; fails=$((fails + 1)); fi
 # the end of the route with the owner absent (NEXT.md row 3, K26): the skeleton names the open findings, the triage is
 # asked, nothing below stands - `next: STOP - paused, ...`, exit 0, decided by the flags: row 3's question is not asked
-F9S="$FIX/state-case-skeleton-written-owner-away.md"
+F9S="$NXFIX/state-case-skeleton-written-owner-away.md"
 nx "$NX" "$F9S" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o633" 2>&1; check "next.sh: the skeleton written, the owner away: the pause" 0 $? "$TMP/o633"
 if [ "$(head -1 "$TMP/o633")" = "next: STOP - paused, waiting on the owner: triage of F-1, F-2" ] && ! grep -q '^needs judgement' "$TMP/o633" \
   && grep -q '^because: .*dossier names the 2 open finding' "$TMP/o633"; then
@@ -1740,20 +1766,20 @@ if [ "$(nx_rows "$TMP/o634")" = "5,8,9,10,11b,STOP?" ] && [ "$(tail -1 "$TMP/o63
   && ! grep -q '^next: \|^because: \|no row below row 3' "$TMP/o634"; then
   echo "  ok    and row 3 is not among them, no next: or because: line - the last line says what an all-false answer gives"; else
   echo "  FAIL  the rows needing judgement before the pause:"; sed "s/^/        | /" "$TMP/o634"; fails=$((fails + 1)); fi
-# ... the answers a walker gave in the A/B (VAB2): 9b=true (row 3 is no longer answered, K26c) - the pause, not row 9b again
+# ... the answers a walker gave in the A/B (its second round): 9b=true (row 3 is no longer answered, K26c) - the pause, not row 9b again
 nx_variant 635 "the skeleton written, 9b=true answered: still the pause, not row 9b again" state-case-skeleton-written-owner-away.md '' \
   5=false,8=false,9=false,9b=true,10=false,11b=false 0 STOP
 # ... the skeleton stale (a finding opened since): 9b again - and with K written in words, or no K, refused (row 9b reads it)
 # ... a `complete` dossier with a finding open is refused (K28, NEXT.md: `complete` means no finding is open - with one
 # open the dossier is a skeleton); with none open it is read as before
-sed 's/^dossier: .*/dossier: complete (1 judge not done)/' "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-636.md"
+sed 's/^dossier: .*/dossier: complete (1 judge not done)/' "$NXFIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-636.md"
 nx "$NX" "$TMP/state-636.md" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o636" 2>&1
 check "next.sh: a complete dossier with 2 findings open is refused" 2 $? "$TMP/o636"
 if grep -qF "a dossier with an open finding is a skeleton" "$TMP/o636" && ! grep -qE '^next: (STOP|row) ' "$TMP/o636"; then
   echo "  ok    and it says a dossier with an open finding is a skeleton, and gives no next: line"; else
   echo "  FAIL  the complete dossier with findings open was not refused as a skeleton:"; sed "s/^/        | /" "$TMP/o636"; fails=$((fails + 1)); fi
 sed 's/^dossier: .*/dossier: complete (1 judge not done)/; s/^open_findings: .*/open_findings: high=0 medium=0 low=1 reasoned_high_or_medium=0/' \
-  "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-641.md"
+  "$NXFIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-641.md"
 nx "$NX" "$TMP/state-641.md" --judge 5=false,8=false,9=false,10=false,11b=false > "$TMP/o641" 2>&1
 check "next.sh: a complete dossier with one LOW open is refused too (high + medium + low)" 2 $? "$TMP/o641"
 nx_variant 642 "a complete dossier with no finding open: read as before (the loop over, neither freeze nor decline: the pause)" \
@@ -1782,7 +1808,7 @@ nx_variant 683 "the same, 1=true: row 1 - tell them (record it to tell)" \
 # REFUSED (exit 2, no next: line at all - a refusal can hide no row; an answer ignored would still read as judged), and
 # each case gives its row. The old question ("3=false when the row given does not depend on it") is no longer asked: a
 # row below that waits on the owner's answer is answered false itself, or is off by its flags (7b).
-F3N="$FIX/state-case-row3-dossier-none.md"
+F3N="$NXFIX/state-case-row3-dossier-none.md"
 sed 's/^battery: .*/battery:                   never/' "$F3N" > "$TMP/state-808.md"
 for c in "805|$F3N|3=true|dossier none, findings open (row 9b stands)" "806|$F3N|3=false|the same, 3=false" \
   "807|$FIX/state-case-walk-ids-comma.md|5=false,3=true|the real walk, 9b not answered yet" "808|$TMP/state-808.md|3=true|battery: never (row 6 stands on the flags)"; do
@@ -1794,13 +1820,15 @@ for c in "805|$F3N|3=true|dossier none, findings open (row 9b stands)" "806|$F3N
 done
 nx_variant 809 "dossier none, findings open, row 3 not answered: row 9b is given (the rows below are read on)" state-case-row3-dossier-none.md '' \
   5=false,8=false,9=false,9b=true 0 "2,9b"
-nx_variant 810 "battery: never, the owner away, row 3 not answered: row 6, and no question about row 3" state-case-row3-dossier-none.md \
-  's/^battery: .*/battery:                   never/' 5=false 0 "2,6"
+# (K50: was `battery: never` at phase 4, which next.sh now refuses - phase 3+ claims a battery run, D2; row 6 here by its
+# other branch, the battery's inputs changed)
+nx_variant 810 "the battery's inputs changed (last_battery=yes), the owner away, row 3 not answered: row 6, and no question about row 3" state-case-row3-dossier-none.md \
+  's/last_battery=no/last_battery=yes/' 5=false 0 "2,6"
 nx_variant 811 "the real walk, 9b answered true, row 3 not answered: row 9b" state-case-walk-ids-comma.md '' 5=false,8=false,9=false,9b=true 0 "2,9b"
 nx_variant 812 "the real walk, nothing answered: the questions and the pause as a condition, never a question about row 3" \
   state-case-walk-ids-comma.md '' - 3 "2,5,8,9,9b,10,STOP?"
 # rows 9 and 9b count EVERY open finding, from any round - a phase-3 pending: finding too, once round 1 has run
-nx "$NX" "$FIX/state-case-pending-after-round1.md" --judge 5=false,8=false > "$TMP/o616" 2>&1
+nx "$NX" "$NXFIX/state-case-pending-after-round1.md" --judge 5=false,8=false > "$TMP/o616" 2>&1
 check "next.sh: a phase-3 pending medium after round 1, not answered: rows 9 and 9b need judgement" 3 $? "$TMP/o616"
 grep -q '^needs judgement: row 9 - .*from any round' "$TMP/o616" && grep -q '^needs judgement: row 9b - .*from any round' "$TMP/o616" \
   || { echo "  FAIL  and rows 9 and 9b do not ask about a finding from any round:"; sed "s/^/        | /" "$TMP/o616"; fails=$((fails + 1)); }
@@ -1816,7 +1844,7 @@ nx_variant 618 "a black-box stopped twice before the loop is over: row 12 does n
 nx_variant 625 "a black-box stopped twice, then the ceiling reached: row 16 takes it too" \
   state-case-closing-blackbox-stopped-twice.md 's/^ceiling: .*/ceiling: 8 model rounds (full mode) agreed in phase 0; 8 used/' \
   5=false,8=false,10=false,16=true 0 "2,14,16"
-nx "$NX" "$FIX/state-case-closing-blackbox-stopped.md" --judge 5=false,8=false,10=false,11b=true > "$TMP/o626" 2>&1
+nx "$NX" "$NXFIX/state-case-closing-blackbox-stopped.md" --judge 5=false,8=false,10=false,11b=true > "$TMP/o626" 2>&1
 if grep -q '^next: row 11b - .*blackbox: stopped (<round id>).*black-box: stopped at <step>' "$TMP/o626"; then
   echo "  ok    row 11b's action says what a black-box round stopped twice sets: blackbox: stopped (<round id>), and the dossier's words"; else
   echo "  FAIL  row 11b's action does not name blackbox: stopped (<round id>) and black-box: stopped at <step>:"; sed "s/^/        | /" "$TMP/o626"; fails=$((fails + 1)); fi
@@ -1833,7 +1861,7 @@ grep -qxF "next: FIRST - fill STATE.md: its values are still the kit's example's
 nx "$NX" "$TMP/state-start-flags.md" > "$TMP/o444" 2>&1; check "next.sh: a project's starting values (state/README.md), no answers: the row" 0 $? "$TMP/o444"
 grep -q '^next: row 4 - ' "$TMP/o444" || { echo "  FAIL  and it did not give row 4:"; sed "s/^/        | /" "$TMP/o444"; fails=$((fails + 1)); }
 # refusals: rc 2, one line, naming the flag
-NP="$FIX/state-new-project.md"; nn=450
+NP="$NXFIX/state-new-project.md"; nn=450
 nx_refused() { # nx_refused <label> <the words the refusal must say> <sed script applied to the new-project fixture> [next.sh args]
   local label="$1" says="$2" sc="$3"; shift 3; nn=$((nn + 1))
   sed "$sc" "$NP" > "$TMP/state-$nn.md"
@@ -1879,7 +1907,7 @@ nx_refused "an operator's ceiling without (owner absent)" "is not the operator's
 nx_refused "an operator's ceiling without its '; M used'" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the operator (owner absent)/'
 nx_refused "an operator's ceiling with words after 'used'" "is not the operator's form" 's/^ceiling: .*/ceiling: 6 model rounds, set by the operator (owner absent); 2 used by the agent/'
 nx_refused "an operator's ceiling in words, not a number" "is not the operator's form" 's/^ceiling: .*/ceiling: six model rounds, set by the operator (owner absent); 2 used/'
-nx "$NX" "$FIX/state-case-ceiling-operator.md" --judge 5=false,8=false,9=false,9b=true > "$TMP/o755" 2>&1
+nx "$NX" "$NXFIX/state-case-ceiling-operator.md" --judge 5=false,8=false,9=false,9b=true > "$TMP/o755" 2>&1
 if grep -qx '  because: ceiling=reached (6 of 6 used, set by the operator (owner absent))' "$TMP/o755"; then
   echo "  ok    row 2 in force on the operator's ceiling says whose ceiling it was"; else
   echo "  FAIL  row 2's reason does not say the ceiling was the operator's:"; sed "s/^/        | /" "$TMP/o755"; fails=$((fails + 1)); fi
@@ -1939,15 +1967,15 @@ grep -q '^because: .*row 1 is quiet: the 4 highs open are recorded to tell in wa
   || { echo "  FAIL  and the because: line does not name the four:"; sed "s/^/        | /" "$TMP/o885"; fails=$((fails + 1)); }
 # K29: row 9b by the flags after the skeleton - a skeleton naming the number open decides it false, never asked; with
 # `dossier: none` or a stale K the question is the owner's presence, and it says what the dossier flag shows
-nx "$NX" "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/o886" 2>&1
+nx "$NX" "$NXFIX/state-case-skeleton-written-owner-away.md" > "$TMP/o886" 2>&1
 if grep -q '^needs judgement: ' "$TMP/o886" && ! grep -q '^needs judgement: row 9b ' "$TMP/o886"; then
   echo "  ok    a skeleton naming the number open: row 9b is not asked (the flags decide it)"; else
   echo "  FAIL  a skeleton naming the number open, and row 9b is asked (or nothing is):"; sed "s/^/        | /" "$TMP/o886"; fails=$((fails + 1)); fi
-nx "$NX" "$FIX/state-case-skeleton-stale.md" --judge 5=false,8=false,9=false > "$TMP/o887" 2>&1
+nx "$NX" "$NXFIX/state-case-skeleton-stale.md" --judge 5=false,8=false,9=false > "$TMP/o887" 2>&1
 if grep -q '^needs judgement: row 9b - .*the dossier does not name them yet (the skeleton names 2, open_findings has 3 open): is the owner unavailable to triage them now' "$TMP/o887"; then
   echo "  ok    a stale skeleton: row 9b asks for the owner's presence, and says what the skeleton names"; else
   echo "  FAIL  a stale skeleton: row 9b's question does not say what the skeleton names and ask for the owner's presence:"; sed "s/^/        | /" "$TMP/o887"; fails=$((fails + 1)); fi
-sed 's/^dossier: .*/dossier: none/' "$FIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-888.md"
+sed 's/^dossier: .*/dossier: none/' "$NXFIX/state-case-skeleton-written-owner-away.md" > "$TMP/state-888.md"
 nx "$NX" "$TMP/state-888.md" --judge 5=false,8=false,9=false > "$TMP/o888" 2>&1
 grep -q '^needs judgement: row 9b - .*the dossier does not name them yet (dossier: none): is the owner unavailable' "$TMP/o888" \
   || { echo "  FAIL  dossier: none, and row 9b's question does not say so and ask for the owner's presence:"; sed "s/^/        | /" "$TMP/o888"; fails=$((fails + 1)); }
@@ -2009,7 +2037,10 @@ KMD="$(cd "$KM" && pwd)"; KMN="$KM/scripts/next.sh"; KMM="$(kit_marker "$KM")"
 KMF="$TMP/kmforge"; mkdir -p "$KMF"; printf 'forge Version: 9.9.9-selftest-stub\n' > "$KMF/version"
 printf '#!/usr/bin/env bash\nv="$(cat "$(dirname "$0")/version" 2> /dev/null)"; [ -n "$v" ] || exit 127; echo "$v"; echo "Commit SHA: 0"\n' > "$KMF/forge"
 chmod +x "$KMF/forge"
-KM_FIRST="next: FIRST - prove the kit on this machine: $KMD/scripts/selftest.sh (then run next.sh again)"
+# v0.4.1 (K50, D3): the FIRST line says what the selftest costs - SELFTEST_MINUTES in next.sh, measured - and how to run it
+# (a walker's tool timeout of 300 s cut it short at ~320 s, twice)
+KM_MIN="$(sed -n 's/^SELFTEST_MINUTES=\([0-9][0-9]*\)$/\1/p' "$NX")"
+KM_FIRST="next: FIRST - prove the kit on this machine: $KMD/scripts/selftest.sh - it takes about ${KM_MIN:-<SELFTEST_MINUTES>} minutes; give it a tool timeout above that or run it in the background (then run next.sh again)"
 km_run() { env -u NEXT_SELFTEST PATH="$KMF:$PATH" "$KMN" "$@"; }                 # the kit copy's next.sh, as a user runs it
 km_mark() { (PATH="$KMF:$PATH"; selftest_marker_write "$KM" "${1:-$(kit_scripts_sha256 "$KM")}"); }   # its own selftest's marker
 km_first() { # km_first <n> <label> <why> [next.sh args]: FIRST alone, saying why
@@ -2020,36 +2051,36 @@ km_first() { # km_first <n> <label> <why> [next.sh args]: FIRST alone, saying wh
 }
 km_row() { # km_row <n> <label>: the row, alone
   local n="$1" label="$2"
-  km_run "$FIX/state-new-project.md" > "$TMP/o$n" 2>&1; check "next.sh, the kit proven: $label" 0 $? "$TMP/o$n"
+  km_run "$NXFIX/state-new-project.md" > "$TMP/o$n" 2>&1; check "next.sh, the kit proven: $label" 0 $? "$TMP/o$n"
   grep -q '^next: row 4 - ' "$TMP/o$n" && ! grep -qE 'FIRST|NEXT_SELFTEST' "$TMP/o$n" \
     || { echo "  FAIL  and it did not name row 4, alone:"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); }
 }
-km_first 901 "no marker" "the selftest has not passed here" "$FIX/state-new-project.md"
-km_first 902 "no marker, and an answer it would refuse (--judge 6=false): the kit first, nothing else is read" "the selftest has not passed here" "$FIX/state-new-project.md" --judge 6=false
+km_first 901 "no marker" "the selftest has not passed here" "$NXFIX/state-new-project.md"
+km_first 902 "no marker, and an answer it would refuse (--judge 6=false): the kit first, nothing else is read" "the selftest has not passed here" "$NXFIX/state-new-project.md" --judge 6=false
 km_mark "$(printf '%064d' 0)"
-km_first 903 "a marker recording other scripts' hash" "the scripts changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 903 "a marker recording other scripts' hash" "the scripts changed since its selftest passed" "$NXFIX/state-new-project.md"
 km_mark; grep -v '^scripts_sha256: ' "$KMM" > "$TMP/km-m"; mv "$TMP/km-m" "$KMM"
-km_first 904 "a marker with no scripts_sha256 line" "its marker does not record the scripts" "$FIX/state-new-project.md"
+km_first 904 "a marker with no scripts_sha256 line" "its marker does not record the scripts" "$NXFIX/state-new-project.md"
 km_mark
 km_row 905 "the selftest's own marker for these scripts, this machine, this forge: the row"
 for f in scripts_sha256 machine_sha256 date forge; do grep -q "^$f: ." "$KMM" || { echo "  FAIL  the marker has no $f line:"; sed "s/^/        | /" "$KMM"; fails=$((fails + 1)); }; done
 cp "$KM/scripts/lib/parse.sh" "$TMP/km-parse.sh"; echo "# one comment more" >> "$KM/scripts/lib/parse.sh"
-km_first 906 "a script under scripts/lib/ edited after the marker was written" "the scripts changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 906 "a script under scripts/lib/ edited after the marker was written" "the scripts changed since its selftest passed" "$NXFIX/state-new-project.md"
 cp "$TMP/km-parse.sh" "$KM/scripts/lib/parse.sh"; printf '#!/usr/bin/env bash\n' > "$KM/scripts/new.sh"
-km_first 907 "a script added to scripts/ after the marker was written" "the scripts changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 907 "a script added to scripts/ after the marker was written" "the scripts changed since its selftest passed" "$NXFIX/state-new-project.md"
 rm -f "$KM/scripts/new.sh"; mv "$KM/scripts/dossier-pdf.py" "$KM/scripts/dossier.py"
-km_first 908 "a script renamed after the marker was written" "the scripts changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 908 "a script renamed after the marker was written" "the scripts changed since its selftest passed" "$NXFIX/state-new-project.md"
 mv "$KM/scripts/dossier.py" "$KM/scripts/dossier-pdf.py"
 km_row 909 "the same kit put back as it was: the marker holds again"
 # K31b: the machine. A marker written on another machine (another machine id read when it was written) and copied here
 # with the kit - the V31 case: a kit copied with its .gauntlet/, a project copied with the kit in lib/hook-gauntlet
 printf '0123456789abcdef0123456789abcdef\n' > "$TMP/km-other-id"
 (_kit_machine_id_file="$TMP/km-other-id"; km_mark)
-km_first 913 "a marker written on another machine (another machine id), copied here with the kit" "the machine changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 913 "a marker written on another machine (another machine id), copied here with the kit" "the machine changed since its selftest passed" "$NXFIX/state-new-project.md"
 if grep -q "0123456789abcdef0123456789abcdef" "$KMM"; then echo "  FAIL  the marker holds the other machine's id as it is:"; sed "s/^/        | /" "$KMM"; fails=$((fails + 1)); else
   echo "  ok    and the marker holds that machine's id hashed, not as it is"; fi
 km_mark; rm -rf "$TMP/kitm-copy"; cp -a "$KM" "$TMP/kitm-copy"
-env -u NEXT_SELFTEST PATH="$KMF:$PATH" "$TMP/kitm-copy/scripts/next.sh" "$FIX/state-new-project.md" > "$TMP/o914" 2>&1
+env -u NEXT_SELFTEST PATH="$KMF:$PATH" "$TMP/kitm-copy/scripts/next.sh" "$NXFIX/state-new-project.md" > "$TMP/o914" 2>&1
 check "next.sh, the kit copied with its .gauntlet/ to another directory of THIS machine, the same forge: the row (the marker binds the machine and forge, not the path)" 0 $? "$TMP/o914"
 grep -q '^next: row 4 - ' "$TMP/o914" || { echo "  FAIL  and it did not name row 4:"; sed "s/^/        | /" "$TMP/o914"; fails=$((fails + 1)); }
 rm -rf "$TMP/kitm-copy"
@@ -2067,40 +2098,46 @@ if [ "$km_s_id" = "$TMP/km-other-id" ] && [ "$km_h_id" = "$(printf 'hook-gauntle
   echo "  FAIL  the machine's identity: file '$km_s_id' $km_h_id; empty '$km_s_empty' $km_h_empty; none '$km_s_none' $km_h_none (hostname '$km_host')"; fails=$((fails + 1)); fi
 # K31b: forge. The marker records the first line of `forge --version`; next.sh compares it with the forge on its PATH
 km_mark; printf 'forge Version: 9.9.8-another-forge\n' > "$KMF/version"
-km_first 915 "another forge on the PATH than the one the selftest passed with" "forge changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 915 "another forge on the PATH than the one the selftest passed with" "forge changed since its selftest passed" "$NXFIX/state-new-project.md"
 : > "$KMF/version"
-km_first 916 "no forge answering on the PATH" "forge changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 916 "no forge answering on the PATH" "forge changed since its selftest passed" "$NXFIX/state-new-project.md"
 printf 'forge Version: 9.9.9-selftest-stub\n' > "$KMF/version"
 km_row 917 "the forge the selftest passed with, back on the PATH"
 # every field required: a marker missing one - hand-written, or from an older kit - is FIRST, saying which
 cp "$KMM" "$TMP/km-good"
 grep -v '^machine_sha256: ' "$TMP/km-good" > "$KMM"
-km_first 918 "a marker with no machine_sha256 line" "its marker does not record the machine" "$FIX/state-new-project.md"
+km_first 918 "a marker with no machine_sha256 line" "its marker does not record the machine" "$NXFIX/state-new-project.md"
 grep -v '^forge: ' "$TMP/km-good" > "$KMM"
-km_first 919 "a marker with no forge line" "its marker does not record forge" "$FIX/state-new-project.md"
+km_first 919 "a marker with no forge line" "its marker does not record forge" "$NXFIX/state-new-project.md"
 sed 's/^forge: .*/forge: /' "$TMP/km-good" > "$KMM"
-km_first 91a "a marker whose forge line is empty" "its marker does not record forge" "$FIX/state-new-project.md"
+km_first 91a "a marker whose forge line is empty" "its marker does not record forge" "$NXFIX/state-new-project.md"
 grep '^scripts_sha256: ' "$TMP/km-good" > "$KMM"
-km_first 91b "a hand-written marker of one line, the right scripts_sha256 (V31)" "its marker does not record the machine and forge" "$FIX/state-new-project.md"
+km_first 91b "a hand-written marker of one line, the right scripts_sha256 (V31)" "its marker does not record the machine and forge" "$NXFIX/state-new-project.md"
 (_kit_machine_id_file="$TMP/km-other-id"; km_mark "$(printf '%064d' 0)"); printf 'forge Version: 9.9.8-another-forge\n' > "$KMF/version"
-km_first 91c "a marker of other scripts, another machine and another forge" "the scripts, the machine and forge changed since its selftest passed" "$FIX/state-new-project.md"
+km_first 91c "a marker of other scripts, another machine and another forge" "the scripts, the machine and forge changed since its selftest passed" "$NXFIX/state-new-project.md"
 printf 'forge Version: 9.9.9-selftest-stub\n' > "$KMF/version"
 rm -f "$KMM"
 env -u NEXT_SELFTEST "$KMN" --check-table > "$TMP/o910" 2>&1; check "next.sh --check-table, the kit not proven: the drift guard runs all the same" 0 $? "$TMP/o910"
 grep -q "^next: next.sh's rows and .* agree" "$TMP/o910" || { echo "  FAIL  and not the drift guard's answer:"; sed "s/^/        | /" "$TMP/o910"; fails=$((fails + 1)); }
-NEXT_SELFTEST=1 "$KMN" "$FIX/state-new-project.md" > "$TMP/o911" 2> "$TMP/o911e"; check "next.sh with NEXT_SELFTEST=1, no marker: the row" 0 $? "$TMP/o911"
+NEXT_SELFTEST=1 "$KMN" "$NXFIX/state-new-project.md" > "$TMP/o911" 2> "$TMP/o911e"; check "next.sh with NEXT_SELFTEST=1, no marker: the row" 0 $? "$TMP/o911"
 if [ "$(cat "$TMP/o911e")" = "$NX_NOTICE" ] && grep -q '^next: row 4 - ' "$TMP/o911"; then
   echo "  ok    and it says so, on one line of stderr: $NX_NOTICE"; else
   echo "  FAIL  NEXT_SELFTEST=1 not said on one line:"; sed "s/^/        | /" "$TMP/o911e"; fails=$((fails + 1)); fi
-NEXT_SELFTEST=yes "$KMN" "$FIX/state-new-project.md" > "$TMP/o912" 2>&1; check "next.sh refuses NEXT_SELFTEST set to anything but 1" 2 $? "$TMP/o912"
+NEXT_SELFTEST=yes "$KMN" "$NXFIX/state-new-project.md" > "$TMP/o912" 2>&1; check "next.sh refuses NEXT_SELFTEST set to anything but 1" 2 $? "$TMP/o912"
 grep -qF "NEXT_SELFTEST='yes' is not 1" "$TMP/o912" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o912")"; fails=$((fails + 1)); }
 # K31, decision 2: a test in pending/ that STATE.md does not name is refused, and a pending: note with no file. The
 # project is the STATE.md's directory, or its parent for .gauntlet/STATE.md. The fixture is a real walk's end: four
 # pending: notes, and here their four files. These cases are about the notes: the red records (K41) are not checked in
 # them - PENDING_RED=0, said on stderr every run - and are the K40/K41 cases' own
 export PENDING_RED=0
-PJ="$TMP/pendp"; mkdir -p "$PJ/.gauntlet" "$PJ/pending/lib"
-cp "$FIX/state-case-round-end-owner-absent.md" "$PJ/.gauntlet/STATE.md"
+# (K50: each project here gets the green build record its phase 4 claims - D2, NXFIX above)
+nx_build() { # (K60: with the test record, the census and the invariant suite phase 3+ and 4+ claim)
+  mkdir -p "$1/.gauntlet/reports" "$1/test" && cp "$FIX/build-real-compiled.txt" "$1/.gauntlet/reports/01-build.txt" \
+    && cp "$FIX/summary-real-many-suites.txt" "$1/.gauntlet/reports/02-test.txt" && printf 'census\n' > "$1/.gauntlet/reports/06-census.txt" \
+    && printf 'contract Inv { function invariant_fixture() public {} }\n' > "$1/test/Inv.t.sol"
+}
+PJ="$TMP/pendp"; mkdir -p "$PJ/.gauntlet" "$PJ/pending/lib"; nx_build "$PJ"
+cp "$NXFIX/state-case-round-end-owner-absent.md" "$PJ/.gauntlet/STATE.md"
 for i in 1 2 3 4; do printf '// pending F-%s\n' "$i" > "$PJ/pending/F-$i.t.sol"; done
 printf 'not a test\n' > "$PJ/pending/README.md"; printf 'not Solidity\n' > "$PJ/pending/lib/notes.txt"
 PJJ="5=false,8=false,9=false,10=false"
@@ -2122,16 +2159,16 @@ nx "$NX" "$PJ/.gauntlet/STATE.md" --judge "$PJJ" > "$TMP/o924" 2>&1; check "next
 sed 's/^\(notes: .*\)$/\1 · pending: F-6 - a promise, owner undecided/' "$PJ/.gauntlet/STATE.md" > "$TMP/pend-state.md"; mv "$TMP/pend-state.md" "$PJ/.gauntlet/STATE.md"
 printf '// pending F-6\n' > "$PJ/pending/F-6.t.sol"
 nx "$NX" "$PJ/.gauntlet/STATE.md" --judge "$PJJ" > "$TMP/o925" 2>&1; check "next.sh: a pending: note after a middle dot names its file like any other: the pause" 0 $? "$TMP/o925"
-PR="$TMP/pendroot"; mkdir -p "$PR/pending"; sed 's/^location: .*/location:                  root/' "$FIX/state-case-round-end-owner-absent.md" > "$PR/STATE.md"
+PR="$TMP/pendroot"; mkdir -p "$PR/pending"; nx_build "$PR"; sed 's/^location: .*/location:                  root/' "$NXFIX/state-case-round-end-owner-absent.md" > "$PR/STATE.md"
 printf '// X-1\n' > "$PR/pending/X-1.t.sol"
 nx "$NX" "$PR/STATE.md" --judge "$PJJ" > "$TMP/o926" 2>&1; check "next.sh, STATE.md at the project's root: pending/ beside it is read (X-1.t.sol, no note)" 2 $? "$TMP/o926"
 grep -qF "$PR/pending/X-1.t.sol is a test in pending/" "$TMP/o926" || { echo "  FAIL  not the refusal naming pending/X-1.t.sol:"; sed "s/^/        | /" "$TMP/o926"; fails=$((fails + 1)); }
-mkdir -p "$TMP/pendnone/.gauntlet"; cp "$FIX/state-case-round-end-owner-absent.md" "$TMP/pendnone/.gauntlet/STATE.md"
+mkdir -p "$TMP/pendnone/.gauntlet"; nx_build "$TMP/pendnone"; cp "$NXFIX/state-case-round-end-owner-absent.md" "$TMP/pendnone/.gauntlet/STATE.md"
 nx "$NX" "$TMP/pendnone/.gauntlet/STATE.md" --judge "$PJJ" > "$TMP/o927" 2>&1; check "next.sh: pending: notes and no pending/ at all: nothing is checked, the pause" 0 $? "$TMP/o927"
 # K31b: every file row 6b's profile runs is seen. forge 1.8.1 (`[profile.pending] test = "pending"`, measured) compiles
 # and runs every .sol below pending/ - in a subdirectory, without .t, hidden, in a hidden directory, a helper too: each
 # one is refused without its note, by its path, the id its name without .t.sol or .sol (and a leading dot)
-pj_reset() { rm -rf "$TMP/pendq"; mkdir -p "$TMP/pendq/.gauntlet" "$TMP/pendq/pending"; cp "$FIX/state-case-round-end-owner-absent.md" "$TMP/pendq/.gauntlet/STATE.md"
+pj_reset() { rm -rf "$TMP/pendq"; mkdir -p "$TMP/pendq/.gauntlet" "$TMP/pendq/pending"; nx_build "$TMP/pendq"; cp "$NXFIX/state-case-round-end-owner-absent.md" "$TMP/pendq/.gauntlet/STATE.md"
   for i in 1 2 3 4; do printf '// pending F-%s\n' "$i" > "$TMP/pendq/pending/F-$i.t.sol"; done; }
 PQ="$TMP/pendq"; n=928
 for rel in sub/F-5.t.sol F-5.sol .F-5.t.sol .h/F-5.t.sol sub/deeper/F-5.sol; do
@@ -2154,7 +2191,7 @@ pq_note() { # pq_note <what replaces "F-4 - " in F-4's note>: the fixture so edi
   while IFS= read -r l; do
     [[ $l == "$PQS"* ]] && l="                           pending: $1${l#"$PQS"}"
     printf '%s\n' "$l"
-  done < "$FIX/state-case-round-end-owner-absent.md" > "$PQ/.gauntlet/STATE.md"
+  done < "$NXFIX/state-case-round-end-owner-absent.md" > "$PQ/.gauntlet/STATE.md"
 }
 n=935
 for form in 'F-4, F-5 - ' 'F-4,F-5 - ' 'F-4 and F-5 - ' 'F-4, and F-5: ' 'F-4 & F-5 - '; do
@@ -2175,11 +2212,11 @@ unset PENDING_RED
 # own files. The same end state, row 10 not answered: its question
 # says the skeleton, STATE.md and the rest do not make it true (a walker answered it false against the letter, to reach
 # the pause); and NEXT.md's row 10 says the same
-nx "$NX" "$FIX/state-case-round-end-owner-absent.md" --judge 5=false,8=false,9=false > "$TMP/o930" 2>&1
+nx "$NX" "$NXFIX/state-case-round-end-owner-absent.md" --judge 5=false,8=false,9=false > "$TMP/o930" 2>&1
 check "next.sh: a walk's end with the skeleton written, row 10 not answered: asked" 3 $? "$TMP/o930"
 if grep -qF "The route's whole workspace does not count - everything under .gauntlet/ (STATE.md, DECISIONS.md, LOG.md, the route's SPEC.md, the dossier, STATIC-TRIAGE.md, briefs/, reports/, rounds/, the benches in bench/ and the tests written in them, backtests/, the triage notes), or with location: root those same files and directories at the root; an owner's own SPEC.md, README or NatSpec outside that workspace still counts. A skeleton written since the last round does not make this row true" "$TMP/o930" \
   && grep -q "^needs judgement: row 10 - .*The route's whole workspace does not count" "$TMP/o930" \
-  && [ "$(tail -1 "$TMP/o930")" = "if every answer is false: STOP - paused, waiting on the owner: $(sed -n 's/^waiting_on_owner: *//p' "$FIX/state-case-round-end-owner-absent.md")" ]; then
+  && [ "$(tail -1 "$TMP/o930")" = "if every answer is false: STOP - paused, waiting on the owner: $(sed -n 's/^waiting_on_owner: *//p' "$NXFIX/state-case-round-end-owner-absent.md")" ]; then
   echo "  ok    row 10's question says the route's whole workspace does not count, an owner's own documents do; answered false, the pause"; else
   echo "  FAIL  row 10's question does not say the route's whole workspace does not count:"; sed "s/^/        | /" "$TMP/o930"; fails=$((fails + 1)); fi
 grep -qF "| 10 | only documents, comments, scripts or tests changed since the last round (before any round: false), and they make claims about the code. The route's whole workspace does not count: everything under \`.gauntlet/\` - \`STATE.md\`, \`DECISIONS.md\`, \`LOG.md\`, the route's \`SPEC.md\`, the dossier, \`STATIC-TRIAGE.md\`, \`briefs/\`, \`reports/\`, \`rounds/\`, the benches in \`bench/\` and the tests written in them, \`backtests/\`, the triage notes - or, with \`location: root\`, those same files and directories at the project's root. An owner's own \`SPEC.md\`, README or NatSpec outside that workspace still counts." "$NXT" \
@@ -2189,6 +2226,7 @@ grep -qF "| 10 | only documents, comments, scripts or tests changed since the la
 if [ -s "$TMP/nx-silent" ]; then echo "  FAIL  next.sh ran with NEXT_SELFTEST=1 and did not say so:"; sed "s/^/        | /" "$TMP/nx-silent"; fails=$((fails + 1)); else
   echo "  ok    every run with NEXT_SELFTEST=1 said so, on the first line of its stderr"; fi
 
+rm -rf "$TMP/.gauntlet"   # the build record the next.sh section's cases read in $TMP (above): no other section's
 # ================================================================= skills: gen-skills.sh, skills-check.sh, install-skills.sh (K30; no forge needed)
 # The skills are generated from AGENTS.md and doctrine/NEXT.md; skills-check.sh regenerates and compares. Each way a skill
 # can go wrong is made here, on a copy of the kit, and must be seen red: a hand edit in a SKILL.md, the invariants marker
@@ -2761,7 +2799,9 @@ EOF
   # from nothing, one line saying why - then the record is this kit's, and the next run builds nothing from scratch
   cp "$RK/good.sol" "$RK/shared/B.sol"; "$HERE/battery.sh" "$RK/p" > /dev/null 2>&1
   REC="$RK/p/cache/gauntlet-sources.tsv"
-  if head -1 "$REC" 2> /dev/null | grep -q '^# hook-gauntlet sources record 2, sha256 (' && ! grep -v '^#' "$REC" | grep -qvE "^[0-9a-f]{64}$(printf '\t')."; then
+  # (captured, then matched: a pipeline into `grep -q` under pipefail can lose its writer to SIGPIPE and read false, K62)
+  rk_head="$(head -1 "$REC" 2> /dev/null)"; rk_bad="$(grep -v '^#' "$REC" 2> /dev/null | grep -cvE "^[0-9a-f]{64}$(printf '\t').")"
+  if [[ $rk_head == '# hook-gauntlet sources record 2, sha256 ('* ]] && [ "$rk_bad" = 0 ]; then
     echo "  ok    the record says what it is and how it hashes, and holds a SHA-256 per file"; else
     echo "  FAIL  the record is not '# hook-gauntlet sources record 2, sha256 (...)' with a SHA-256 per file:"; sed "s/^/        | /" "$REC"; fails=$((fails + 1)); fi
   { echo "# hook-gauntlet: the sources forge's build here read (not test/ or script/), and their content (cksum) when it started."
@@ -2770,7 +2810,7 @@ EOF
   cp "$RK/old.tsv" "$REC"
   "$HERE/battery.sh" "$RK/p" > "$TMP/o892" 2>&1; check "battery with a record an older kit wrote (cksum)" 0 $? "$TMP/o892"
   if grep -q "^battery: the record of what forge's last build here read (.*) was written by an older kit with cksum, a CRC that a deliberate edit can match .*read as no record.* Its record cache/solidity-files-cache\.json is removed, so this build is from nothing\.$" "$TMP/o892" \
-    && [ "$(grep -c '^battery: ' "$TMP/o892")" -ge 1 ] && head -1 "$REC" | grep -q '^# hook-gauntlet sources record 2, sha256 ('; then
+    && [ "$(grep -c '^battery: ' "$TMP/o892")" -ge 1 ] && [[ "$(head -1 "$REC")" == '# hook-gauntlet sources record 2, sha256 ('* ]]; then
     echo "  ok    one build from nothing, one line saying why, and the record rewritten in SHA-256"; else
     echo "  FAIL  an older kit's cksum record was trusted, or the rebuild did not say why:"; grep -a -e '^battery:' -e '^cache ' "$TMP/o892" | sed "s/^/        | /"; fails=$((fails + 1)); fi
   "$HERE/battery.sh" "$RK/p" > "$TMP/o893" 2>&1; check "and the next battery, nothing changed" 0 $? "$TMP/o893"
@@ -2970,6 +3010,20 @@ EOF
       echo "  ok    and the bench's corpus and census survived the refresh, and the project's corpus file was merged in"; else
       echo "  FAIL  fuzz-long.sh's refresh: PLANTED $([ -f "$FZ/child/corpus/invariant/PLANTED.json" ] && echo kept || echo GONE), census $([ -f "$FZ/child/census/earlier-run.tsv" ] && echo kept || echo GONE), FROMPROJECT $([ -f "$FZ/child/corpus/invariant/FROMPROJECT.json" ] && echo merged || echo MISSING)"; fails=$((fails + 1)); fi
     rm -rf "$TL/child/corpus"
+    # v0.4.2 (K60): the bench's corpus belongs to the test directories it was recorded on - kept while they are the same
+    # (the run above), cleared and said when they change (a changed handler replayed stale selectors: round 4)
+    grep -qF "fuzz-long: the bench's corpus was recorded on these test directories (test/ " "$TMP/o156" && echo "  ok    the second run says the bench's corpus was kept: the test directories are the ones it was recorded on" \
+      || { echo "  FAIL  the second run did not say the corpus was kept:"; grep -a '^fuzz-long:' "$TMP/o156" | sed "s/^/        | /"; fails=$((fails + 1)); }
+    printf '\n// K60: the handler changed\n' >> "$TL/child/test/C.t.sol"; printf 'seq\n' > "$FZ/child/corpus/invariant/PLANTED2.json"
+    BENCH_ROOT="$TMP/fzb" "$HERE/fuzz-long.sh" "$TL/child" > "$TMP/o6070" 2>&1
+    check "a long fuzz in the same bench after the test directory changed" 0 $? "$TMP/o6070"
+    if grep -q "^fuzz-long: test/ changed since the bench's corpus was recorded (" "$TMP/o6070" && [ ! -e "$FZ/child/corpus/invariant/PLANTED2.json" ] && [ ! -e "$FZ/child/corpus/invariant/PLANTED.json" ]; then
+      echo "  ok    and the bench's corpus was cleared before the campaign, and it says so"; else
+      echo "  FAIL  the bench's corpus after a changed test directory: PLANTED2 $([ -e "$FZ/child/corpus/invariant/PLANTED2.json" ] && echo kept || echo gone)"; grep -a '^fuzz-long:' "$TMP/o6070" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+    BENCH_ROOT="$TMP/fzb" "$HERE/fuzz-long.sh" "$TL/child" > "$TMP/o6071" 2>&1
+    check "and again, nothing changed" 0 $? "$TMP/o6071"
+    grep -qF "fuzz-long: the bench's corpus was recorded on these test directories (test/ " "$TMP/o6071" && echo "  ok    ... the corpus kept, said" \
+      || { echo "  FAIL  not said kept:"; grep -a '^fuzz-long:' "$TMP/o6071" | sed "s/^/        | /"; fails=$((fails + 1)); }
   else
     echo "  FAIL  the bench of the two-level project is not where the case above left it ($TMP/fzb/fuzz-long-child-*)"; fails=$((fails + 1))
   fi
@@ -3844,8 +3898,9 @@ STUB
     && grep -q '^liquidity    in range: 171357403690873183 at the end of block 26049800' "$BTR-all.txt"; then
     echo "  ok    the report: '1 swap', '5 calls' / '1 call', the replay's requests forge's and uncounted, the liquidity at <from>"; else
     echo "  FAIL  the report's words: $(grep -E '^(fixture|rpc|liquidity|  +this run|  +the replay)' "$BTR-all.txt" | tr '\n' ';' | cut -c1-600)"; fails=$((fails + 1)); fi
-  if sed -n '/^== each hook minus its control, per total/,/^$/p' "$BTR-all.txt" \
-    | grep -qx 'DeltaFeeHook 0 0 0 0 87475501957618 0 0 0 0 0 0 0 0 0 122294 122294 0 0'; then
+  # (captured, then matched: a pipeline into `grep -q` under pipefail can lose its writer to SIGPIPE and read false, K62)
+  bt_minus="$(sed -n '/^== each hook minus its control, per total/,/^$/p' "$BTR-all.txt")"
+  if grep -qx 'DeltaFeeHook 0 0 0 0 87475501957618 0 0 0 0 0 0 0 0 0 122294 122294 0 0' <<< "$bt_minus"; then
     echo "  ok    the hook minus its control, per total: took0 87475501957618, gas +122294"; else
     echo "  FAIL  hook minus control: $(sed -n '/^== each hook minus/,/^$/p' "$BTR-all.txt" | tr '\n' ';')"; fails=$((fails + 1)); fi
   if grep -q "^control(DeltaFeeHook): NOT asserted: this window (26049800 .. 26049810) is not the kit's committed one" "$BTR-all.txt"; then
@@ -3857,8 +3912,8 @@ STUB
     "$FIX/backtest-forge-real-1swap.txt" > "$TMP/btbig.txt"
   STUB_FORGE_OUT="$TMP/btbig.txt" RPC_URL="http://127.0.0.1:9" btw > "$TMP/o436" 2>&1
   check "backtest.sh: a log with 25-digit totals is reported" 0 $? "$TMP/o436"
-  if sed -n '/^== each hook minus its control, per total/,/^$/p' "$BTR-all.txt" \
-    | grep -qx 'DeltaFeeHook 0 0 0 0 87475501957618 0 0 0 0 0 2 -2 0 0 122294 122294 0 0'; then
+  bt_minus="$(sed -n '/^== each hook minus its control, per total/,/^$/p' "$BTR-all.txt")"
+  if grep -qx 'DeltaFeeHook 0 0 0 0 87475501957618 0 0 0 0 0 2 -2 0 0 122294 122294 0 0' <<< "$bt_minus"; then
     echo "  ok    the difference is exact (2, not 0) and signed (-2)"; else
     echo "  FAIL  25 digits: $(sed -n '/^== each hook minus/,/^$/p' "$BTR-all.txt" | tr '\n' ';')"; fails=$((fails + 1)); fi
   grep -v 'BT|fidelity|' "$FIX/backtest-forge-real-1swap.txt" > "$TMP/btnofid.txt"
@@ -3926,9 +3981,10 @@ grep -qxF "$KX_FIRST" "$TMP/o4002" || { echo "  FAIL  and not with the FIRST lin
 KX="$TMP/kx"; kx_proj "$KX"
 kx_row 4003 "next.sh: a new project's STATE.md, no DECISIONS.md or LOG.md beside it: the row" 4 "$KX/.gauntlet/STATE.md"
 sed '/Example file. The project is fictional/d' "$HERE/../state/STATE.md" > "$KX/.gauntlet/STATE.md"
-kx_one 4004 "next.sh refuses the example without its marker line: BlockCapHook in the title" 2 "$KX_FIRST" "$KX/.gauntlet/STATE.md"
+kx_init() { printf '%s - %s/scripts/init-state.sh %s writes an empty one' "$KX_FIRST" "$KX_KIT" "$(cd "$1" && pwd)"; }   # K50: the STATE.md refusal names init-state.sh
+kx_one 4004 "next.sh refuses the example without its marker line: BlockCapHook in the title" 2 "$(kx_init "$KX")" "$KX/.gauntlet/STATE.md"
 sed '1s/BlockCapHook/SomeHook/' "$HERE/../state/STATE.md" > "$KX/.gauntlet/STATE.md"
-kx_one 4005 "next.sh refuses the example with another title: its marker line" 2 "$KX_FIRST" "$KX/.gauntlet/STATE.md"
+kx_one 4005 "next.sh refuses the example with another title: its marker line" 2 "$(kx_init "$KX")" "$KX/.gauntlet/STATE.md"
 kx_proj "$KX"; printf '\nThe owner'"'"'s notes compare this hook with the kit'"'"'s example, BlockCapHook.\n' >> "$KX/.gauntlet/STATE.md"
 kx_row 4006 "next.sh: a real STATE.md that names BlockCapHook in its prose, not in its title: the row" 4 "$KX/.gauntlet/STATE.md"
 kx_proj "$KX"; cp "$HERE/../state/LOG.md" "$KX/.gauntlet/LOG.md"
@@ -3948,8 +4004,8 @@ kx_cite() { # kx_cite <n> <label> <expected rc> <DECISIONS.md body>: the new pro
   nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o$n" 2>&1; check "$label" "$rc" $? "$TMP/o$n"
 }
 kx_cite 4010 "next.sh refuses a DECISIONS.md citing pending/F-2_units.t.sol, which does not exist" 2 'D-02: the test is `pending/F-2_units.t.sol` (red).'
-if grep -q "^$KX_CITE (line 3 of " "$TMP/o4010" && grep -q 'CITED_FILES=0' "$TMP/o4010" && [ "$(wc -l < "$TMP/o4010" | tr -d ' ')" = 1 ]; then
-  echo "  ok    one line, naming the file, the path, its line and the escape"; else echo "  FAIL  not the line:"; sed "s/^/        | /" "$TMP/o4010"; fails=$((fails + 1)); fi
+if grep -q "^$KX_CITE (line 3 of " "$TMP/o4010" && ! grep -q 'CITED_FILES' "$TMP/o4010" && [ "$(wc -l < "$TMP/o4010" | tr -d ' ')" = 1 ]; then
+  echo "  ok    one line, naming the file, the path and its line - and no escape (v0.4.2: the header has it)"; else echo "  FAIL  not the line:"; sed "s/^/        | /" "$TMP/o4010"; fails=$((fails + 1)); fi
 kx_cite 4011 "next.sh: the files it cites exist (src/, test/): the row" 0 'The hook is `src/Hook.sol`, its tests ./test/Hook.t.sol and the round report .gauntlet/reports/ (a directory).'
 kx_cite 4012 "next.sh: the missing path inside a fenced code block is not a citation" 0 "$(printf '```\npending/F-2_units.t.sol\n```')"
 for w in "to write" "planned" "TODO"; do
@@ -3978,10 +4034,12 @@ kx_row 4026 "next.sh <proj>: a project directory with .gauntlet/STATE.md - the r
 KXR="$TMP/kxr"; rm -rf "$KXR"; mkdir -p "$KXR"; cp "$FIX/state-new-project.md" "$KXR/STATE.md"
 kx_row 4027 "next.sh <proj>: a project directory with STATE.md at its root - the row" 4 "$KXR"
 cp "$HERE/../state/STATE.md" "$KXR/STATE.md"
-kx_one 4028 "next.sh <proj>: the kit's example there is refused as the file is" 2 "$KX_FIRST" "$KXR"
-rm -f "$KXR/STATE.md"
-nx "$NX" "$KXR" > "$TMP/o4029" 2>&1; check "next.sh <proj>: a directory with no STATE.md is refused" 2 $? "$TMP/o4029"
-grep -qF "$KXR has no .gauntlet/STATE.md and no STATE.md" "$TMP/o4029" || { echo "  FAIL  and not naming the directory and both places: $(head -1 "$TMP/o4029")"; fails=$((fails + 1)); }
+kx_one 4028 "next.sh <proj>: the kit's example there is refused as the file is" 2 "$(kx_init "$KXR")" "$KXR"
+rm -f "$KXR/STATE.md"; KXRA="$(cd "$KXR" && pwd)"
+# K53: the refusal names the command that writes one, absolute like the others (V50: the walk from nothing read
+# state/README.md here, a step the other refusals do not cost)
+kx_one 4029 "next.sh <proj>: a directory with no STATE.md is refused, naming the directory, both places and the command" 2 \
+  "next: REFUSED - $KXRA has no .gauntlet/STATE.md and no STATE.md: $KX_KIT/scripts/init-state.sh $KXRA writes one (or give the STATE.md)" "$KXR"
 kx_proj "$KX"; sed 's/^notes: .*/notes:                     pending: F-7 - see test\/Gone.t.sol, owner undecided/' "$FIX/state-new-project.md" > "$KX/.gauntlet/STATE.md"
 nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o4019" 2>&1; check "next.sh refuses a pending: note in the flag block citing test/Gone.t.sol, which does not exist (the fence does not hide the notes)" 2 $? "$TMP/o4019"
 grep -q '^next: STATE.md cites a file that does not exist: test/Gone.t.sol ' "$TMP/o4019" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4019")"; fails=$((fails + 1)); }
@@ -3996,18 +4054,21 @@ grep -qF "CITED_FILES='no' is not 0" "$TMP/o4023" || { echo "  FAIL  and not for
 KP="$TMP/kp"; kx_proj "$KP"; mkdir -p "$KP/src" "$KP/pending"; printf 'contract H {}\n' > "$KP/src/H.sol"; printf '// F-1\n' > "$KP/pending/F-1.t.sol"
 sed 's/^notes: .*/notes:                     pending: F-1 - a stranger takes a registered id, owner undecided/' "$FIX/state-new-project.md" > "$KP/.gauntlet/STATE.md"
 KPA="$(cd "$KP" && pwd)"
-KP_LINE="next: pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol (PENDING_RED=0 skips this check, and says so)"
+KP_LINE="next: pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol"
+# K61: a record made on another key is named stale, with the part that changed when the record says its parts (these
+# handwritten ones do not)
+KP_STALE="next: pending/F-1.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - one of src/, test/, pending/, foundry.toml and remappings.txt changed since; that record does not say which): $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol"
 kx_one 4030 "next.sh refuses pending/F-1.t.sol with no record of being seen red" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
 kp_rec="$(pending_record_path "$KPA" pending/F-1.t.sol)"; mkdir -p "$(dirname "$kp_rec")"; pending_record_head pending/F-1.t.sol "${kp_rec##*.}" > "$kp_rec"
 kx_row 4031 "next.sh: the record for the file and src/ as they stand: the row" 4 "$KP/.gauntlet/STATE.md"
 echo '// edited' >> "$KP/src/H.sol"
-kx_one 4032 "next.sh: src/ edited since the record - not current, refused" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
+kx_one 4032 "next.sh: src/ edited since the record - not current, refused" 2 "$KP_STALE" "$KP/.gauntlet/STATE.md"
 printf 'contract H {}\n' > "$KP/src/H.sol"; echo '// edited' >> "$KP/pending/F-1.t.sol"
-kx_one 4033 "next.sh: the test edited since the record - not current, refused" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
+kx_one 4033 "next.sh: the test edited since the record - not current, refused" 2 "$KP_STALE" "$KP/.gauntlet/STATE.md"
 printf '// F-1\n' > "$KP/pending/F-1.t.sol"
 kx_row 4034 "next.sh: both as recorded again - the record is current again: the row" 4 "$KP/.gauntlet/STATE.md"
 mkdir -p "$KP/src/lib"; printf 'library L {}\n' > "$KP/src/lib/L.sol"
-kx_one 4035 "next.sh: a file added below src/ - not current, refused" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
+kx_one 4035 "next.sh: a file added below src/ - not current, refused" 2 "$KP_STALE" "$KP/.gauntlet/STATE.md"
 PENDING_RED=0 nx "$NX" "$KP/.gauntlet/STATE.md" > "$TMP/o4036" 2>&1; check "next.sh with PENDING_RED=0: the row" 0 $? "$TMP/o4036"
 grep -q '^next: PENDING_RED=0 - ' "$TMP/o4036" || { echo "  FAIL  and PENDING_RED=0 was not said"; fails=$((fails + 1)); }
 PENDING_RED=1 nx "$NX" "$KP/.gauntlet/STATE.md" > "$TMP/o4037" 2>&1; check "next.sh refuses PENDING_RED set to anything but 0" 2 $? "$TMP/o4037"
@@ -4035,7 +4096,7 @@ if command -v forge > /dev/null 2>&1 && [ -e "$KPF/lib" ]; then
   kx_row 4042 "next.sh on the small project after it: the row" 4 "$KR/.gauntlet/STATE.md"
   cp "$KR/src/Reg.sol" "$TMP/kr-Reg.sol"; printf '// edited after the red\n' >> "$KR/src/Reg.sol"
   nx "$NX" "$KR/.gauntlet/STATE.md" > "$TMP/o4043" 2>&1; check "next.sh: src/ edited after the red: the record is stale, refused" 2 $? "$TMP/o4043"
-  grep -q '^next: pending/F-1.t.sol - not seen red on the code as it stands: ' "$TMP/o4043" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4043")"; fails=$((fails + 1)); }
+  grep -qF "next: pending/F-1.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - src/ changed since): " "$TMP/o4043" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4043")"; fails=$((fails + 1)); }
   cp "$TMP/kr-Reg.sol" "$KR/src/Reg.sol"
   kr_red | grep -v 'a_stranger_cannot' > "$KR/pending/F-1.t.sol"
   "$HERE/pending-red.sh" "$KR" pending/F-1.t.sol > "$TMP/o4044" 2>&1; check "pending-red.sh refuses a pending test that PASSES on the code" 2 $? "$TMP/o4044"
@@ -4106,7 +4167,7 @@ kx_one 4812 "next.sh still refuses a LOG.md that keeps the marker as a line of i
 kx_proj "$K8"; mkdir -p "$K8/test/fork"; : > "$K8/test/fork/Fork.t.sol"
 printf '# DECISIONS - SomeHook\n\n**Test:** `test/fork/Fork.t.sol` written for the hook, run against a fork.\n' > "$K8/.gauntlet/DECISIONS.md"
 nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4820" 2>&1; check "next.sh refuses a cited test/fork/Fork.t.sol of 0 bytes" 2 $? "$TMP/o4820"
-grep -q '^next: DECISIONS.md cites a file that is empty: test/fork/Fork.t.sol (line 3 of .*CITED_FILES=0' "$TMP/o4820" || { echo "  FAIL  and not the line: $(cat "$TMP/o4820")"; fails=$((fails + 1)); }
+grep -q '^next: DECISIONS.md cites a file that is empty: test/fork/Fork.t.sol (line 3 of ' "$TMP/o4820" && ! grep -q 'CITED_FILES' "$TMP/o4820" || { echo "  FAIL  and not the line (or it names the escape): $(cat "$TMP/o4820")"; fails=$((fails + 1)); }
 rm -f "$K8/test/fork/Fork.t.sol"; mkdir -p "$K8/test/fork/Fork.t.sol"
 nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4821" 2>&1; check "next.sh refuses a cited test/fork/Fork.t.sol that is a directory" 2 $? "$TMP/o4821"
 grep -q '^next: DECISIONS.md cites a file that is a directory: test/fork/Fork.t.sol (line 3 of ' "$TMP/o4821" || { echo "  FAIL  and not the line: $(cat "$TMP/o4821")"; fails=$((fails + 1)); }
@@ -4140,7 +4201,7 @@ kx_row 4834 "next.sh: a record with pending-red's first line for that file and k
 # ---- the key covers test/, pending/, foundry.toml and remappings.txt (V40: a helper in test/ edited kept the record current)
 k8_stale() { # k8_stale <n> <label>: the record is not the current one any more
   nx "$NX" "$K8P/.gauntlet/STATE.md" > "$TMP/o$1" 2>&1; check "$2" 2 $? "$TMP/o$1"
-  grep -q '^next: pending/F-1.t.sol - not seen red on the code as it stands: ' "$TMP/o$1" || { echo "  FAIL  and not for that: $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
+  grep -q '^next: pending/F-1.t.sol - not seen red on the code as it stands (its red record of [0-9-]* is stale - ' "$TMP/o$1" || { echo "  FAIL  and not for that: $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
 }
 k8_again() { r="$(k8_rec)"; pending_record_head pending/F-1.t.sol "${r##*.}" > "$r"; }
 echo '// edited' >> "$K8P/test/Helper.sol"; k8_stale 4835 "next.sh: a helper in test/ edited since the record - not current"
@@ -4182,16 +4243,16 @@ if command -v forge > /dev/null 2>&1 && [ -e "$KPF/lib" ]; then
   "$HERE/pending-red.sh" "$K8R" pending/F-13_dir.t.sol > "$TMP/o4854" 2>&1; check "... and when it is named" 2 $? "$TMP/o4854"
   grep -qF 'pending/F-13_dir.t.sol is a directory' "$TMP/o4854" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4854")"; fails=$((fails + 1)); }
   rmdir "$K8R/pending/F-13_dir.t.sol"
-  K8_BITS='V4Harness: afterInitialize implemented but its permission bit is not set on 0x0000000000000000000000000000000000001000 - the manager never calls it. That is a finding (the owner decides its fix, doctrine/NEXT.md row 6b): see doctrine/EVIDENCE.md section 2; a suite that deploys a mis-flagged hook on purpose sets _skipPermissionCheck'
+  K8_BITS='V4Harness: afterInitialize implemented but its permission bit is not set on 0x0000000000000000000000000000000000001000 - the manager never calls it. This is a finding, not a fix (doctrine/NEXT.md row 6b). In this order: write its test as pending/<id>.t.sol - its own setUp sets _skipPermissionCheck = true, then a test function of its own calls _checkHookPermissions(address(hook)) directly (V4Harness: function _checkHookPermissions(address hook) internal), with no vm.expectRevert, so this revert fails that test - record that red with scripts/pending-red.sh <proj> pending/<id>.t.sol, count it in STATE.md; then put _skipPermissionCheck = true and a header line // _skipPermissionCheck: <id> open in the suites that deploy the hook; then the battery, which holds them to that red record, current while src/ and pending/<id>.t.sol are as recorded (doctrine/EVIDENCE.md section 2).'
   { printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\ncontract F1 is Test {\n    function setUp() public { revert("%s"); }\n' "$K8_BITS"
     printf '    function test_F1_x() public { assertTrue(false); }\n}\n'; } > "$K8R/pending/F-1.t.sol"
   "$HERE/pending-red.sh" "$K8R" pending/F-1.t.sol > "$TMP/o4855" 2>&1; check "pending-red.sh: setUp() fails on the harness's permission-bits refusal - no record" 2 $? "$TMP/o4855"
   if grep -qF "$K8_BITS" "$TMP/o4855" \
-    && grep -qxF 'pending-red: the harness refused the deploy: that IS the finding - record it, then doctrine/EVIDENCE.md section 2 "while a permission-bits finding is open" (_skipPermissionCheck) for the other pending tests' "$TMP/o4855" \
+    && grep -qxF 'pending-red: the harness refused the deploy: that IS the finding - its test sets _skipPermissionCheck = true in setUp and holds the hook to the check in a test of its own, _checkHookPermissions(address(hook)); - that test'"'"'s failure is this line, recorded red like any other (doctrine/EVIDENCE.md section 2, "while a permission-bits finding is open")' "$TMP/o4855" \
     && ! grep -q 'the harness broke' "$TMP/o4855"; then
     echo "  ok    the harness's whole line (no cut), and the line that names the finding and EVIDENCE.md section 2"; else echo "  FAIL  not those lines:"; sed "s/^/        | /" "$TMP/o4855"; fails=$((fails + 1)); fi
   grep -qiF 'while a permission-bits finding is open' "$HERE/../doctrine/EVIDENCE.md" || { echo "  FAIL  doctrine/EVIDENCE.md has no paragraph 'while a permission-bits finding is open'"; fails=$((fails + 1)); }
-  grep -qF 'see doctrine/EVIDENCE.md section 2' "$HERE/../foundry-kit/v4/src/V4Harness.sol" && ! grep -qF 'Declare the bit and mine for it' "$HERE/../foundry-kit/v4/src/V4Harness.sol" \
+  grep -qF '(doctrine/EVIDENCE.md section 2)."' "$HERE/../foundry-kit/v4/src/V4Harness.sol" && ! grep -qF 'Declare the bit and mine for it' "$HERE/../foundry-kit/v4/src/V4Harness.sol" \
     && echo "  ok    the harness's refusal points at doctrine/EVIDENCE.md section 2, not at a fix" || { echo "  FAIL  the harness's refusal does not point at EVIDENCE.md section 2"; fails=$((fails + 1)); }
 else
   echo "  SKIPPED - no forge or no foundry-kit/lib here: pending-red.sh's builds from nothing are NOT proven on this machine"; skipped=1
@@ -4236,7 +4297,10 @@ grep -qF 'the same values, whatever the spacing' "$HERE/../state/README.md" && e
 # ---- pending-red.sh: its own build directory emptied each run; the project's cache/fuzz, cache/invariant,
 # cache/solidity-files-cache.json and out/ untouched; forge writes cache/test-failures, and nothing in the kit reads it
 K9_PR="$HERE/pending-red.sh"
-if sed -n '2,/^set -uo pipefail/p' "$K9_PR" | grep -q 'cache/test-failures' && sed -n '2,/^set -uo pipefail/p' "$K9_PR" | grep -q -- '--rerun'; then
+# (captured, then matched: sed piped into `grep -q` under pipefail failed ~1 % of runs with the text there - grep's early exit,
+# sed's SIGPIPE on a header past 4 KB; V60c measured it, K62)
+k9_head="$(sed -n '2,/^set -uo pipefail/p' "$K9_PR")"
+if [[ $k9_head == *'cache/test-failures'* && $k9_head == *'--rerun'* ]]; then
   echo "  ok    pending-red.sh's header names cache/test-failures, what forge writes in the project, and --rerun"; else
   echo "  FAIL  pending-red.sh's header does not name cache/test-failures and --rerun (V41: forge writes it; the header said cache/ was not touched)"; fails=$((fails + 1)); fi
 k9_rerun="$(for f in "$HERE"/*.sh "$HERE"/lib/*; do [ "$f" = "$HERE/selftest.sh" ] && continue; grep -HnE -- '--rerun|test-failures' "$f" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#'; done)"
@@ -4267,6 +4331,290 @@ else
   echo "  SKIPPED - no forge or no foundry-kit/lib here: what pending-red.sh leaves in the project is NOT proven on this machine"; skipped=1
 fi
 # --- end K49 ---
+
+# --- K50 ---
+# ================================================================= v0.4.1 (K50): what the hosted and local walks showed,
+# turned into refusals - the spec is the owner's (init-state.sh records its hash; next.sh refuses it changed or gone),
+# the phase against its records (phase 2+ needs a green build record, phase 3+ a battery run), the FIRST line names the
+# selftest's cost (the KM cases above, KM_FIRST), `key:value` copies of the example, and the MANIFEST note
+echo "== init-state.sh; next.sh: the spec, the phase against its records, key:value, the MANIFEST note (K50) =="
+K5="$TMP/k50"; rm -rf "$K5"; mkdir -p "$K5"; K5_IS="$HERE/init-state.sh"
+k5_proj() { # k5_proj <dir> [<the spec's path in it>]: a project with a hook and a spec, nothing else
+  rm -rf "$1"; mkdir -p "$1/src" "$(dirname "$1/${2:-SPEC.md}")"; printf 'contract Hook {}\n' > "$1/src/Hook.sol"
+  printf '# SPEC - Hook\n\nThe hook promises one thing: a swap never pays more than its quote.\n' > "$1/${2:-SPEC.md}"
+}
+k5_sha() { if command -v sha256sum > /dev/null 2>&1; then sha256sum < "$1" | cut -d' ' -f1; else shasum -a 256 < "$1" | cut -d' ' -f1; fi; }
+k5_has() { # k5_has <file> <label> <fixed string>...: each string is in the file
+  local f="$1" l="$2" s; shift 2
+  for s in "$@"; do grep -qF -- "$s" "$f" || { echo "  FAIL  $l: '$s' not in:"; sed "s/^/        | /" "$f"; fails=$((fails + 1)); return 1; }; done
+  echo "  ok    $l"
+}
+k5_no_by() { # k5_no_by <file> <label>: no line of init-state's output carries the runnable form of the signature, `--by "`
+  if grep -qF -- '--by "' "$1"; then echo "  FAIL  $2: a line hands over a runnable --by:"; grep -nF -- '--by "' "$1" | sed "s/^/        | /"; fails=$((fails + 1)); else echo "  ok    $2"; fi
+}
+# ---- init-state.sh on an empty project: the three files, the examples emptied, the spec's hash, the next command
+P1="$K5/p1"; k5_proj "$P1"; P1A="$(cd "$P1" && pwd)"
+"$K5_IS" "$P1" > "$TMP/o5001" 2>&1; check "init-state.sh on a project with a SPEC.md and nothing else" 0 $? "$TMP/o5001"
+k5_ok=1; for f in STATE.md DECISIONS.md LOG.md .gitignore spec.sha256; do [ -s "$P1/.gauntlet/$f" ] || { echo "  FAIL  it did not write .gauntlet/$f"; fails=$((fails + 1)); k5_ok=0; }; done
+[ "$k5_ok" = 1 ] && echo "  ok    it wrote .gauntlet/STATE.md, DECISIONS.md, LOG.md, .gitignore and spec.sha256"
+[ "$(cat "$P1/.gauntlet/spec.sha256" 2> /dev/null)" = "$(k5_sha "$P1/SPEC.md")  SPEC.md" ] && echo "  ok    spec.sha256 is '<sha256 of SPEC.md>  SPEC.md'" \
+  || { echo "  FAIL  spec.sha256 is not the spec's hash and its path: $(cat "$P1/.gauntlet/spec.sha256" 2> /dev/null)"; fails=$((fails + 1)); }
+k5_block() { [ -f "$1" ] || return 0; LC_ALL=C awk '{ sub(/\r$/, "") } /^```/ { if (b && has) { f = 1; exit } b = !b; n = 0; has = 0; next } b { l[++n] = $0; if ($0 ~ /^phase:/) has = 1 } END { for (i = 1; i <= n; i++) print l[i] }' "$1"; }
+[ -n "$(k5_block "$HERE/../state/README.md")" ] && [ "$(k5_block "$P1/.gauntlet/STATE.md")" = "$(k5_block "$HERE/../state/README.md")" ] \
+  && echo "  ok    its STATE.md's flag block is state/README.md's starting values, line for line" \
+  || { echo "  FAIL  its STATE.md's flag block is not state/README.md's starting values:"; k5_block "$P1/.gauntlet/STATE.md" | sed "s/^/        | /"; fails=$((fails + 1)); }
+grep -q '^phase: *0$' "$P1/.gauntlet/STATE.md" 2> /dev/null && grep -q '^location: *\.gauntlet/$' "$P1/.gauntlet/STATE.md" && grep -q '^battery: *never$' "$P1/.gauntlet/STATE.md" \
+  && echo "  ok    phase: 0, battery: never, location: .gauntlet/" || { echo "  FAIL  not phase 0 / battery never / location .gauntlet/"; fails=$((fails + 1)); }
+if [ ! -f "$P1/.gauntlet/STATE.md" ] || grep -qlE 'Example file|BlockCapHook|F-24|r05' "$P1/.gauntlet/STATE.md" "$P1/.gauntlet/DECISIONS.md" "$P1/.gauntlet/LOG.md" 2> /dev/null; then
+  echo "  FAIL  no STATE.md, or the example's content is left in what it wrote:"; grep -nE 'Example file|BlockCapHook|F-24|r05' "$P1/.gauntlet"/*.md 2> /dev/null | sed "s/^/        | /"; fails=$((fails + 1)); else
+  echo "  ok    no example content in the three files (no marker, no BlockCapHook, no example finding or round)"; fi
+[ "$(grep -c '^## ' "$P1/.gauntlet/STATE.md" 2> /dev/null)" = "$(grep -c '^## ' "$HERE/../state/STATE.md")" ] && grep -q '^# DECISIONS - p1$' "$P1/.gauntlet/DECISIONS.md" \
+  && grep -q '^# LOG - p1$' "$P1/.gauntlet/LOG.md" && grep -q 'source: assumed, owner absent' "$P1/.gauntlet/DECISIONS.md" \
+  && echo "  ok    the example's section headings in STATE.md; DECISIONS.md and LOG.md titled for the project, with their rules (source: assumed, owner absent)" \
+  || { echo "  FAIL  the headings, the titles or the rules are not there"; fails=$((fails + 1)); }
+[ "$(tail -1 "$TMP/o5001")" = "init-state: next: $KX_KIT/scripts/next.sh $P1A" ] && echo "  ok    and it ends with the next command: next.sh <proj>" \
+  || { echo "  FAIL  its last line is not the next command:"; tail -2 "$TMP/o5001" | sed "s/^/        | /"; fails=$((fails + 1)); }
+kx_row 5002 "next.sh after init-state.sh on that project: not refused by the example checks (by marker, title or values) - the row" 4 "$P1"
+grep -qE 'FIRST|REFUSED' "$TMP/o5002" && { echo "  FAIL  and something was refused or put first"; fails=$((fails + 1)); }
+k5_sum() { (cd "$1/.gauntlet" 2> /dev/null && cat STATE.md DECISIONS.md LOG.md .gitignore 2> /dev/null) | cksum; }
+k5_before="$(k5_sum "$P1")"; k5_spec_before="$(cat "$P1/.gauntlet/spec.sha256" 2> /dev/null)"
+"$K5_IS" "$P1" > "$TMP/o5003" 2>&1; check "init-state.sh refuses a project that has a .gauntlet/STATE.md" 2 $? "$TMP/o5003"
+k5_has "$TMP/o5003" "it names the file and never overwrites it" "init-state: REFUSED - $P1A/.gauntlet/STATE.md exists" "never overwrites"
+k5_has "$TMP/o5003" "... and the owner's re-record is named, not handed over (--by; the header says how)" "the owner signs it (--by; the header of scripts/init-state.sh says how)."
+k5_no_by "$TMP/o5003" "... and no line of it hands over the runnable form (--by and a quoted name)"
+[ "$(k5_sum "$P1")" = "$k5_before" ] && [ "$(cat "$P1/.gauntlet/spec.sha256" 2> /dev/null)" = "$k5_spec_before" ] && echo "  ok    and nothing was written" \
+  || { echo "  FAIL  the refusal wrote something"; fails=$((fails + 1)); }
+P1R="$K5/p1r"; k5_proj "$P1R"; cp "$FIX/state-new-project.md" "$P1R/STATE.md"
+"$K5_IS" "$P1R" > "$TMP/o5004" 2>&1; check "init-state.sh refuses a project with a STATE.md at its root (location: root; next.sh <proj> would read the new one first)" 2 $? "$TMP/o5004"
+[ ! -e "$P1R/.gauntlet" ] && echo "  ok    and wrote nothing" || { echo "  FAIL  and it wrote $P1R/.gauntlet"; fails=$((fails + 1)); }
+# ---- the K40 refusal names init-state.sh, and init-state.sh replaces the example in that one step (K52: it refused the
+# example in its turn - "delete it, then run this again" - two steps where the refusal promised one). The same test as
+# next.sh's (scripts/lib/state-example.sh: marker, title, values); a STATE.md of the project's own still refused
+P2="$K5/p2"; k5_proj "$P2"; P2A="$(cd "$P2" && pwd)"; mkdir -p "$P2/.gauntlet"; cp "$HERE/../state/STATE.md" "$P2/.gauntlet/STATE.md"
+cp "$HERE/../state/DECISIONS.md" "$P2/.gauntlet/DECISIONS.md"
+printf '# LOG - Hook\n\n## 2026-09-30 - an entry of the project%ss own\n' "'" > "$P2/.gauntlet/LOG.md"; cp "$P2/.gauntlet/LOG.md" "$TMP/k5-log"
+kx_one 5005 "next.sh: the kit's example copied in - the K40 refusal names the command that writes an empty one" 2 "$KX_FIRST - $KX_KIT/scripts/init-state.sh $P2A writes an empty one" "$P2"
+"$K5_IS" "$P2" > "$TMP/o5006" 2>&1; check "init-state.sh on it, as the refusal says: the kit's example STATE.md replaced, in that one step (K52)" 0 $? "$TMP/o5006"
+k5_has "$TMP/o5006" "... it says so, and for the example DECISIONS.md beside it" "init-state: replaced the kit's example STATE.md - wrote $P2A/.gauntlet/STATE.md" \
+  "init-state: replaced the kit's example DECISIONS.md - wrote $P2A/.gauntlet/DECISIONS.md"
+[ "$(k5_block "$P2/.gauntlet/STATE.md")" = "$(k5_block "$HERE/../state/README.md")" ] && ! grep -qlE 'Example file|BlockCapHook|F-24|r05' "$P2/.gauntlet/STATE.md" "$P2/.gauntlet/DECISIONS.md" \
+  && echo "  ok    STATE.md is now a new project's (state/README.md's starting values), and no example is left in it or in DECISIONS.md" \
+  || { echo "  FAIL  the example is still there:"; grep -nE 'Example file|BlockCapHook|F-24|r05' "$P2/.gauntlet/STATE.md" "$P2/.gauntlet/DECISIONS.md" | sed "s/^/        | /"; fails=$((fails + 1)); }
+cmp -s "$P2/.gauntlet/LOG.md" "$TMP/k5-log" && grep -q "kept $P2A/.gauntlet/LOG.md" "$TMP/o5006" && echo "  ok    the project's own LOG.md beside it kept as it was, and it says so" \
+  || { echo "  FAIL  the project's LOG.md was not kept, or not said"; fails=$((fails + 1)); }
+kx_row 5009 "next.sh on it, straight after: the row - the path the K40 refusal names is one command" 4 "$P2"
+# the example by its values alone (unmarked, retitled - K48's shape): next.sh refuses it by its values, init-state replaces it
+P2V="$K5/p2v"; k5_proj "$P2V"; mkdir -p "$P2V/.gauntlet"
+LC_ALL=C sed -E '/Example file. The project is fictional/d; 1s/BlockCapHook/VolumeRewardsHook/' "$HERE/../state/STATE.md" > "$P2V/.gauntlet/STATE.md"
+kx_one 5070 "next.sh: the example unmarked and retitled - refused by its values" 2 "$K8_FIRST_VAL" "$P2V"
+"$K5_IS" "$P2V" > "$TMP/o5071" 2>&1; check "init-state.sh on it: replaced too - next.sh's own test, by the values" 0 $? "$TMP/o5071"
+k5_has "$TMP/o5071" "... and it says so" "init-state: replaced the kit's example STATE.md - wrote"
+kx_row 5072 "next.sh on it: the row" 4 "$P2V"
+# a STATE.md of the project's own: refused, whatever is beside it - the example DECISIONS.md there too (the STATE wins)
+P2R="$K5/p2r"; kx_proj "$P2R"; P2RA="$(cd "$P2R" && pwd)"; cp "$HERE/../state/DECISIONS.md" "$P2R/.gauntlet/DECISIONS.md"; k5_before="$(k5_sum "$P2R")"
+kx_one 5073 "next.sh: a STATE.md of the project's own beside the example DECISIONS.md - refused, no init-state.sh suffix" 2 "${KX_FIRST/STATE.md:/DECISIONS.md:}" "$P2R"
+"$K5_IS" "$P2R" > "$TMP/o5074" 2>&1; check "init-state.sh: a STATE.md of the project's own, the example DECISIONS.md beside it - refused: the STATE wins" 2 $? "$TMP/o5074"
+k5_has "$TMP/o5074" "... naming the STATE.md, never overwritten" "init-state: REFUSED - $P2RA/.gauntlet/STATE.md exists" "never overwrites"
+k5_no_by "$TMP/o5074" "... and no line of it hands over the runnable form (--by and a quoted name)"
+[ "$(k5_sum "$P2R")" = "$k5_before" ] && echo "  ok    and nothing was written: the example DECISIONS.md is the owner's to delete" \
+  || { echo "  FAIL  the refusal wrote something"; fails=$((fails + 1)); }
+# no STATE.md, the example LOG.md in .gauntlet/: replaced with the rest
+rm -rf "$P2R/.gauntlet"; mkdir -p "$P2R/.gauntlet"; cp "$HERE/../state/LOG.md" "$P2R/.gauntlet/LOG.md"
+"$K5_IS" "$P2R" > "$TMP/o5075" 2>&1; check "init-state.sh: no STATE.md, the kit's example LOG.md in .gauntlet/ - written, the LOG.md replaced" 0 $? "$TMP/o5075"
+k5_has "$TMP/o5075" "... and it says so" "init-state: replaced the kit's example LOG.md - wrote $P2RA/.gauntlet/LOG.md" "init-state: wrote $P2RA/.gauntlet/STATE.md"
+# the example at the project's root (location: root): only .gauntlet/ is replaced - refused, named, nothing written
+P2T="$K5/p2t"; k5_proj "$P2T"; P2TA="$(cd "$P2T" && pwd)"; cp "$HERE/../state/STATE.md" "$P2T/STATE.md"
+"$K5_IS" "$P2T" > "$TMP/o5076" 2>&1; check "init-state.sh: the kit's example at the project's root - refused, named as the example" 2 $? "$TMP/o5076"
+k5_has "$TMP/o5076" "... and it says to delete it" "$P2TA/STATE.md exists, and it is the kit's example" "delete it"
+[ ! -e "$P2T/.gauntlet" ] && cmp -s "$P2T/STATE.md" "$HERE/../state/STATE.md" && echo "  ok    and nothing was written" || { echo "  FAIL  the refusal wrote something"; fails=$((fails + 1)); }
+# ---- the spec is the owner's: a re-record is REFUSED by default and SIGNED when taken (D1b); the route's spec is
+# .gauntlet/SPEC.md (D1c). The old K53 --spec re-record path is gone (K54). Numbered to the plan of v0.4.1b.
+K5_TAIL="the spec is the owner's. Undo the change (put the owner's text back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec - phase 1's rows - is $P1A/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4). The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an agent never does it."
+printf '\n## Decided by the owner\n\n1. The fee is 0.3 percent.\n' >> "$P1/SPEC.md"
+# plan case 6 (changed spec): the new tail, and no escape an agent could run (no --by, no `init-state.sh --spec`)
+kx_one 5010 "next.sh refuses a SPEC.md changed since init-state recorded it (a walker appended owner decisions): the new tail" 2 "next: REFUSED - $P1A/SPEC.md changed since init-state recorded it: $K5_TAIL" "$P1"
+PENDING_RED=0 CITED_FILES=0 nx "$NX" "$P1" > "$TMP/o5011" 2>&1; check "... and no escape turns it off (PENDING_RED=0 CITED_FILES=0)" 2 $? "$TMP/o5011"
+if grep -qE -- '--by|init-state\.sh --spec' "$TMP/o5011"; then echo "  FAIL  the changed-spec refusal printed an escape an agent could run:"; grep -nE -- '--by|init-state\.sh --spec' "$TMP/o5011" | sed "s/^/        | /"; fails=$((fails + 1)); else echo "  ok    the refusal names neither --by nor an init-state.sh --spec command"; fi
+# plan case 1 (--spec, unsigned): REFUSED by default - nothing written (spec.sha256, LOG.md, STATE.md byte-identical)
+k5_before="$(k5_sum "$P1")"; k5_spec_before="$(cat "$P1/.gauntlet/spec.sha256" 2> /dev/null)"; cp "$P1/.gauntlet/LOG.md" "$TMP/k5-log0"; cp "$P1/.gauntlet/STATE.md" "$TMP/k5-state0"
+(cd "$K5" && "$K5_IS" --spec SPEC.md "$P1A") > "$TMP/o5012" 2>&1; check "init-state.sh --spec SPEC.md <proj> on a project with a STATE.md, UNSIGNED: REFUSED by default (D1b), run from elsewhere" 2 $? "$TMP/o5012"
+k5_has "$TMP/o5012" "the refusal names .gauntlet/SPEC.md, --by and records nothing" ".gauntlet/SPEC.md" "--by" "records nothing"
+k5_no_by "$TMP/o5012" "... and no line of it hands over the runnable form (--by and a quoted name)"
+[ "$(k5_sum "$P1")" = "$k5_before" ] && [ "$(cat "$P1/.gauntlet/spec.sha256" 2> /dev/null)" = "$k5_spec_before" ] && cmp -s "$P1/.gauntlet/LOG.md" "$TMP/k5-log0" && cmp -s "$P1/.gauntlet/STATE.md" "$TMP/k5-state0" \
+  && echo "  ok    spec.sha256, LOG.md and STATE.md byte-identical before and after" || { echo "  FAIL  the unsigned refusal wrote something"; fails=$((fails + 1)); }
+# plan case 6 (missing spec): the new tail, on the clean record (before any re-record: no note)
+mv "$P1/SPEC.md" "$TMP/k5-spec"
+kx_one 5014 "next.sh refuses when the recorded spec is missing: the new tail" 2 "next: REFUSED - $P1A/SPEC.md is missing since init-state recorded it: $K5_TAIL" "$P1"
+mv "$TMP/k5-spec" "$P1/SPEC.md"
+# plan case 2 (--spec --by "Selftest"): the owner's SIGNED re-record - rc 0, the hash, the signed line, one LOG paragraph, STATE untouched
+k5_old8="$(sed -n '1{s/\r$//;p;}' "$P1/.gauntlet/spec.sha256" | cut -c1-8)"
+(cd "$K5" && "$K5_IS" --spec SPEC.md --by "Selftest" "$P1A") > "$TMP/o5012b" 2>&1; check "init-state.sh --spec SPEC.md --by \"Selftest\" <proj>: the owner's SIGNED re-record, run from elsewhere" 0 $? "$TMP/o5012b"
+k5_has "$TMP/o5012b" "it says it re-recorded, signed --by \"Selftest\"" "a re-record signed --by \"Selftest\"."
+k5_new8="$(sed -n '1{s/\r$//;p;}' "$P1/.gauntlet/spec.sha256" | cut -c1-8)"
+[ "$(sed -n 1p "$P1/.gauntlet/spec.sha256")" = "$(k5_sha "$P1/SPEC.md")  SPEC.md" ] && [ "$(sed -n 2p "$P1/.gauntlet/spec.sha256")" = "re-recorded $(date +%F) by \"Selftest\" $k5_old8 -> $k5_new8" ] && cmp -s "$P1/.gauntlet/STATE.md" "$TMP/k5-state0" \
+  && echo "  ok    spec.sha256 line 1 the new hash and path, line 2 the signed re-record; STATE.md untouched" || { echo "  FAIL  spec.sha256 lines wrong or STATE.md touched:"; sed "s/^/        | /" "$P1/.gauntlet/spec.sha256"; fails=$((fails + 1)); }
+[ "$(grep -c 'spec re-recorded' "$P1/.gauntlet/LOG.md")" = 1 ] && grep -qF 'signed --by "Selftest"' "$P1/.gauntlet/LOG.md" && ! grep -qF "the owner's act" "$P1/.gauntlet/LOG.md" \
+  && echo "  ok    LOG.md gained exactly one paragraph, signed --by \"Selftest\", without \"the owner's act\"" || { echo "  FAIL  LOG.md paragraph wrong:"; grep -n 're-recorded' "$P1/.gauntlet/LOG.md" | sed "s/^/        | /"; fails=$((fails + 1)); }
+# plan case 5 (next.sh after the signed re-record): the row, plus the note under it, exact text
+nx "$NX" "$P1" > "$TMP/o5013" 2>&1; check "next.sh after the signed re-record: the row" 0 $? "$TMP/o5013"
+grep -q '^next: row 4 - ' "$TMP/o5013" && grep -qxF "next: note - the spec SPEC.md was re-recorded on $(date +%F), signed --by \"Selftest\" ($k5_old8 -> $k5_new8; .gauntlet/spec.sha256): the owner confirms that signature is theirs, or the spec in force is not the owner's" "$TMP/o5013" \
+  && echo "  ok    the row, plus the re-record note under it, exact text" || { echo "  FAIL  the row or the note is wrong:"; sed "s/^/        | /" "$TMP/o5013"; fails=$((fails + 1)); }
+# plan case 4 (a second signed re-record): line 3 appended, line 2 kept; the note counts them
+k5_l2="$(sed -n 2p "$P1/.gauntlet/spec.sha256")"; k5_o8b="$k5_new8"
+printf '\n2. A floor applies.\n' >> "$P1/SPEC.md"
+(cd "$K5" && "$K5_IS" --spec SPEC.md --by "Selftest" "$P1A") > "$TMP/o5013b" 2>&1; check "a second signed re-record (the re-records accumulate)" 0 $? "$TMP/o5013b"
+k5_n8b="$(sed -n '1{s/\r$//;p;}' "$P1/.gauntlet/spec.sha256" | cut -c1-8)"
+[ "$(sed -n 2p "$P1/.gauntlet/spec.sha256")" = "$k5_l2" ] && [ "$(sed -n 3p "$P1/.gauntlet/spec.sha256")" = "re-recorded $(date +%F) by \"Selftest\" $k5_o8b -> $k5_n8b" ] \
+  && echo "  ok    line 2 kept, line 3 appended" || { echo "  FAIL  the re-record lines are wrong:"; sed "s/^/        | /" "$P1/.gauntlet/spec.sha256"; fails=$((fails + 1)); }
+nx "$NX" "$P1" > "$TMP/o5013c" 2>&1
+grep -qF "was re-recorded (2 re-records; the last:) on $(date +%F), signed --by \"Selftest\" ($k5_o8b -> $k5_n8b;" "$TMP/o5013c" \
+  && echo "  ok    next.sh note counts them: (2 re-records; the last:), the last line's hashes" || { echo "  FAIL  the two-re-record note is wrong:"; grep 'note - the spec' "$TMP/o5013c" | sed "s/^/        | /"; fails=$((fails + 1)); }
+# plan case 3 (--by with no name, --by on a new project): rc 2 each, nothing written, each named
+PBY="$K5/pby"; k5_proj "$PBY"; "$K5_IS" "$PBY" > /dev/null 2>&1
+(cd "$K5" && "$K5_IS" --spec SPEC.md --by "" pby) > "$TMP/o5080a" 2>&1; check "init-state.sh --by \"\" on a project with a STATE.md: refused (--by has no name)" 2 $? "$TMP/o5080a"
+k5_has "$TMP/o5080a" "... named" "--by has no name"
+(cd "$K5" && "$K5_IS" pby --spec SPEC.md --by) > "$TMP/o5080b" 2>&1; check "init-state.sh ... --by with no value: refused" 2 $? "$TMP/o5080b"
+PNEW="$K5/pnew"; k5_proj "$PNEW"
+(cd "$K5" && "$K5_IS" --spec SPEC.md --by "Selftest" pnew) > "$TMP/o5080c" 2>&1; check "init-state.sh --by on a NEW project (no STATE.md): refused - a new project records its spec without a signature" 2 $? "$TMP/o5080c"
+k5_has "$TMP/o5080c" "... named as the signature" "--by is the re-record's signature"
+[ ! -e "$PNEW/.gauntlet" ] && echo "  ok    and --by on a new project wrote nothing" || { echo "  FAIL  --by on a new project wrote $PNEW/.gauntlet"; fails=$((fails + 1)); }
+# plan case 7 (first run): stdout names .gauntlet/SPEC.md and prints no --spec command; and case 5's other half -
+# a project whose spec.sha256 has one line only (every project before this change): no note
+P1F="$K5/p1f"; k5_proj "$P1F"; P1FA="$(cd "$P1F" && pwd)"
+"$K5_IS" "$P1F" > "$TMP/o5081" 2>&1; check "init-state.sh <proj> first run: the state and the spec recorded" 0 $? "$TMP/o5081"
+grep -qF "$P1FA/.gauntlet/SPEC.md" "$TMP/o5081" && ! grep -qF -- '--spec' "$TMP/o5081" \
+  && echo "  ok    first-run stdout names .gauntlet/SPEC.md and prints no --spec command" || { echo "  FAIL  first-run stdout wrong:"; sed "s/^/        | /" "$TMP/o5081"; fails=$((fails + 1)); }
+nx "$NX" "$P1F" > "$TMP/o5082" 2>&1
+grep -q '^next: note - the spec' "$TMP/o5082" && { echo "  FAIL  a project with a one-line spec.sha256 got a re-record note:"; grep 'note - the spec' "$TMP/o5082" | sed "s/^/        | /"; fails=$((fails + 1)); } || echo "  ok    a one-line spec.sha256 (every project before this change): no re-record note"
+# a project set up by hand (no spec record): still silent (unchanged)
+rm -f "$P1/.gauntlet/spec.sha256"; printf 'one more line\n' >> "$P1/SPEC.md"
+kx_row 5015 "next.sh with no spec record (a project set up by hand), the spec edited: silent - the row" 4 "$P1"
+grep -qi 'spec' "$TMP/o5015" && { echo "  FAIL  and it said something of the spec: $(grep -i spec "$TMP/o5015")"; fails=$((fails + 1)); }
+mkdir -p "$P1/.gauntlet"; printf 'not a record\n' > "$P1/.gauntlet/spec.sha256"
+nx "$NX" "$P1" > "$TMP/o5016" 2>&1; check "next.sh refuses a spec.sha256 that is not '<sha256>  <path>'" 2 $? "$TMP/o5016"
+P3="$K5/p3"; k5_proj "$P3"; rm -f "$P3/SPEC.md"
+"$K5_IS" "$P3" > "$TMP/o5017" 2>&1; check "init-state.sh on a project with no SPEC.md: the state written, nothing recorded" 0 $? "$TMP/o5017"
+k5_has "$TMP/o5017" "... and it says no spec was found" "init-state: no spec found"
+k5_has "$TMP/o5017" "... and the later record it names is the owner's, signed, named and not handed over (K55: --spec --by; the header says how)" "until one is - the owner's act, signed (--spec --by; the header of scripts/init-state.sh says how)."
+k5_no_by "$TMP/o5017" "... and no line of it hands over the runnable form (--by and a quoted name)"
+[ ! -e "$P3/.gauntlet/spec.sha256" ] && [ -f "$P3/.gauntlet/STATE.md" ] && echo "  ok    no spec.sha256" || { echo "  FAIL  a spec.sha256 was written, or no STATE.md"; fails=$((fails + 1)); }
+P4="$K5/p4"; k5_proj "$P4" docs/SPEC-v1.md; P4A="$(cd "$P4" && pwd)"
+"$K5_IS" "$P4" --spec docs/SPEC-v1.md > "$TMP/o5018" 2>&1; check "init-state.sh <proj> --spec docs/SPEC-v1.md (a spec of another name, the arguments the other way round)" 0 $? "$TMP/o5018"
+[ "$(cat "$P4/.gauntlet/spec.sha256" 2> /dev/null)" = "$(k5_sha "$P4/docs/SPEC-v1.md")  docs/SPEC-v1.md" ] && echo "  ok    recorded as docs/SPEC-v1.md, relative to the project" \
+  || { echo "  FAIL  not recorded as docs/SPEC-v1.md: $(cat "$P4/.gauntlet/spec.sha256" 2> /dev/null)"; fails=$((fails + 1)); }
+echo 'x' >> "$P4/docs/SPEC-v1.md"
+nx "$NX" "$P4" > "$TMP/o5019" 2>&1; check "next.sh refuses docs/SPEC-v1.md changed" 2 $? "$TMP/o5019"
+k5_has "$TMP/o5019" "... naming it" "next: REFUSED - $P4A/docs/SPEC-v1.md changed since init-state recorded it"
+P5="$K5/p5"; k5_proj "$P5"; printf '# SPEC elsewhere\n' > "$K5/outside.md"
+"$K5_IS" "$P5" --spec "$K5/outside.md" > "$TMP/o5020" 2>&1; check "init-state.sh refuses a --spec outside the project" 2 $? "$TMP/o5020"
+"$K5_IS" "$P5" --spec NOPE.md > "$TMP/o5021" 2>&1; check "init-state.sh refuses a --spec that does not exist" 2 $? "$TMP/o5021"
+[ ! -e "$P5/.gauntlet" ] && echo "  ok    and neither wrote anything" || { echo "  FAIL  a refusal wrote $P5/.gauntlet"; fails=$((fails + 1)); }
+# ---- the phase against its records (D2): phase 2+ needs a green build record, phase 3+ a battery run
+P6="$K5/p6"; kx_proj "$P6"; P6A="$(cd "$P6" && pwd)"
+k5_phase() { sed -E "s/^phase: .*/phase:                     $1/; s/^battery: .*/battery:                   $2/" "$FIX/state-new-project.md" > "$P6/.gauntlet/STATE.md"; }
+K5_BUILD="next: REFUSED - phase 2 is open but there is no green build record (.gauntlet/reports/01-build.txt): run $KX_KIT/scripts/setup-deps.sh $P6A then $KX_KIT/scripts/battery.sh $P6A (they may run at phase 1), or write the phase that is open"
+k5_phase 1 never
+kx_row 5030 "next.sh: phase 1, no build record: not refused (phase 1 claims no compiling hook) - the row" 4 "$P6"
+k5_phase 2 never
+kx_one 5031 "next.sh refuses phase 2 with no build record (a walker wrote phase 2 by hand; the hook never compiled)" 2 "$K5_BUILD" "$P6"
+PENDING_RED=0 CITED_FILES=0 nx "$NX" "$P6" > "$TMP/o5032" 2>&1; check "... and no escape turns it off" 2 $? "$TMP/o5032"
+mkdir -p "$P6/.gauntlet/reports"; cp "$FIX/build-nm-error-then-warnings.txt" "$P6/.gauntlet/reports/01-build.txt"
+kx_one 5033 "next.sh refuses phase 2 with a RED build record (Compiler run failed)" 2 "$K5_BUILD" "$P6"
+: > "$P6/.gauntlet/reports/01-build.txt"
+kx_one 5034 "next.sh refuses phase 2 with an empty build record" 2 "$K5_BUILD" "$P6"
+cp "$FIX/build-real-compiled.txt" "$P6/.gauntlet/reports/01-build.txt"
+kx_row 5035 "next.sh: phase 2, a green build record (forge's 'Compiler run successful!'): the row" 4b "$P6"
+cp "$FIX/build-real-noop.txt" "$P6/.gauntlet/reports/01-build.txt"
+kx_row 5036 "next.sh: phase 2, a green build record ('No files changed, compilation skipped'): the row" 4b "$P6"
+printf 'Compiling 2 files with Solc 0.8.26\r\nSolc 0.8.26 finished in 1.00ms\r\nCompiler run successful with warnings:\r\nWarning (2018): Function state mutability can be restricted to view\r\n' > "$P6/.gauntlet/reports/01-build.txt"
+kx_row 5037 "next.sh: phase 2, a green build record with warnings, CRLF: the row" 4b "$P6"
+k5_phase 3 never
+kx_one 5038 "next.sh refuses phase 3 with battery: never (phase 2's gate includes a battery run)" 2 "next: REFUSED - phase 3 claims phase 2 closed and battery is never: $KX_KIT/scripts/battery.sh $P6A, or write the phase that is open" "$P6"
+k5_phase 4 never
+nx "$NX" "$P6" > "$TMP/o5039" 2>&1; check "next.sh refuses phase 4 with battery: never" 2 $? "$TMP/o5039"
+k5_has "$TMP/o5039" "... naming the phase" "next: REFUSED - phase 4 claims phase 2 closed and battery is never"
+k5_phase 3 green
+cp "$FIX/summary-real-many-suites.txt" "$P6/.gauntlet/reports/02-test.txt"   # K60: battery green claims a green test record
+kx_row 5040 "next.sh: phase 3, battery green, a green build record and a green test record: the row" 4b "$P6"
+rm -rf "$P6/.gauntlet/reports"; k5_phase 3 green
+nx "$NX" "$P6" > "$TMP/o5041" 2>&1; check "next.sh refuses phase 3, battery green, with no build record" 2 $? "$TMP/o5041"
+k5_has "$TMP/o5041" "... for the build record" "next: REFUSED - phase 3 is open but there is no green build record (.gauntlet/reports/01-build.txt): run $KX_KIT/scripts/setup-deps.sh $P6A then $KX_KIT/scripts/battery.sh $P6A (they may run at phase 1), or write the phase that is open"
+mkdir -p "$K5/fx"; cp "$FIX/state-row-13.md" "$K5/fx/"
+nx "$NX" "$K5/fx/state-row-13.md" --judge "$(nx_meta "$FIX/state-row-13.md" judge)" > "$TMP/o5042" 2>&1
+check "next.sh: the fixture of row 13 (phase 4) from a directory with no build record is refused - the cases above run in projects that have one (NXFIX)" 2 $? "$TMP/o5042"
+# ---- `key:value` copies of the example (D7: K49's known gap, `ceiling:8 model rounds ...`)
+P7="$K5/p7"; kx_proj "$P7"
+LC_ALL=C sed -E '/Example file. The project is fictional/d; 1s/BlockCapHook/VolumeRewardsHook/; s/^([a-z_]+):[[:space:]]+/\1:/' "$K8_EX" > "$P7/.gauntlet/STATE.md"
+grep -q '^ceiling:8 model rounds' "$P7/.gauntlet/STATE.md" && echo "  ok    (the copy has no space after any colon: ceiling:8 model rounds ...)" || { echo "  FAIL  the copy is not key:value"; fails=$((fails + 1)); }
+kx_one 5050 "next.sh refuses the example unmarked, retitled, every flag line key:value (ceiling:8 ...), naming the example's line" 2 "$K8_FIRST_VAL" "$P7/.gauntlet/STATE.md"
+k5_kv() { # k5_kv <flag>...: the new project's STATE.md with those flags' lines the kit's example's, written key:value
+  local f l; kx_proj "$P7"
+  for f in "$@"; do
+    l="$(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 "^$f:" | LC_ALL=C sed -E 's/^([a-z_]+):[[:space:]]+/\1:/')"
+    LC_ALL=C awk -v f="$f" -v l="$l" 'index($0, f ":") == 1 { print l; next } { print }' "$P7/.gauntlet/STATE.md" > "$P7/s" && mv "$P7/s" "$P7/.gauntlet/STATE.md"
+  done
+}
+k5_kv ceiling
+kx_row 5051 "next.sh: the example's ceiling alone, written ceiling:8 ... (two lines shared with last_other_round): not refused, the row" 4 "$P7/.gauntlet/STATE.md"
+k5_kv ceiling notes
+kx_one 5052 "next.sh refuses three lines shared with the example, two of them key:value (ceiling:8 ..., notes:static ...)" \
+  2 "next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 '^last_other_round:'))" "$P7/.gauntlet/STATE.md"
+# ---- the MANIFEST note (D6): a kit copy, its MANIFEST, files it does not list
+MK="$K5/kit"; mkdir -p "$MK/scripts/lib" "$MK/doctrine" "$MK/state" "$MK/foundry-kit/v4/test/examples"
+cp "$HERE"/*.sh "$HERE"/*.py "$MK/scripts/"; cp "$HERE"/lib/*.sh "$HERE"/lib/*.py "$MK/scripts/lib/"; cp "$NXT" "$MK/doctrine/"; cp "$K8_EX" "$MK/state/"
+printf '// the kit\n' > "$MK/foundry-kit/v4/test/examples/Ex.t.sol"
+MKN="$MK/scripts/next.sh"
+nx "$NX" "$FIX/state-new-project.md" > "$TMP/o5060r" 2>&1
+printf '// a stray\n' > "$MK/foundry-kit/stray.sol"
+nx "$MKN" "$FIX/state-new-project.md" > "$TMP/o5060" 2>&1; check "next.sh, a kit copy with no MANIFEST and a stray file: the row" 0 $? "$TMP/o5060"
+cmp -s "$TMP/o5060" "$TMP/o5060r" && echo "  ok    and nothing more than the kit's own next.sh prints: no MANIFEST, no note" \
+  || { echo "  FAIL  it printed more than the row:"; sed "s/^/        | /" "$TMP/o5060"; fails=$((fails + 1)); }
+rm -f "$MK/foundry-kit/stray.sol"
+(cd "$MK" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while IFS= read -r f; do printf '%s  %s\n' "$(k5_sha "$f")" "$f"; done) > "$TMP/k5-manifest" && mv "$TMP/k5-manifest" "$MK/MANIFEST"
+mkdir -p "$MK/foundry-kit/lib/dep/src" "$MK/foundry-kit/v4/out/A.sol" "$MK/cache" "$MK/foundry-kit/v4/test/cache" "$MK/.gauntlet" "$MK/.git/refs"
+# what the kit's own runs write (K52): the selftest's corpus/, the batteries' .gauntlet/reports/, census/, broadcast/
+mkdir -p "$MK/foundry-kit/corpus/T" "$MK/foundry-kit/v4/.gauntlet/reports" "$MK/foundry-kit/v4/census" "$MK/foundry-kit/v4/broadcast/S.s.sol/1"
+printf 'c\n' > "$MK/foundry-kit/corpus/T/1"; printf 'r\n' > "$MK/foundry-kit/v4/.gauntlet/reports/02-test.txt"; printf 'n\n' > "$MK/foundry-kit/v4/census/c.tsv"
+printf '{}\n' > "$MK/foundry-kit/v4/broadcast/S.s.sol/1/run.json"
+printf 'dep\n' > "$MK/foundry-kit/lib/dep/src/D.sol"; printf '{}\n' > "$MK/foundry-kit/v4/out/A.sol/A.json"; printf '{}\n' > "$MK/cache/solidity-files-cache.json"
+printf 'x\n' > "$MK/foundry-kit/v4/test/cache/x"; printf 'marker\n' > "$MK/.gauntlet/selftest-passed"; printf 'ref: refs/heads/main\n' > "$MK/.git/HEAD"
+mkdir -p "$MK/foundry-kit/v4/sub/.git"; printf 'ref: refs/heads/main\n' > "$MK/foundry-kit/v4/sub/.git/HEAD"
+nx "$MKN" "$FIX/state-new-project.md" > "$TMP/o5061" 2>&1; check "next.sh, a kit copy with a MANIFEST; files only in lib/, cache/, out/, corpus/, census/, broadcast/, .gauntlet/ (anywhere), .git (any depth): the row" 0 $? "$TMP/o5061"
+cmp -s "$TMP/o5061" "$TMP/o5060r" && echo "  ok    and no note: MANIFEST itself, the marker, deps, builds, .git and what the kit's own runs write are not counted" \
+  || { echo "  FAIL  it printed more than the row:"; sed "s/^/        | /" "$TMP/o5061"; fails=$((fails + 1)); }
+mkdir -p "$MK/foundry-kit/v4/test/examples/proj/test"; printf '// written by a walker whose cd drifted\n' > "$MK/foundry-kit/v4/test/examples/proj/test/Stray.t.sol"
+NEXT_SELFTEST=1 "$MKN" "$FIX/state-new-project.md" > "$TMP/o5062" 2> /dev/null; check "next.sh, the kit copy with a file its MANIFEST does not list: the row, the exit code unchanged" 0 $? "$TMP/o5062"
+[ "$(tail -1 "$TMP/o5062")" = "next: note - the kit has 1 file not in its MANIFEST (foundry-kit/v4/test/examples/proj/test/Stray.t.sol): the kit is not to be changed; move it out" ] \
+  && grep -q '^next: row 4 - ' "$TMP/o5062" && echo "  ok    and, after the answer, on stdout: the note naming the file" \
+  || { echo "  FAIL  not the row then the note on stdout:"; sed "s/^/        | /" "$TMP/o5062"; fails=$((fails + 1)); }
+mkdir -p "$MK/.github"; printf 'x\n' > "$MK/a-stray.md"; printf 'x\n' > "$MK/scripts/stray.sh.bak"; printf 'x\n' > "$MK/.github/stray.yml"; printf 'x\n' > "$MK/scripts/lib/stray.sh"
+printf 'x\n' > "$MK/.gauntlet/reports.txt"   # under .gauntlet/: not counted (K52)
+NEXT_SELFTEST=1 "$MKN" "$FIX/state-new-project.md" > "$TMP/o5063" 2> /dev/null; check "next.sh, five files not listed (one in scripts/lib/, the kit's own library - not a dependency): the row" 0 $? "$TMP/o5063"
+[ "$(tail -1 "$TMP/o5063")" = "next: note - the kit has 5 files not in its MANIFEST (.github/stray.yml, a-stray.md, foundry-kit/v4/test/examples/proj/test/Stray.t.sol): the kit is not to be changed; move them out" ] \
+  && echo "  ok    the note counts them (scripts/lib/stray.sh with them) and names the first three" || { echo "  FAIL  not the note for five:"; tail -1 "$TMP/o5063" | sed "s/^/        | /"; fails=$((fails + 1)); }
+NEXT_SELFTEST=1 "$MKN" "$K8_EX" > "$TMP/o5064" 2> "$TMP/o5064e"; check "next.sh refusing (the kit's example), the kit copy with files not listed: the refusal's exit code" 2 $? "$TMP/o5064e"
+grep -q '^next: note - the kit has 5 files not in its MANIFEST' "$TMP/o5064" && grep -q "^next: FIRST - fill STATE.md: it is still the kit's example" "$TMP/o5064e" \
+  && echo "  ok    the refusal on stderr, the note on stdout after it" || { echo "  FAIL  not the refusal and the note:"; cat "$TMP/o5064" "$TMP/o5064e" | sed "s/^/        | /"; fails=$((fails + 1)); }
+nx "$MKN" --check-table > "$TMP/o5065" 2>&1; check "next.sh --check-table on the kit copy: no note (it reads no project)" 0 $? "$TMP/o5065"
+grep -q 'note' "$TMP/o5065" && { echo "  FAIL  and it printed the note"; fails=$((fails + 1)); }
+rm -f "$MK/MANIFEST"
+nx "$MKN" "$FIX/state-new-project.md" > "$TMP/o5066" 2>&1; check "next.sh, the same kit copy with its MANIFEST removed: the row" 0 $? "$TMP/o5066"
+cmp -s "$TMP/o5066" "$TMP/o5060r" && echo "  ok    and no note: no MANIFEST, nothing said" || { echo "  FAIL  it printed more than the row:"; sed "s/^/        | /" "$TMP/o5066"; fails=$((fails + 1)); }
+# ---- the words, where a reader looks
+k5_row0="$(LC_ALL=C awk '/^\| 0 \|/' "$NXT")"   # captured, then matched (pipefail, K62)
+[[ $k5_row0 == *'scripts/init-state.sh'* ]] \
+  && echo "  ok    NEXT.md's row 0 names scripts/init-state.sh" || { echo "  FAIL  NEXT.md's row 0 does not name scripts/init-state.sh"; fails=$((fails + 1)); }
+grep -q 'scripts/init-state.sh' "$HERE/../state/README.md" && echo "  ok    state/README.md names scripts/init-state.sh" \
+  || { echo "  FAIL  state/README.md does not name scripts/init-state.sh"; fails=$((fails + 1)); }
+k5_min="$(sed -n 's/^SELFTEST_MINUTES=\([0-9][0-9]*\)$/\1/p' "$NX")"
+[ -n "$k5_min" ] && [ "$k5_min" -ge 1 ] && echo "  ok    next.sh's FIRST line says the selftest takes about $k5_min minutes (SELFTEST_MINUTES, measured)" \
+  || { echo "  FAIL  next.sh has no SELFTEST_MINUTES=<whole minutes>"; fails=$((fails + 1)); }
+if [ -s "$TMP/nx-silent" ]; then echo "  FAIL  next.sh ran with NEXT_SELFTEST=1 and did not say so (K50 cases):"; sed "s/^/        | /" "$TMP/nx-silent"; fails=$((fails + 1)); fi
+if [ -s "$TMP/nx-kitnotes" ]; then
+  echo "  note  this kit's own next.sh printed its MANIFEST note in $(grep -c . "$TMP/nx-kitnotes") of its runs above (taken out of what the cases read; not a case): $(LC_ALL=C sort -u "$TMP/nx-kitnotes" | head -1)"
+elif [ -f "$HERE/../MANIFEST" ]; then echo "  ok    this kit's own next.sh printed no MANIFEST note in its runs above: every file under the kit is in its MANIFEST"
+else echo "  ok    this kit has no MANIFEST: its next.sh printed no note"; fi
+# --- end K50 ---
 
 # --- K42/K43 ---
 # ================================================================= setup-deps.sh, doctor.sh's deps line, install-skills.sh --harness hermes (no forge needed)
@@ -4340,7 +4688,8 @@ mkdir -p "$K42/w1/proj2/src"
 "$HERE/doctor.sh" "$W1/proj2" > "$TMP/k42-o05" 2>&1; k42_rc=$?
 check "doctor.sh <proj> on a project not set up: not ready" 1 "$k42_rc" "$TMP/k42-o05"
 k42_has "and it names the command" "$TMP/k42-o05" "deps: $W1/proj2: not set up - scripts/setup-deps.sh $W1/proj2"
-if tail -n 1 "$TMP/k42-o05" | grep -qE '^doctor: missing: (.*, )?deps$'; then echo "  ok    and its last line lists deps as missing"; else
+k42_last="$(tail -n 1 "$TMP/k42-o05")"   # captured, then matched (pipefail, K62)
+if grep -qE '^doctor: missing: (.*, )?deps$' <<< "$k42_last"; then echo "  ok    and its last line lists deps as missing"; else
   echo "  FAIL  last line: $(tail -n 1 "$TMP/k42-o05")"; fails=$((fails + 1)); fi
 k42_run "$TMP/k42-o06" "$SD" --check "$W1/proj2"; check "setup-deps.sh --check on a project not set up" 1 $? "$TMP/k42-o06"
 # --dry-run: printed, nothing written, nothing built
@@ -4412,7 +4761,8 @@ KH="$K42/hermes-home"; KHP="$K42/hproj"; mkdir -p "$KHP"; KHP="$(cd "$KHP" && pw
 HOME="$K42/home" HERMES_HOME="$KH" "$HERE/install-skills.sh" --harness hermes --user --kit "$KKIT" --dry-run > "$TMP/k42-o20" 2>&1
 check "install-skills.sh --harness hermes --user --dry-run" 0 $? "$TMP/k42-o20"
 k42_has "into \$HERMES_HOME/skills, and the start line last" "$TMP/k42-o20" "would write $KH/skills/hook-gauntlet/SKILL.md" "dry-run: 9 skills into $KH/skills"
-if tail -n 1 "$TMP/k42-o20" | grep -qF 'start Hermes with: hermes chat -s hook-gauntlet (the entry skill stays in the system prompt, which Hermes'"'"'s compression protects)'; then
+k42_last="$(tail -n 1 "$TMP/k42-o20")"
+if grep -qF 'start Hermes with: hermes chat -s hook-gauntlet (the entry skill stays in the system prompt, which Hermes'"'"'s compression protects)' <<< "$k42_last"; then
   echo "  ok    its last line is the start line"; else echo "  FAIL  last line: $(tail -n 1 "$TMP/k42-o20")"; fails=$((fails + 1)); fi
 [ ! -e "$KH" ] || { echo "  FAIL  and the dry run wrote $KH"; fails=$((fails + 1)); }
 env -u HERMES_HOME HOME="$K42/home" "$HERE/install-skills.sh" --harness hermes --user --kit "$KKIT" --dry-run > "$TMP/k42-o21" 2>&1
@@ -4431,8 +4781,634 @@ check "install-skills.sh --harness hermes --project" 0 $? "$TMP/k42-o24"
 k42_has "the external_dirs lines printed after the install" "$TMP/k42-o24" "installed: 9 skills into $KHP/.agents/skills" "  external_dirs: [$KHP/.agents/skills]"
 if [ "$(find "$KHP/.agents/skills" -name SKILL.md | wc -l | tr -d ' ')" = 9 ] && [ ! -e "$KH" ] && [ ! -e "$K42/home/.hermes" ]; then
   echo "  ok    nine skills in the project, nothing in any Hermes home"; else echo "  FAIL  the install wrote elsewhere"; fails=$((fails + 1)); fi
-if tail -n 1 "$TMP/k42-o24" | grep -qF 'start Hermes with: hermes chat -s hook-gauntlet'; then echo "  ok    and its last line is the start line"; else
+k42_last="$(tail -n 1 "$TMP/k42-o24")"
+if grep -qF 'start Hermes with: hermes chat -s hook-gauntlet' <<< "$k42_last"; then echo "  ok    and its last line is the start line"; else
   echo "  FAIL  last line: $(tail -n 1 "$TMP/k42-o24")"; fails=$((fails + 1)); fi
+# --- K51 ---
+# ================================================================= the import lines and [profile.pending] (setup-deps.sh);
+# the harness's permission-bits refusal names the act; the kit's MANIFEST (gen-manifest.sh, doctor.sh's kit line).
+# Measured before (v0.4.1): a model spent 83 of 112 minutes guessing the import line, which the examples (relative to
+# the kit) never show; a run read the harness's bits refusal and bypassed it instead of recording it; a test file was
+# written inside the vendored kit and nothing in the kit noticed. No forge needed: the stub forge and the fake kit of
+# the K42/K43 cases above, and a fake kit of its own for the MANIFEST.
+echo "== setup-deps.sh's import lines and [profile.pending]; the harness's refusal; the kit's MANIFEST (K51) =="
+k51_exp="$TMP/k51-imports"
+printf '%s\n' 'import {V4Harness} from "gauntlet-v4/V4Harness.sol";' 'import {MinimalRouter} from "gauntlet-v4/MinimalRouter.sol";' \
+  'import {LiquidityHelper} from "gauntlet-v4/LiquidityHelper.sol";' 'import {HookMiner} from "gauntlet-v4/HookMiner.sol";' \
+  'import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";' \
+  "The kit's own examples import these relative to the kit (../../src/...): do not copy their import lines." > "$k51_exp"
+k51_ends() { # k51_ends <label> <file>: the file's last six lines are the six lines, verbatim
+  if tail -n 6 "$2" | cmp -s "$k51_exp" -; then echo "  ok    $1"; else
+    echo "  FAIL  $1: its last six lines are not the import lines:"; tail -n 8 "$2" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+}
+k51_in() { # k51_in <file>: the six lines are in the file, one after the other, leading whitespace aside
+  LC_ALL=C awk 'NR == FNR { w[++n] = $0; next }
+    { sub(/^[ \t]+/, ""); if ($0 == w[i + 1]) { i++; if (i == n) { f = 1; exit } } else i = ($0 == w[1]) }
+    END { exit !f }' "$k51_exp" "$1"
+}
+# the block as setup-deps.sh holds it (scripts/gen-skills.sh reads it from there for the entry skill's step 2)
+LC_ALL=C awk "/^  cat <<'IMPORTS'\$/ { on = 1; next } /^IMPORTS\$/ { on = 0 } on" "$SD" > "$TMP/k51-block"
+if cmp -s "$k51_exp" "$TMP/k51-block"; then echo "  ok    setup-deps.sh holds the six lines (five imports, then the sentence about the examples), verbatim"; else
+  echo "  FAIL  setup-deps.sh's import block is not the six lines:"; diff "$k51_exp" "$TMP/k51-block" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+# each import names, through the remapping setup-deps.sh writes for it, a file of the kit that declares the symbol
+k51_bad="" k51_n=0
+while IFS= read -r l; do
+  case "$l" in import*) ;; *) continue ;; esac
+  if [[ $l =~ ^import\ \{([A-Za-z0-9_]+)\}\ from\ \"(gauntlet-v4|gauntlet-kit)/([A-Za-z0-9_]+\.sol)\"\;$ ]]; then
+    k51_sym="${BASH_REMATCH[1]}"; k51_f="${BASH_REMATCH[3]}"
+    if [ "${BASH_REMATCH[2]}" = gauntlet-v4 ]; then k51_f="$HERE/../foundry-kit/v4/src/$k51_f"; else k51_f="$HERE/../foundry-kit/src/$k51_f"; fi
+    if [ -f "$k51_f" ] && grep -qE "^(abstract )?(contract|library|interface) $k51_sym( |\{|$)" "$k51_f"; then k51_n=$((k51_n + 1)); else k51_bad="$k51_bad [$l]"; fi
+  else k51_bad="$k51_bad [$l]"; fi
+done < "$k51_exp"
+if [ -z "$k51_bad" ] && [ "$k51_n" = 5 ] && grep -qxF 'gauntlet-v4/=../lib/hook-gauntlet/foundry-kit/v4/src/' "$W1/proj/remappings.txt" \
+  && grep -qxF 'gauntlet-kit/=../lib/hook-gauntlet/foundry-kit/src/' "$W1/proj/remappings.txt"; then
+  echo "  ok    each of the five imports names a file of the kit that declares it, through the gauntlet-v4/ and gauntlet-kit/ lines setup-deps.sh writes"; else
+  echo "  FAIL  an import line names no such file or symbol of the kit (or the remapping is not written):${k51_bad:- ($k51_n of 5 resolved)}"; fails=$((fails + 1)); fi
+# a project from nothing: the six lines last, and [profile.pending] with test = "pending" and nothing else
+W51="$K42/w51"; k42_kit "$W51/lib/hook-gauntlet"; mkdir -p "$W51/proj/src" "$W51/proj2/src" "$W51/proj3/src"; W51="$(cd "$W51" && pwd)"
+k42_run "$TMP/k51-o01" "$SD" "$W51/proj"; check "setup-deps.sh: a new project, the build green" 0 $? "$TMP/k51-o01"
+k51_ends "its output ends with the six lines, verbatim" "$TMP/k51-o01"
+k42_has "and it says it wrote [profile.pending], for row 6b's command" "$TMP/k51-o01" \
+  'setup-deps: foundry.toml: + [profile.pending] test = "pending"' "FOUNDRY_PROFILE=pending forge test --match-path 'pending/*'"
+k51_pend() { LC_ALL=C awk '/^[ \t]*\[/ { on = ($0 ~ /^[ \t]*\[[ \t]*profile[ \t]*\.[ \t]*pending[ \t]*\]/); if (on) h++; next } on && NF { print } END { print "headers " h }' "$1"; }
+if [ "$(k51_pend "$W51/proj/foundry.toml" | tr '\n' '|')" = 'test = "pending"|headers 1|' ]; then
+  echo "  ok    foundry.toml has one [profile.pending], and in it only test = \"pending\" (the rest inherited from [profile.default])"; else
+  echo "  FAIL  foundry.toml's [profile.pending]: $(k51_pend "$W51/proj/foundry.toml" | tr '\n' '|')"; fails=$((fails + 1)); fi
+k51_h1="$(hash_of "$W51/proj/foundry.toml")"
+k42_run "$TMP/k51-o02" "$SD" "$W51/proj"; check "setup-deps.sh again on it" 0 $? "$TMP/k51-o02"
+k42_has "it says [profile.pending] is there and leaves it" "$TMP/k51-o02" 'setup-deps: foundry.toml: [profile.pending] is there - left as it is'
+[ "$(hash_of "$W51/proj/foundry.toml")" = "$k51_h1" ] && echo "  ok    and foundry.toml is unchanged, byte for byte" \
+  || { echo "  FAIL  and foundry.toml changed"; fails=$((fails + 1)); }
+k51_ends "and ends with the six lines again" "$TMP/k51-o02"
+# the owner's own [profile.pending] (other keys in it): kept as it is, said
+printf '%s\n' '[profile.default]' 'src = "src"' '' '[profile.pending]' 'test = "pending"' 'fuzz = { runs = 7 }' > "$W51/proj2/foundry.toml"
+k42_run "$TMP/k51-o03" "$SD" "$W51/proj2"; check "setup-deps.sh: a project with a [profile.pending] of its own" 0 $? "$TMP/k51-o03"
+if [ "$(k51_pend "$W51/proj2/foundry.toml" | tr '\n' '|')" = 'test = "pending"|fuzz = { runs = 7 }|headers 1|' ]; then
+  echo "  ok    its [profile.pending] is kept as it was (test, and its fuzz line), and no second one is written"; else
+  echo "  FAIL  its [profile.pending]: $(k51_pend "$W51/proj2/foundry.toml" | tr '\n' '|')"; fails=$((fails + 1)); fi
+k42_has "and it says so" "$TMP/k51-o03" 'setup-deps: foundry.toml: [profile.pending] is there - left as it is'
+# --check: a project set up before [profile.pending] existed is not set up; --check never prints the import lines
+LC_ALL=C awk '/^\[profile\.pending\]$/ { skip = 1; next } /^\[/ { skip = 0 } !skip' "$W51/proj/foundry.toml" > "$TMP/k51-f" && cp "$TMP/k51-f" "$W51/proj/foundry.toml"
+k42_run "$TMP/k51-o04" "$SD" --check "$W51/proj"; check "setup-deps.sh --check on a project set up but with no [profile.pending]: not set up" 1 $? "$TMP/k51-o04"
+k42_not "and --check does not print the import lines" "$TMP/k51-o04" 'gauntlet-v4/V4Harness.sol'
+# --dry-run: says it would write [profile.pending], ends with the six lines, writes nothing
+k42_run "$TMP/k51-o05" "$SD" --dry-run "$W51/proj3"; check "setup-deps.sh --dry-run on a new project" 0 $? "$TMP/k51-o05"
+k42_has "it prints the [profile.pending] it would write" "$TMP/k51-o05" 'setup-deps: dry-run - foundry.toml: + [profile.pending] test = "pending"'
+k51_ends "and ends with the six lines" "$TMP/k51-o05"
+[ "$(find "$W51/proj3" -type f | wc -l | tr -d ' ')" = 0 ] || { echo "  FAIL  and the dry run wrote: $(find "$W51/proj3" -type f | tr '\n' ' ')"; fails=$((fails + 1)); }
+# a build that fails: the six lines last too (the next thing read is forge's error, then them)
+k42_run "$TMP/k51-o06" env K42_FORGE_RC=1 "$SD" "$W51/proj3"; check "setup-deps.sh: the build fails" 1 $? "$TMP/k51-o06"
+k51_ends "and the output still ends with the six lines" "$TMP/k51-o06"
+# the same block where a model looks: QUICKSTART 7b (where it names gauntlet-v4/) and the entry skill
+sed -n '/^## 7b\./,/^## 8\./p' "$HERE/../QUICKSTART.md" > "$TMP/k51-7b"
+if k51_in "$TMP/k51-7b" && grep -qF 'gauntlet-v4/=<kit>/foundry-kit/v4/src/' "$TMP/k51-7b"; then echo "  ok    QUICKSTART.md step 7b has the six lines, beside the gauntlet-v4/ remapping it names"; else
+  echo "  FAIL  QUICKSTART.md step 7b does not have the six lines, in order"; fails=$((fails + 1)); fi
+if k51_in "$HERE/../skills/hook-gauntlet/SKILL.md"; then echo "  ok    the entry skill (skills/hook-gauntlet/SKILL.md) has the six lines, in order"; else
+  echo "  FAIL  the entry skill does not have the six lines, in order"; fails=$((fails + 1)); fi
+# each of the kit's tests that imports the kit relatively says so in one header line - every .sol file under its test
+# directories, the examples and the module's own tests, fork/ and test-periphery/ (K53: V50 found ForkExamples and
+# PeripheryExamples without it, and the CHANGELOG saying each example had it)
+K51_HDR="// Inside the kit: imports are relative. In your project: see scripts/setup-deps.sh's import lines."
+k51_miss="" k51_n=0
+for f in $(find "$HERE/../foundry-kit/test" "$HERE/../foundry-kit/v4/test" "$HERE/../foundry-kit/v4/test-periphery" -name '*.sol' | LC_ALL=C sort); do
+  grep -qE '^import .*"\.\./' "$f" || continue; k51_n=$((k51_n + 1))
+  grep -qxF "$K51_HDR" "$f" || k51_miss="$k51_miss ${f#"$HERE"/../}"
+done
+if [ -z "$k51_miss" ] && [ "$k51_n" -ge 51 ]; then echo "  ok    the $k51_n test files that import the kit relatively (foundry-kit/test/, foundry-kit/v4/test/, foundry-kit/v4/test-periphery/) carry the header line"; else
+  echo "  FAIL  test files without the header line ($k51_n read):${k51_miss:- none - but fewer than 51 read}"; fails=$((fails + 1)); fi
+# the harness's permission-bits refusal names the act (the whole line is held by test/HookPermissions.t.sol, v4 battery)
+K51_V4H="$HERE/../foundry-kit/v4/src/V4Harness.sol"
+k42_has "V4Harness's bits refusal: a finding, not a fix - in its order: the pending test (its setUp sets the flag, a test function of its own calls the check directly, no vm.expectRevert), pending-red.sh, STATE.md, then the flag in the suites, then the battery (v0.4.2, K61, K62)" "$K51_V4H" \
+  ' - the manager never calls it. This is a finding, not a fix (doctrine/NEXT.md row 6b). In this order: write its test as' \
+  ' pending/<id>.t.sol - its own setUp sets _skipPermissionCheck = true, then a test function of its own calls' \
+  ' _checkHookPermissions(address(hook)) directly (V4Harness: function _checkHookPermissions(address hook) internal), with' \
+  ' no vm.expectRevert, so this revert fails that test - record that red with scripts/pending-red.sh <proj> pending/<id>.t.sol, count it' \
+  ' in STATE.md; then put _skipPermissionCheck = true and a header line // _skipPermissionCheck: <id> open in the suites' \
+  ' that deploy the hook; then the battery, which holds them to that red record, current while src/ and pending/<id>.t.sol are as recorded (doctrine/EVIDENCE.md section 2).'
+k42_not "and the old endings are gone (the K46 one; the first v0.4.1 one, which said the flag belonged to that test alone)" "$K51_V4H" 'That is a finding (the owner decides its fix' 'only inside that pending test'
+k42_not "... and v0.4.1's, which kept the flag to pending tests (round 4: the everyday suite could not go green)" "$K51_V4H" 'only in pending tests'
+# ---- the MANIFEST: a fake kit of its own (lib/, cache/, out/ at depth, the selftest marker, scripts/lib/)
+MK="$TMP/k51-kit"; mkdir -p "$MK/scripts/lib" "$MK/doctrine" "$MK/foundry-kit/lib/forge-std" "$MK/foundry-kit/v4/lib/v4-core/src" \
+  "$MK/foundry-kit/cache" "$MK/foundry-kit/v4/out/X.sol" "$MK/.gauntlet" "$MK/foundry-kit/v4/test/examples"
+cp "$HERE/gen-manifest.sh" "$HERE/doctor.sh" "$MK/scripts/" 2> /dev/null; cp "$HERE/lib/parse.sh" "$MK/scripts/lib/"
+echo a > "$MK/doctrine/NEXT.md"; echo b > "$MK/foundry-kit/v4/test/examples/E.t.sol"; echo c > "$MK/foundry-kit/lib/forge-std/x"
+echo d > "$MK/foundry-kit/v4/lib/v4-core/src/PoolManager.sol"; echo e > "$MK/foundry-kit/cache/c"; echo f > "$MK/foundry-kit/v4/out/X.sol/X.json"
+echo g > "$MK/.gauntlet/selftest-passed"
+"$MK/scripts/gen-manifest.sh" > "$TMP/k51-o10" 2>&1; check "gen-manifest.sh on a kit (not a git checkout)" 0 $? "$TMP/k51-o10"
+printf '%s\n' doctrine/NEXT.md foundry-kit/v4/test/examples/E.t.sol scripts/doctor.sh scripts/gen-manifest.sh scripts/lib/parse.sh > "$TMP/k51-paths"
+if [ -f "$MK/MANIFEST" ] && cut -c67- "$MK/MANIFEST" | cmp -s "$TMP/k51-paths" - && ! grep -qvE '^[0-9a-f]{64}  [^ ]' "$MK/MANIFEST" \
+  && grep -qxF "$(hash_of "$MK/doctrine/NEXT.md")  doctrine/NEXT.md" "$MK/MANIFEST"; then
+  echo "  ok    MANIFEST: sha256sum's format, sorted, every file but itself, the selftest marker and lib/, cache/, out/ (scripts/lib/ kept: source)"; else
+  echo "  FAIL  MANIFEST is not that:"; sed "s/^/        | /" "$MK/MANIFEST" 2> /dev/null | head -12; fails=$((fails + 1)); fi
+"$MK/scripts/gen-manifest.sh" --check > "$TMP/k51-o11" 2>&1; check "gen-manifest.sh --check on the kit it just listed" 0 $? "$TMP/k51-o11"
+echo x >> "$MK/doctrine/NEXT.md"
+"$MK/scripts/gen-manifest.sh" --check > "$TMP/k51-o12" 2>&1; check "gen-manifest.sh --check: a listed file changed - stale" 1 $? "$TMP/k51-o12"
+k42_has "and it names the file" "$TMP/k51-o12" 'doctrine/NEXT.md'
+echo a > "$MK/doctrine/NEXT.md"; mv "$MK/foundry-kit/v4/test/examples/E.t.sol" "$TMP/k51-E"
+"$MK/scripts/gen-manifest.sh" --check > "$TMP/k51-o13" 2>&1; check "gen-manifest.sh --check: a listed file missing - stale" 1 $? "$TMP/k51-o13"
+k42_has "and it names the file" "$TMP/k51-o13" 'foundry-kit/v4/test/examples/E.t.sol'
+mv "$TMP/k51-E" "$MK/foundry-kit/v4/test/examples/E.t.sol"
+# doctor.sh's kit line: the shape measured on 2026-10-01 - a test file written under the kit's examples from a cd that drifted
+"$BASH" "$MK/scripts/doctor.sh" > "$TMP/k51-o14" 2>&1
+if grep -q "^kit: " "$TMP/k51-o14"; then echo "  FAIL  doctor.sh: a kit line with every file in MANIFEST: $(grep "^kit: " "$TMP/k51-o14")"; fails=$((fails + 1)); else echo "  ok    doctor.sh: no kit line when every file is in MANIFEST (lib/, cache/, out/, the marker not counted)"; fi
+mkdir -p "$MK/foundry-kit/v4/test/examples/proj/test"; echo h > "$MK/foundry-kit/v4/test/examples/proj/test/VolumeRewardsHook.t.sol"
+"$BASH" "$MK/scripts/doctor.sh" > "$TMP/k51-o15" 2>&1
+if grep -qxF 'kit: 1 files not in MANIFEST: foundry-kit/v4/test/examples/proj/test/VolumeRewardsHook.t.sol' "$TMP/k51-o15"; then
+  echo "  ok    doctor.sh names a file written inside the kit: kit: 1 files not in MANIFEST: <it>"; else
+  echo "  FAIL  doctor.sh does not name it:"; grep '^kit' "$TMP/k51-o15" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+"$MK/scripts/gen-manifest.sh" --check > "$TMP/k51-o16" 2>&1; check "gen-manifest.sh --check outside a git checkout: a file not listed is named, not failed (doctor's line says it)" 0 $? "$TMP/k51-o16"
+k42_has "and it names it" "$TMP/k51-o16" 'foundry-kit/v4/test/examples/proj/test/VolumeRewardsHook.t.sol'
+echo i > "$MK/doctrine/Z1.md"; echo j > "$MK/doctrine/Z2.md"; echo k > "$MK/README.md"
+"$BASH" "$MK/scripts/doctor.sh" > "$TMP/k51-o17" 2>&1
+if [ "$(grep -c '^kit: ' "$TMP/k51-o17")" = 1 ] && grep -qE '^kit: 4 files not in MANIFEST: [^,]+, [^,]+, [^,]+$' "$TMP/k51-o17"; then
+  echo "  ok    four such files: the count and the first three, one line"; else
+  echo "  FAIL  four such files:"; grep '^kit' "$TMP/k51-o17" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+rm -f "$MK/doctrine/Z1.md" "$MK/doctrine/Z2.md" "$MK/README.md"; rm -rf "$MK/foundry-kit/v4/test/examples/proj"
+mv "$MK/MANIFEST" "$TMP/k51-M"
+"$BASH" "$MK/scripts/doctor.sh" > "$TMP/k51-o18" 2>&1
+grep -qxF 'kit: no MANIFEST' "$TMP/k51-o18" && echo "  ok    doctor.sh with no MANIFEST: kit: no MANIFEST" \
+  || { echo "  FAIL  doctor.sh with no MANIFEST:"; grep '^kit' "$TMP/k51-o18" | sed "s/^/        | /"; fails=$((fails + 1)); }
+"$MK/scripts/gen-manifest.sh" --check > "$TMP/k51-o19" 2>&1; check "gen-manifest.sh --check with no MANIFEST" 1 $? "$TMP/k51-o19"
+mv "$TMP/k51-M" "$MK/MANIFEST"
+# a git checkout: what git tracks and would add (not ignored); a file not listed fails --check there
+if command -v git > /dev/null 2>&1; then
+  printf 'ignored.hex\n' > "$MK/.gitignore"; echo l > "$MK/ignored.hex"
+  (cd "$MK" && git init -q && git add -A && git -c user.name=selftest -c user.email=selftest@invalid -c commit.gpgsign=false commit -q -m k51) > /dev/null 2>&1
+  "$MK/scripts/gen-manifest.sh" > "$TMP/k51-o20" 2>&1; check "gen-manifest.sh in a git checkout" 0 $? "$TMP/k51-o20"
+  if grep -q '  \.gitignore$' "$MK/MANIFEST" && ! grep -q 'ignored\.hex' "$MK/MANIFEST" && ! grep -q '\.git/' "$MK/MANIFEST"; then
+    echo "  ok    it lists what git tracks (.gitignore), not what git ignores (ignored.hex), nothing of .git/"; else
+    echo "  FAIL  the git checkout's MANIFEST:"; sed "s/^/        | /" "$MK/MANIFEST" | head; fails=$((fails + 1)); fi
+  echo m > "$MK/doctrine/NEW.md"
+  "$MK/scripts/gen-manifest.sh" --check > "$TMP/k51-o21" 2>&1; check "gen-manifest.sh --check in a git checkout: a file git would add is not listed - stale" 1 $? "$TMP/k51-o21"
+  k42_has "and it names it" "$TMP/k51-o21" 'doctrine/NEW.md'
+  rm -f "$MK/doctrine/NEW.md"
+fi
+# the kit's own MANIFEST is current (the merge regenerates it: scripts/gen-manifest.sh)
+"$HERE/gen-manifest.sh" --check > "$TMP/k51-o22" 2>&1; check "the kit's MANIFEST is current (scripts/gen-manifest.sh --check)" 0 $? "$TMP/k51-o22"
+# --- end K51 ---
+
+# --- K52 ---
+# ================================================================= generated outputs are not intruders: the MANIFEST's
+# exclusions - one rule in gen-manifest.sh, doctor.sh and next.sh - also leave out every corpus/, census/, broadcast/
+# and .gauntlet/ directory under the kit (measured before: after the selftest and the kit's own batteries, doctor.sh
+# said `kit: 152 files not in MANIFEST` - corpus/ and .gauntlet/reports/ - and next.sh's note told the walker to move
+# the kit's own outputs out). A fake kit of its own; no forge.
+echo "== the MANIFEST's exclusions: generated outputs are not intruders, one rule in three places (K52) =="
+k52_rule() { LC_ALL=C awk '/^# THE EXCLUSIONS - one rule/ { on = 1 } on { print } on && /^KIT_SKIP_DIRS=/ { exit }' "$1"; }
+k52_rule "$HERE/gen-manifest.sh" > "$TMP/k52-r1"; k52_rule "$HERE/doctor.sh" > "$TMP/k52-r2"; k52_rule "$HERE/next.sh" > "$TMP/k52-r3"
+if [ -s "$TMP/k52-r1" ] && cmp -s "$TMP/k52-r1" "$TMP/k52-r2" && cmp -s "$TMP/k52-r1" "$TMP/k52-r3" \
+  && grep -qxF 'KIT_SKIP_DIRS="lib cache out corpus census broadcast .gauntlet"' "$TMP/k52-r1" \
+  && grep -qF 'scripts/gen-manifest.sh, scripts/doctor.sh and scripts/next.sh' "$TMP/k52-r1"; then
+  echo "  ok    THE EXCLUSIONS: the same lines, word for word, in gen-manifest.sh, doctor.sh and next.sh (naming the three; lib cache out corpus census broadcast .gauntlet)"; else
+  echo "  FAIL  THE EXCLUSIONS differ between gen-manifest.sh, doctor.sh and next.sh, or are not the decided list:"; diff "$TMP/k52-r1" "$TMP/k52-r2" | sed "s/^/        | /"; diff "$TMP/k52-r1" "$TMP/k52-r3" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+K52K="$TMP/k52-kit"; rm -rf "$K52K"; mkdir -p "$K52K/scripts/lib" "$K52K/doctrine" "$K52K/state" "$K52K/foundry-kit/v4/test/examples"
+cp "$HERE"/*.sh "$HERE"/*.py "$K52K/scripts/"; cp "$HERE"/lib/*.sh "$HERE"/lib/*.py "$K52K/scripts/lib/"; cp "$NXT" "$K52K/doctrine/"; cp "$K8_EX" "$K52K/state/"
+printf '// the kit\n' > "$K52K/foundry-kit/v4/test/examples/Ex.t.sol"
+"$K52K/scripts/gen-manifest.sh" > "$TMP/k52-o01" 2>&1; check "gen-manifest.sh on a fake kit (not a git checkout)" 0 $? "$TMP/k52-o01"
+# what the selftest and the batteries write, at depth: corpus/ (forge's invariant corpus), .gauntlet/reports/ and the
+# marker, census/, broadcast/ - each at the root of the kit and under a module
+for d in foundry-kit/corpus/T foundry-kit/v4/corpus/U/V .gauntlet/reports foundry-kit/v4/.gauntlet/reports foundry-kit/v4/.gauntlet/pending-red \
+  census foundry-kit/v4/census broadcast/S.s.sol/1 foundry-kit/v4/broadcast/S.s.sol/31337; do mkdir -p "$K52K/$d"; printf 'out\n' > "$K52K/$d/f.txt"; done
+printf 'marker\n' > "$K52K/.gauntlet/selftest-passed"
+"$BASH" "$K52K/scripts/doctor.sh" > "$TMP/k52-o02" 2>&1
+if grep -q '^kit: ' "$TMP/k52-o02"; then echo "  FAIL  doctor.sh counts generated outputs: $(grep '^kit: ' "$TMP/k52-o02")"; fails=$((fails + 1)); else
+  echo "  ok    doctor.sh: no kit line with corpus/, census/, broadcast/ and .gauntlet/ written at the root and under a module"; fi
+NEXT_SELFTEST=1 "$K52K/scripts/next.sh" "$FIX/state-new-project.md" > "$TMP/k52-o03" 2> /dev/null; check "next.sh in that kit: the row" 0 $? "$TMP/k52-o03"
+grep -q '^next: note' "$TMP/k52-o03" && { echo "  FAIL  and next.sh's note counts generated outputs: $(grep '^next: note' "$TMP/k52-o03")"; fails=$((fails + 1)); } \
+  || echo "  ok    and no note from next.sh: the same outputs not counted"
+"$K52K/scripts/gen-manifest.sh" --check > "$TMP/k52-o04" 2>&1; check "gen-manifest.sh --check in that kit: current" 0 $? "$TMP/k52-o04"
+grep -q 'note' "$TMP/k52-o04" && { echo "  FAIL  and it notes generated outputs:"; sed "s/^/        | /" "$TMP/k52-o04"; fails=$((fails + 1)); } || echo "  ok    and no note: the same rule"
+# a file named like those directories is not one of them; a file written by a walker among them still is named
+printf 'x\n' > "$K52K/foundry-kit/corpus.md"
+mkdir -p "$K52K/foundry-kit/v4/test/examples/proj/test"; printf '// a walker whose cd drifted\n' > "$K52K/foundry-kit/v4/test/examples/proj/test/VolumeRewardsHook.t.sol"
+"$BASH" "$K52K/scripts/doctor.sh" > "$TMP/k52-o05" 2>&1
+grep -qxF 'kit: 2 files not in MANIFEST: foundry-kit/corpus.md, foundry-kit/v4/test/examples/proj/test/VolumeRewardsHook.t.sol' "$TMP/k52-o05" \
+  && echo "  ok    doctor.sh names the intruder (and a FILE named corpus.md: only directories are left out)" \
+  || { echo "  FAIL  doctor.sh does not name the two:"; grep '^kit' "$TMP/k52-o05" | sed "s/^/        | /"; fails=$((fails + 1)); }
+NEXT_SELFTEST=1 "$K52K/scripts/next.sh" "$FIX/state-new-project.md" > "$TMP/k52-o06" 2> /dev/null; check "next.sh in that kit, the intruder in it: the row, the exit code unchanged" 0 $? "$TMP/k52-o06"
+[ "$(tail -1 "$TMP/k52-o06")" = "next: note - the kit has 2 files not in its MANIFEST (foundry-kit/corpus.md, foundry-kit/v4/test/examples/proj/test/VolumeRewardsHook.t.sol): the kit is not to be changed; move them out" ] \
+  && echo "  ok    and next.sh's note names the same two" || { echo "  FAIL  next.sh's note:"; tail -1 "$TMP/k52-o06" | sed "s/^/        | /"; fails=$((fails + 1)); }
+"$K52K/scripts/gen-manifest.sh" --check > "$TMP/k52-o07" 2>&1; check "gen-manifest.sh --check: the two named as notes (not a git checkout)" 0 $? "$TMP/k52-o07"
+k42_has "and it names both, and no generated output" "$TMP/k52-o07" 'foundry-kit/corpus.md' 'foundry-kit/v4/test/examples/proj/test/VolumeRewardsHook.t.sol'
+grep -q 'f\.txt' "$TMP/k52-o07" && { echo "  FAIL  and it names a generated output"; fails=$((fails + 1)); }
+# --- end K52 ---
+
+# --- K53 ---
+# What a walk from nothing met (V50): the refusal of a project with no state named state/README.md, not the command,
+# and the route's own words (AGENTS.md 4, so the entry skill's step 4; QUICKSTART 5) still installed the state by hand,
+# which records no spec. And the owner's re-record of the spec left nothing written (K54: it is now signed, --by).
+echo "== the route from nothing: the no-state refusal names init-state.sh, the route's words run it first; the owner's signed re-record leaves a line (K53, K54) =="
+K53="$TMP/k53"; rm -rf "$K53"; mkdir -p "$K53"
+# ---- a project with no state: the refusal names the command, absolute, from a relative <proj>; that command, then the row
+K53W="$K53/w"; k5_proj "$K53W"; K53WA="$(cd "$K53W" && pwd)"
+K53_NONE="next: REFUSED - $K53WA has no .gauntlet/STATE.md and no STATE.md: $KX_KIT/scripts/init-state.sh $K53WA writes one (or give the STATE.md)"
+(cd "$K53" && nx "$NX" w) > "$TMP/k53-o01" 2>&1; check "next.sh w (a relative <proj>, no state): refused" 2 $? "$TMP/k53-o01"
+if [ "$(cat "$TMP/k53-o01")" = "$K53_NONE" ]; then echo "  ok    one line, the project and the command absolute: ${K53_NONE:0:150}"; else
+  echo "  FAIL  not the one line '${K53_NONE:0:150}':"; sed "s/^/        | /" "$TMP/k53-o01"; fails=$((fails + 1)); fi
+k53_cmd="$(sed -n 's/^next: REFUSED - .* has no \.gauntlet\/STATE\.md and no STATE\.md: \(.*\) writes one (or give the STATE\.md)$/\1/p' "$TMP/k53-o01")"
+if [ "$k53_cmd" = "$K5_IS $K53WA" ]; then echo "  ok    the command it names is this kit's init-state.sh on that project"; else
+  echo "  FAIL  the command it names is not '$K5_IS $K53WA': '$k53_cmd'"; fails=$((fails + 1)); fi
+"$K5_IS" "$K53WA" > "$TMP/k53-o02" 2>&1; check "... that command, as named: the state written, the spec recorded" 0 $? "$TMP/k53-o02"
+k42_has "... and it says so" "$TMP/k53-o02" "init-state: wrote $K53WA/.gauntlet/STATE.md" "init-state: recorded the spec: $K53WA/.gauntlet/spec.sha256"
+(cd "$K53" && nx "$NX" w) > "$TMP/k53-o03" 2>&1; check "next.sh w, straight after: the row - one command from the refusal" 0 $? "$TMP/k53-o03"
+grep -q '^next: row 4 - ' "$TMP/k53-o03" || { echo "  FAIL  and it did not give row 4:"; sed "s/^/        | /" "$TMP/k53-o03"; fails=$((fails + 1)); }
+# ---- the owner's SIGNED re-record (K54, D1b: unsigned it is refused - the K50 cases): one line in LOG.md, its own
+# paragraph, the old and new hashes' first 8 hex and the name; said on stdout
+k53_log0="$(cat "$K53W/.gauntlet/LOG.md")"; k53_old="$(head -n 1 "$K53W/.gauntlet/spec.sha256" | cut -c1-8)"; cp "$K53W/.gauntlet/STATE.md" "$TMP/k53-state"
+printf '\n## Decided by the owner\n\n1. The fee is 0.3 percent.\n' >> "$K53W/SPEC.md"; k53_new="$(k5_sha "$K53W/SPEC.md" | cut -c1-8)"
+k53_signed() { printf '%s spec re-recorded: SPEC.md %s -> %s, signed --by "Selftest" (init-state --spec --by: the kit cannot tell whose hands these were; the owner reads this line, and the dossier carries it)' "$(date +%F)" "$1" "$2"; }
+k53_note() { printf 'next: note - the spec SPEC.md was re-recorded on %s, signed --by "Selftest" (%s -> %s; .gauntlet/spec.sha256): the owner confirms that signature is theirs, or the spec in force is not the owner'"'"'s' "$(date +%F)" "$1" "$2"; }
+"$K5_IS" --spec SPEC.md --by Selftest "$K53W" > "$TMP/k53-o04" 2>&1; check "init-state.sh --spec SPEC.md --by Selftest <proj> on a project with a STATE.md (the owner's signed re-record)" 0 $? "$TMP/k53-o04"
+K53_LINE="$(k53_signed "$k53_old" "$k53_new")"
+if [ "$(tail -n 1 "$K53W/.gauntlet/LOG.md")" = "$K53_LINE" ]; then echo "  ok    LOG.md ends with '${K53_LINE:0:150}'"; else
+  echo "  FAIL  LOG.md does not end with '$K53_LINE':"; tail -n 3 "$K53W/.gauntlet/LOG.md" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+if [ "$(printf '%s\n\n%s' "$k53_log0" "$K53_LINE")" = "$(cat "$K53W/.gauntlet/LOG.md")" ]; then echo "  ok    one line appended, its own paragraph; the rest of LOG.md as it was"; else
+  echo "  FAIL  LOG.md is not what it was plus a blank line and that line"; fails=$((fails + 1)); fi
+k42_has "... said on stdout, with both hashes" "$TMP/k53-o04" "init-state: appended to $(cd "$K53W" && pwd)/.gauntlet/LOG.md: $K53_LINE" "spec.sha256 now: $(k5_sha "$K53W/SPEC.md")  SPEC.md"
+cmp -s "$K53W/.gauntlet/STATE.md" "$TMP/k53-state" && echo "  ok    STATE.md untouched" || { echo "  FAIL  STATE.md touched"; fails=$((fails + 1)); }
+(cd "$K53" && nx "$NX" w) > "$TMP/k53-o05" 2>&1; check "next.sh after the re-record: the row (the trace does not stop the route)" 0 $? "$TMP/k53-o05"
+grep -qxF "$(k53_note "$k53_old" "$k53_new")" "$TMP/k53-o05" && echo "  ok    ... with the signed note under it" \
+  || { echo "  FAIL  no signed note under the row:"; sed "s/^/        | /" "$TMP/k53-o05"; fails=$((fails + 1)); }
+# no record before (a project set up by hand): `none`, in LOG.md, in spec.sha256's line 2 and in next.sh's note
+rm -f "$K53W/.gauntlet/spec.sha256"
+"$K5_IS" --spec SPEC.md --by Selftest "$K53W" > "$TMP/k53-o06" 2>&1; check "init-state.sh --spec --by with no record before" 0 $? "$TMP/k53-o06"
+[ "$(tail -n 1 "$K53W/.gauntlet/LOG.md")" = "$(k53_signed none "$k53_new")" ] && [ "$(sed -n 2p "$K53W/.gauntlet/spec.sha256")" = "re-recorded $(date +%F) by \"Selftest\" none -> $k53_new" ] \
+  && echo "  ok    'none -> $k53_new' in LOG.md and in spec.sha256's line 2" || { echo "  FAIL  not 'none -> $k53_new':"; tail -n 1 "$K53W/.gauntlet/LOG.md" | sed "s/^/        | /"; sed "s/^/        | /" "$K53W/.gauntlet/spec.sha256"; fails=$((fails + 1)); }
+(cd "$K53" && nx "$NX" w) > "$TMP/k53-o06b" 2>&1; check "next.sh after a re-record with no record before: the row" 0 $? "$TMP/k53-o06b"
+grep -qxF "$(k53_note none "$k53_new")" "$TMP/k53-o06b" && echo "  ok    ... with the note, 'none -> $k53_new'" \
+  || { echo "  FAIL  no note for a 'none ->' re-record:"; sed "s/^/        | /" "$TMP/k53-o06b"; fails=$((fails + 1)); }
+# location: root - the LOG.md beside the STATE.md, at the root; none written in .gauntlet/
+K53R="$K53/r"; k5_proj "$K53R"; cp "$FIX/state-new-project.md" "$K53R/STATE.md"; printf '# LOG - r\n\n## an entry\n' > "$K53R/LOG.md"
+"$K5_IS" --spec SPEC.md --by Selftest "$K53R" > "$TMP/k53-o07" 2>&1; check "init-state.sh --spec --by on a project at its root (location: root)" 0 $? "$TMP/k53-o07"
+[ "$(tail -n 1 "$K53R/LOG.md")" = "$(k53_signed none "$(k5_sha "$K53R/SPEC.md" | cut -c1-8)")" ] && [ ! -e "$K53R/.gauntlet/LOG.md" ] \
+  && echo "  ok    the line in the root's LOG.md, beside its STATE.md; no .gauntlet/LOG.md" || { echo "  FAIL  not in the root's LOG.md, or a .gauntlet/LOG.md written"; fails=$((fails + 1)); }
+# ---- the route's words: init-state.sh first, the hand copy only as the fallback that records no spec
+k53_first() { # k53_first <label> <file> <section start regex> <section end regex>: init-state.sh named before the hand copy
+  local s; s="$(sed -n "/$3/,/$4/p" "$2" | tr '\n' ' ')"
+  case "$s" in *init-state.sh*records\ no\ spec*) ;; *) echo "  FAIL  $1: no init-state.sh, or no 'records no spec'"; fails=$((fails + 1)); return ;; esac
+  local k53_a="${s%%init-state.sh*}" k53_b="${s%%copy the three files*}"
+  [ "$k53_b" = "$s" ] && k53_b="${s%%copy \`<kit>/state/STATE.md\`*}"
+  if [ "${#k53_a}" -lt "${#k53_b}" ]; then echo "  ok    $1: init-state.sh first, the hand copy a fallback that records no spec"; else
+    echo "  FAIL  $1: the hand copy comes before init-state.sh"; fails=$((fails + 1)); fi
+}
+k53_first "AGENTS.md section 4" "$HERE/../AGENTS.md" '^## 4\. ' '^## 5\. '
+k53_first "QUICKSTART.md step 5" "$HERE/../QUICKSTART.md" '^## 5\. ' '^## 6\. '
+k53_first "the entry skill's step 4 (generated from AGENTS.md 4)" "$HERE/../skills/hook-gauntlet/SKILL.md" '^4\. \*\*A new project' '^5\. '
+grep -q '^4\. \*\*A new project\.\*\* .*`{{KIT}}/scripts/init-state\.sh <proj>`' "$HERE/../skills/hook-gauntlet/SKILL.md" \
+  && echo "  ok    the entry skill's step 4 names {{KIT}}/scripts/init-state.sh <proj>" || { echo "  FAIL  the entry skill's step 4 does not name {{KIT}}/scripts/init-state.sh <proj>"; fails=$((fails + 1)); }
+# --- end K53 ---
+
+# --- K60 ---
+# ================================================================= v0.4.2 (K60): what round 4 showed - the flags against
+# their records, the escapes out of the refusals, src/ anchored like the spec, _skipPermissionCheck under test/ and the
+# battery, setup-deps.sh's fuzz configuration and COPY_ROOT, the marker by mktemp, the texts
+echo "== v0.4.2 (K60): flags against records, escapes written down, the src/ anchor, the bits rule, setup-deps's fuzz configuration =="
+K6="$TMP/k60"; rm -rf "$K6"; mkdir -p "$K6"; K6_IS="$HERE/init-state.sh"
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "selftest: $HERE/lib/src-anchor.sh is missing"; exit 1; }
+k6_not() { # k6_not <file> <label> <fixed string>: the string is in no line of the file
+  if grep -qF -- "$3" "$1"; then echo "  FAIL  $2: '$3' in:"; grep -nF -- "$3" "$1" | sed "s/^/        | /" | head -3; fails=$((fails + 1)); else echo "  ok    $2"; fi
+}
+# ---- the flags against their records (next.sh; the judge's phase walk of round 4: battery: green typed over a battery that
+# had FAILED, phase 4 with no invariant suite, no census and no fork note - each was answered with a row)
+F6="$K6/f"; kx_proj "$F6"; F6A="$(cd "$F6" && pwd)"; mkdir -p "$F6/.gauntlet/reports"; cp "$FIX/build-real-compiled.txt" "$F6/.gauntlet/reports/01-build.txt"
+k6_state() { # k6_state <phase> <battery> [<notes>]: the new project's STATE.md with those values
+  sed -E "s/^phase: .*/phase:                     $1/; s/^battery: .*/battery:                   $2/" "$FIX/state-new-project.md" > "$F6/.gauntlet/STATE.md"
+  [ -z "${3:-}" ] || sed -i -E "s|^notes:.*|notes:                     $3|" "$F6/.gauntlet/STATE.md"
+}
+K6_BAT="$KX_KIT/scripts/battery.sh $F6A"
+k6_state 2 green
+kx_one 6001 "next.sh refuses battery: green with no test record (02-test.txt)" 2 \
+  "next: REFUSED - battery is green and there is no test record (.gauntlet/reports/02-test.txt): $K6_BAT, then write the battery flag its verdict gives" "$F6"
+cp "$FIX/summary-real-failed-and-skipped.txt" "$F6/.gauntlet/reports/02-test.txt"
+kx_one 6002 "next.sh refuses battery: green over a test record with a FAILED test" 2 \
+  "next: REFUSED - battery is green and its test record (.gauntlet/reports/02-test.txt) says 1 test(s) FAILED: $K6_BAT, then write the battery flag its verdict gives" "$F6"
+cp "$FIX/summary-real-no-tests.txt" "$F6/.gauntlet/reports/02-test.txt"
+kx_one 6003 "next.sh refuses battery: green over a test record where no test ran (the battery FAILED before its tests)" 2 \
+  "next: REFUSED - battery is green and its test record (.gauntlet/reports/02-test.txt) has no summary of forge's: no test ran: $K6_BAT, then write the battery flag its verdict gives" "$F6"
+PENDING_RED=0 CITED_FILES=0 nx "$NX" "$F6" > "$TMP/o6004" 2>&1; check "... and no escape turns it off" 2 $? "$TMP/o6004"
+k6_state 2 red
+kx_row 6005 "next.sh: phase 2, battery: red, no test ran: the row (phase 2 open needs a green build record, not a battery that ran)" 4b "$F6"
+k6_state 3 red
+kx_one 6006 "next.sh refuses phase 3 when the test record shows no test ran (its green 01-build.txt is not a battery that ran)" 2 \
+  "next: REFUSED - phase 3 claims phase 2 closed and the battery's test record (.gauntlet/reports/02-test.txt) shows no test ran - a battery that failed before its tests left only a build record: $K6_BAT, or write the phase that is open" "$F6"
+cp "$FIX/summary-real-failed-and-skipped.txt" "$F6/.gauntlet/reports/02-test.txt"
+kx_row 6007 "next.sh: phase 3, battery: red, a test record with a failed test: the row (phase 3 is row 4b's; the battery ran, and is red)" 4b "$F6" --judge 5=false
+cp "$FIX/summary-real-many-suites.txt" "$F6/.gauntlet/reports/02-test.txt"; k6_state 3 green
+kx_row 6008 "next.sh: phase 3, battery: green, a green test record: the row" 4b "$F6"
+k6_state 4 green
+kx_one 6009 "next.sh refuses phase 4 with no invariant suite under test/, naming QUICKSTART 7b and the battery" 2 \
+  "next: REFUSED - phase 4 claims phase 3 closed and there is no invariant suite under $F6A/test (no .sol file with a function invariant...()): write it on the kit's InvariantBase (QUICKSTART.md 7b), then $K6_BAT - or write the phase that is open" "$F6"
+mkdir -p "$F6/test"
+printf 'contract I { function invariant_balance_covers_claims() public view {} }\n' > "$F6/test/I.t.sol"
+K6_CEN="next: REFUSED - phase 4 claims phase 3 closed and there is no census report (.gauntlet/reports/06-census.txt or 06-census-gate.txt): $KX_KIT/scripts/census.sh $F6A - or write the phase that is open"
+kx_one 6010 "next.sh refuses phase 4 with an invariant suite and no census report, naming census.sh" 2 "$K6_CEN" "$F6"
+printf 'census: the campaign FAILED - no census (renamed x)\n' > "$F6/.gauntlet/reports/06-census.txt"
+kx_one 6011 "... and with a FAILED campaign's census report" 2 "$K6_CEN" "$F6"
+printf 'census gate: PASSED - 2 CORE actions\n' > "$F6/.gauntlet/reports/06-census.txt"
+K6_FORK="next: REFUSED - phase 4 claims phase 3 closed and the fork question is unanswered: write the note 'fork: <what ran against what exists, or n/a - no chain, no manager yet>' in STATE.md notes (NEXT.md row 4b) - or write the phase that is open"
+kx_one 6012 "next.sh refuses phase 4 with no fork: note" 2 "$K6_FORK" "$F6"
+k6_state 4 green "the fork: question is open"
+kx_one 6013 "... and with fork: inside a note, not at its start" 2 "$K6_FORK" "$F6"
+k6_state 4 green "static triage: forge lint only; - fork: n/a - no chain, no manager yet"
+kx_row 6014 "next.sh: phase 4 with the suite, the census and a fork: note (a list item after ;): the row" 6 "$F6" --judge 5=false
+rm -f "$F6/.gauntlet/reports/06-census.txt"; printf 'census gate: PASSED\n' > "$F6/.gauntlet/reports/06-census-gate.txt"
+kx_row 6015 "... the census gate's report (06-census-gate.txt) is a census report too" 6 "$F6" --judge 5=false
+# ---- the escapes out of the refusal lines, written down when used (a walker read the escape in a refusal and used it)
+E6="$K6/e"; kx_proj "$E6"; E6A="$(cd "$E6" && pwd)"; mkdir -p "$E6/pending"; printf '// F-1\n' > "$E6/pending/F-1.t.sol"
+sed 's/^notes: .*/notes:                     pending: F-1 - a stranger takes a registered id, owner undecided/' "$FIX/state-new-project.md" > "$E6/.gauntlet/STATE.md"
+printf '# LOG - SomeHook\n\nrules.\n' > "$E6/.gauntlet/LOG.md"
+kx_one 6020 "next.sh refuses pending/F-1.t.sol with no red record - the line names pending-red.sh and no escape" 2 \
+  "next: pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $E6A pending/F-1.t.sol" "$E6"
+PENDING_RED=0 nx "$NX" "$E6" > "$TMP/o6021" 2>&1; check "next.sh with PENDING_RED=0: the row" 0 $? "$TMP/o6021"
+k5_has "$TMP/o6021" "... it says it was set, and that what it let through was written down" "next: PENDING_RED=0 - the tests in pending/ are NOT checked" \
+  "next: PENDING_RED=0 let through pending/F-1.t.sol (not seen red on the code as it stands) - written down in $E6A/.gauntlet/LOG.md"
+if [ "$(tail -n 1 "$E6/.gauntlet/LOG.md")" = "$(date +%F) next.sh ran with PENDING_RED=0, an escape: it let through pending/F-1.t.sol (not seen red on the code as it stands) - not checked here (the owner reads this line, and the dossier carries it)" ] \
+  && [ "$(tail -n 2 "$E6/.gauntlet/LOG.md" | head -1)" = "" ]; then echo "  ok    LOG.md gained one paragraph: the date, the escape, the file and why"; else
+  echo "  FAIL  LOG.md's end:"; tail -n 3 "$E6/.gauntlet/LOG.md" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+PENDING_RED=0 nx "$NX" "$E6" > /dev/null 2>&1
+[ "$(grep -c 'next.sh ran with PENDING_RED=0' "$E6/.gauntlet/LOG.md")" = 2 ] && echo "  ok    every use is written down (a second run, a second line)" || { echo "  FAIL  $(grep -c 'next.sh ran with PENDING_RED=0' "$E6/.gauntlet/LOG.md") lines for two uses"; fails=$((fails + 1)); }
+printf '# DECISIONS - SomeHook\n\nD-02: the test is `test/Missing.t.sol`.\n' > "$E6/.gauntlet/DECISIONS.md"
+PENDING_RED=0 nx "$NX" "$E6" > "$TMP/o6022" 2>&1; check "next.sh refuses a citation of a file that does not exist" 2 $? "$TMP/o6022"
+k6_not "$TMP/o6022" "... and the refusal names no escape" "CITED_FILES"
+PENDING_RED=0 CITED_FILES=0 nx "$NX" "$E6" > "$TMP/o6023" 2>&1; check "next.sh with CITED_FILES=0 too: the row" 0 $? "$TMP/o6023"
+k5_has "$E6/.gauntlet/LOG.md" "... and LOG.md names the citation it let through" \
+  "next.sh ran with CITED_FILES=0, an escape: it let through test/Missing.t.sol (cited by DECISIONS.md line 3; it does not exist) - not checked here"
+rm -rf "$E6/pending" "$E6/.gauntlet/DECISIONS.md"; sed 's/^notes: .*/notes:/' "$FIX/state-new-project.md" > "$E6/.gauntlet/STATE.md"; k6_n="$(wc -l < "$E6/.gauntlet/LOG.md")"
+PENDING_RED=0 CITED_FILES=0 nx "$NX" "$E6" > "$TMP/o6024" 2>&1; check "next.sh with both escapes set and nothing to let through: the row" 0 $? "$TMP/o6024"
+[ "$(wc -l < "$E6/.gauntlet/LOG.md")" = "$k6_n" ] && echo "  ok    and nothing is written down (the stderr line alone)" || { echo "  FAIL  LOG.md grew"; fails=$((fails + 1)); }
+for f in doctrine/NEXT.md state/README.md QUICKSTART.md AGENTS.md; do
+  if grep -qE 'PENDING_RED=0|CITED_FILES=0' "$HERE/../$f"; then echo "  FAIL  $f still names an escape: $(grep -nE 'PENDING_RED=0|CITED_FILES=0' "$HERE/../$f" | head -2)"; fails=$((fails + 1)); else echo "  ok    $f names no escape (next.sh's header has them)"; fi
+done
+# ---- src/ anchored like the spec: init-state records it, the owner re-records it, signed (a local model edited the hook it audited)
+S6="$K6/s"; mkdir -p "$S6/src/lib"; printf 'contract H {}\n' > "$S6/src/H.sol"; printf 'library L {}\n' > "$S6/src/lib/L.sol"; printf '# the owner spec\n' > "$S6/SPEC.md"; S6A="$(cd "$S6" && pwd)"
+"$K6_IS" "$S6" > "$TMP/o6030" 2>&1; check "init-state.sh on a project with src/: written" 0 $? "$TMP/o6030"
+k6_h="$(src_anchor_hash "$S6A")"
+if [ "$(cat "$S6/.gauntlet/src.sha256")" = "$k6_h  src/" ] && [ ${#k6_h} = 64 ]; then echo "  ok    .gauntlet/src.sha256 is '<sha256>  src/' - the hash of src/'s file list and contents"; else
+  echo "  FAIL  src.sha256: $(cat "$S6/.gauntlet/src.sha256" 2>&1)"; fails=$((fails + 1)); fi
+k5_has "$TMP/o6030" "... and it says so" "init-state: recorded src/: $S6A/.gauntlet/src.sha256 = $k6_h  src/"
+S6N="$K6/sn"; mkdir -p "$S6N/src"
+"$K6_IS" "$S6N" > "$TMP/o6031" 2>&1; check "init-state.sh on a project whose src/ has no file (the hook still to be written)" 0 $? "$TMP/o6031"
+if [ -e "$S6N/.gauntlet/src.sha256" ]; then echo "  FAIL  and it wrote src.sha256"; fails=$((fails + 1)); else
+  k5_has "$TMP/o6031" "... nothing anchored, and it says so - the owner's act once the hook exists" "init-state: no file under " "nothing anchored"; fi
+k5_no_by "$TMP/o6031" "... and no line of it hands over the runnable form"
+"$K6_IS" "$S6" --src > "$TMP/o6032" 2>&1; check "init-state.sh --src on a project that has its state, unsigned: refused" 2 $? "$TMP/o6032"
+k5_has "$TMP/o6032" "... naming the act, the owner's, signed" "src/ is the owner's code (anchor: ${k6_h:0:8})" "(--by; the header of scripts/init-state.sh says how)"
+k5_no_by "$TMP/o6032" "... and no line of it hands over the runnable form"
+"$K6_IS" "$S6" --by "Pat Owner" > "$TMP/o6033" 2>&1; check "init-state.sh --by alone: refused" 2 $? "$TMP/o6033"
+k5_has "$TMP/o6033" "... saying what it signs" "--by signs a re-record of the spec or of src/: give --spec <the spec> or --src too"
+printf '// the owner changed it\n' >> "$S6/src/H.sol"; k6_h2="$(src_anchor_hash "$S6A")"
+"$K6_IS" "$S6" --src --by "Pat Owner" > "$TMP/o6034" 2>&1; check "init-state.sh --src --by: the owner's signed re-record" 0 $? "$TMP/o6034"
+if [ "$(sed -n 1p "$S6/.gauntlet/src.sha256")" = "$k6_h2  src/" ] && [ "$(sed -n 2p "$S6/.gauntlet/src.sha256")" = "re-recorded $(date +%F) by \"Pat Owner\" ${k6_h:0:8} -> ${k6_h2:0:8}" ]; then
+  echo "  ok    src.sha256: the new anchor on line 1, the signed re-record on line 2"; else echo "  FAIL  src.sha256:"; sed "s/^/        | /" "$S6/.gauntlet/src.sha256"; fails=$((fails + 1)); fi
+[ "$(tail -n 1 "$S6/.gauntlet/LOG.md")" = "$(date +%F) src/ re-recorded: ${k6_h:0:8} -> ${k6_h2:0:8}, signed --by \"Pat Owner\" (init-state --src --by: the kit cannot tell whose hands these were; the owner reads this line, and the dossier carries it)" ] \
+  && echo "  ok    and LOG.md: the dated, signed line" || { echo "  FAIL  LOG.md's last line: $(tail -n 1 "$S6/.gauntlet/LOG.md")"; fails=$((fails + 1)); }
+printf '# the owner spec, changed\n' > "$S6/SPEC.md"; printf '// again\n' >> "$S6/src/H.sol"
+"$K6_IS" "$S6" --spec SPEC.md --src --by "Pat Owner" > "$TMP/o6035" 2>&1; check "init-state.sh --spec --src --by: both in one signed act" 0 $? "$TMP/o6035"
+[ "$(tail -n 3 "$S6/.gauntlet/LOG.md" | grep -cE ' (spec|src/) re-recorded: ')" = 2 ] && [ "$(grep -c '^re-recorded ' "$S6/.gauntlet/src.sha256")" = 2 ] \
+  && echo "  ok    two LOG.md lines (the spec's, src/'s), and src.sha256 keeps both re-records" || { echo "  FAIL  not both"; tail -n 4 "$S6/.gauntlet/LOG.md" | sed "s/^/        | /"; fails=$((fails + 1)); }
+rm -f "$S6/.gauntlet/src.sha256"
+"$K6_IS" "$S6" --src --by "Pat Owner" > "$TMP/o6036" 2>&1; check "init-state.sh --src --by on a project with no anchor (set up before v0.4.2)" 0 $? "$TMP/o6036"
+grep -qE '^re-recorded [0-9-]+ by "Pat Owner" none -> [0-9a-f]{8}$' "$S6/.gauntlet/src.sha256" && echo "  ok    none -> <new8>" || { echo "  FAIL  src.sha256: $(cat "$S6/.gauntlet/src.sha256")"; fails=$((fails + 1)); }
+"$K6_IS" "$S6N" --src --by "Pat Owner" > "$TMP/o6037" 2>&1; check "init-state.sh --src --by on a src/ with no file: refused" 2 $? "$TMP/o6037"
+# ---- pending-red.sh and battery.sh: src/ against its anchor, before anything runs; _skipPermissionCheck under test/
+if command -v forge > /dev/null 2>&1 && [ -e "$HERE/../foundry-kit/lib" ]; then
+  A6="$K6/a"; rm -rf "$A6"; mkdir -p "$A6/src" "$A6/pending" "$A6/test"; ln -s "$(cd "$HERE/../foundry-kit/lib" && pwd -P)" "$A6/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[profile.pending]\ntest = "pending"\n' > "$A6/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract H { uint256 public x; function set(uint256 v) external { x = v; } }\n' > "$A6/src/H.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/H.sol";\nabstract contract Base is Test {\n    bool internal _skipPermissionCheck;\n    H internal h;\n    function setUp() public virtual { h = new H(); }\n}\n' > "$A6/test/Base.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "./Base.sol";\ncontract HT is Base { function test_set() public { h.set(2); assertEq(h.x(), 2); } }\n' > "$A6/test/H.t.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "../test/Base.sol";\ncontract F1 is Base { function test_F1_x_is_never_one() public { h.set(1); assertTrue(h.x() != 1, "x is one"); } }\n' > "$A6/pending/F-1.t.sol"
+  "$K6_IS" "$A6" > /dev/null 2>&1; A6A="$(cd "$A6" && pwd -P)"; a6_h="$(src_anchor_hash "$A6A")"
+  printf '// edited in place\n' >> "$A6/src/H.sol"; a6_h2="$(src_anchor_hash "$A6A")"
+  K6_SRC="the code under audit is the owner's. Undo the change (put the owner's code back) and write what you assumed in DECISIONS.md (source: assumed, owner absent): a finding's fix is the owner's decision (doctrine/NEXT.md row 6b), shown on a copy (scripts/mutate.sh), never written into src/. The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an agent never does it. Nothing run."
+  "$HERE/pending-red.sh" "$A6" > "$TMP/o6040" 2>&1; check "pending-red.sh refuses src/ changed since init-state anchored it (the local model's edit)" 2 $? "$TMP/o6040"
+  k5_has "$TMP/o6040" "... the spec's refusal, for the code" "pending-red: REFUSED - $A6A/src changed since init-state recorded it (.gauntlet/src.sha256 ${a6_h:0:8}, now ${a6_h2:0:8}): $K6_SRC"
+  k5_no_by "$TMP/o6040" "... no runnable --by in it"; k6_not "$TMP/o6040" "... no escape in it" "PENDING_RED"
+  [ ! -e "$A6/.gauntlet/pending-red" ] && echo "  ok    and nothing ran, nothing was written" || { echo "  FAIL  pending-red wrote $A6/.gauntlet/pending-red"; fails=$((fails + 1)); }
+  "$HERE/battery.sh" "$A6" > "$TMP/o6041" 2>&1; check "battery.sh refuses it too: nothing run (exit 2)" 2 $? "$TMP/o6041"
+  k5_has "$TMP/o6041" "... the same refusal" "battery: REFUSED - $A6A/src changed since init-state recorded it (.gauntlet/src.sha256 ${a6_h:0:8}, now ${a6_h2:0:8}): $K6_SRC" "battery: nothing run."
+  k5_no_by "$TMP/o6041" "... no runnable --by in it"
+  [ ! -e "$A6/.gauntlet/reports" ] && echo "  ok    and no report was written" || { echo "  FAIL  the battery wrote $A6/.gauntlet/reports"; fails=$((fails + 1)); }
+  "$K6_IS" "$A6" --src --by "Pat Owner" > /dev/null 2>&1
+  "$HERE/pending-red.sh" "$A6" > "$TMP/o6042" 2>&1; check "pending-red.sh after the owner's signed re-record: red, recorded" 0 $? "$TMP/o6042"
+  k5_has "$TMP/o6042" "... saying src/ is as recorded, and who re-recorded it (no runnable form)" "pending-red: src/ is as recorded (.gauntlet/src.sha256 ${a6_h2:0:8}); re-recorded on $(date +%F), signed by \"Pat Owner\" (${a6_h:0:8} -> ${a6_h2:0:8}): the owner confirms that signature is theirs."
+  k5_no_by "$TMP/o6042" "... no runnable --by in it"
+  a6_rec="$(pending_record_path "$A6A" pending/F-1.t.sol)"
+  k5_has "$a6_rec" "the red record names the anchor it was made on" "anchor: src/ as recorded (.gauntlet/src.sha256 ${a6_h2:0:8})"
+  rm -f "$A6/.gauntlet/src.sha256"
+  "$HERE/pending-red.sh" "$A6" > "$TMP/o6043" 2>&1; check "pending-red.sh on a project with its state and no anchor: not refused" 0 $? "$TMP/o6043"
+  [ "$(grep -c 'src/ has no anchor' "$TMP/o6043")" = 1 ] && k5_has "$TMP/o6043" "... told once how one is made" "init-state.sh records it when it writes a new project's state; on this project, which has its state, recording it is the owner's act, signed (--src --by; the header of scripts/init-state.sh says how)." \
+    || { echo "  FAIL  not told once:"; sed "s/^/        | /" "$TMP/o6043"; fails=$((fails + 1)); }
+  k5_no_by "$TMP/o6043" "... no runnable --by in it"
+  "$K6_IS" "$A6" --src --by "Pat Owner" > /dev/null 2>&1
+  # _skipPermissionCheck = true under test/: only while a permission-bits finding is open AND recorded (round 4: both
+  # strong models set it in the everyday base, and the battery said nothing)
+  sed -i 's/function setUp() public virtual { h = new H(); }/function setUp() public virtual { _skipPermissionCheck = true; h = new H(); }/' "$A6/test/Base.sol"
+  K6_BITS_TAIL="A suite under test/ may assign _skipPermissionCheck only while that permission-bits finding is OPEN AND RECORDED, in this order"
+  "$HERE/battery.sh" "$A6" > "$TMP/o6050" 2>&1; check "battery.sh refuses test/Base.sol setting _skipPermissionCheck with no finding named" 2 $? "$TMP/o6050"
+  k5_has "$TMP/o6050" "... naming the file, the rule and pending-red.sh" "battery: REFUSED - test/Base.sol sets _skipPermissionCheck = true and names no permission-bits finding" "$K6_BITS_TAIL" "$HERE/pending-red.sh $A6A pending/<id>.t.sol"
+  sed -i '1a // _skipPermissionCheck: F-2 open' "$A6/test/Base.sol"
+  "$HERE/battery.sh" "$A6" > "$TMP/o6051" 2>&1; check "... with a header naming F-2 and no pending/F-2.t.sol" 2 $? "$TMP/o6051"
+  k5_has "$TMP/o6051" "... said" "battery: REFUSED - test/Base.sol sets _skipPermissionCheck = true under F-2, and there is no pending/F-2.t.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "../test/Base.sol";\ncontract F2 is Base { function test_F2_callback_never_runs() public { assertTrue(false, "the callback never ran"); } }\n' > "$A6/pending/F-2.t.sol"
+  "$HERE/battery.sh" "$A6" > "$TMP/o6052" 2>&1; check "... with pending/F-2.t.sol and no red record of it" 2 $? "$TMP/o6052"
+  k5_has "$TMP/o6052" "... said, naming pending-red.sh" "battery: REFUSED - test/Base.sol sets _skipPermissionCheck = true under F-2, and pending/F-2.t.sol has no current red record" "$HERE/pending-red.sh"
+  "$HERE/pending-red.sh" "$A6" pending/F-2.t.sol > "$TMP/o6053" 2>&1; check "pending-red.sh: F-2 red on an assertion of its own" 0 $? "$TMP/o6053"
+  "$HERE/battery.sh" "$A6" > "$TMP/o6054" 2>&1; check "battery.sh: F-2 recorded red, but not on the harness's line - refused" 2 $? "$TMP/o6054"
+  k5_has "$TMP/o6054" "... said" "and the red record of pending/F-2.t.sol has no permission-bits failure: its tests are red, but none of them on the harness's own line"
+  printf 'pragma solidity ^0.8.26;\nimport "../test/Base.sol";\ncontract F2 is Base {\n    function test_F2_callback_never_runs() public { assertTrue(false, "the callback never ran"); }\n    function test_F2_the_harness_refuses_the_bits() public { revert("V4Harness: afterInitialize implemented but its permission bit is not set on 0x0000000000000000000000000000000000001000 - the manager never calls it."); }\n}\n' > "$A6/pending/F-2.t.sol"
+  "$HERE/pending-red.sh" "$A6" pending/F-2.t.sol > "$TMP/o6055" 2>&1; check "pending-red.sh: F-2 red, one test failing on the harness's line" 0 $? "$TMP/o6055"
+  a6_rec="$(pending_record_path "$A6A" pending/F-2.t.sol)"
+  k5_has "$a6_rec" "the record carries the permission-bits line" "permission-bits: [FAIL: V4Harness: afterInitialize implemented but its permission bit is not set on 0x0000000000000000000000000000000000001000"
+  "$HERE/battery.sh" "$A6" > "$TMP/o6056" 2>&1; check "battery.sh: the flag under test/ with the finding open and recorded - it runs, and passes" 0 $? "$TMP/o6056"
+  k5_has "$TMP/o6056" "... and its summary says the green is UNDER that finding" "bits      UNDER open permission-bits finding F-2: _skipPermissionCheck set in test/Base.sol" "BATTERY PASSED - green UNDER open permission-bits finding F-2"
+  sed -i -e '/_skipPermissionCheck: F-2 open/d' -e 's/_skipPermissionCheck = true; h = new H();/h = new H();/' -e '1a // set _skipPermissionCheck = true; here while a bits finding is open (a comment: not code)' "$A6/test/Base.sol"
+  "$HERE/battery.sh" "$A6" > "$TMP/o6057" 2>&1; check "battery.sh: the flag only in a comment - not set, a plain battery" 0 $? "$TMP/o6057"
+  [ "$(tail -n 1 "$TMP/o6057")" = "BATTERY PASSED" ] && echo "  ok    BATTERY PASSED, nothing under" || { echo "  FAIL  last line: $(tail -n 1 "$TMP/o6057")"; fails=$((fails + 1)); }
+else
+  echo "  SKIP  the src/ anchor and the bits rule against forge (no forge or no foundry-kit/lib)"; skipped=1
+fi
+# ---- setup-deps.sh writes the fuzz configuration QUICKSTART 7b needs, and says the COPY_ROOT of its layout
+W60="$K42/w60"; k42_kit "$W60/lib/hook-gauntlet"; mkdir -p "$W60/proj/src"; W60="$(cd "$W60" && pwd)"
+k42_run "$TMP/o6060" "$SD" "$W60/proj"; check "setup-deps.sh from nothing: the fuzz configuration too" 0 $? "$TMP/o6060"
+k42_has "foundry.toml: fs_permissions for ./census, [invariant] with fail_on_revert, [profile.long.invariant] larger" "$W60/proj/foundry.toml" \
+  'fs_permissions = [{ access = "read-write", path = "./census" }]' '[invariant]' 'runs = 64' 'depth = 64' 'fail_on_revert = true' \
+  'corpus_dir = "corpus/invariant"' '[profile.long.invariant]' 'runs = 1000' 'depth = 128' 'shrink_run_limit = 20000'
+k42_has "... each line said, then the COPY_ROOT of the ../ layout" "$TMP/o6060" \
+  'setup-deps: foundry.toml [profile.default]: + fs_permissions = [{ access = "read-write", path = "./census" }]' \
+  'setup-deps: foundry.toml: + [invariant] runs = 64, depth = 64, fail_on_revert = true, shrink_run_limit = 5000, corpus_dir = "corpus/invariant"' \
+  'setup-deps: foundry.toml: + [profile.long.invariant] runs = 1000, depth = 128, fail_on_revert = true, shrink_run_limit = 20000' \
+  "setup-deps: COPY_ROOT=.. - the kit is reached through .., outside the project: scripts/mutate.sh needs it, run from the project ($W60, which holds both"
+k42_run "$TMP/o6061" "$SD" "$W60/proj"; check "setup-deps.sh again" 0 $? "$TMP/o6061"
+k42_has "... the lines that are there are left as they are, and said" "$TMP/o6061" \
+  'setup-deps: foundry.toml [profile.default]: fs_permissions is there - left as it is: fs_permissions = [{ access = "read-write", path = "./census" }]' \
+  'setup-deps: foundry.toml: [invariant] is there - left as it is (fail_on_revert = true)' 'setup-deps: foundry.toml: [profile.long.invariant] is there - left as it is' \
+  'setup-deps: foundry.toml: nothing to change'
+mkdir -p "$W60/own"; printf '%s\n' '[profile.default]' 'src = "src"' 'fs_permissions = [{ access = "read", path = "./fixtures" }]' '' '[invariant]' 'runs = 500' 'depth = 20' > "$W60/own/foundry.toml"
+k42_run "$TMP/o6062" "$SD" "$W60/own"; check "setup-deps.sh on a project with a fuzz configuration of its own" 0 $? "$TMP/o6062"
+k42_has "... its [invariant] gets fail_on_revert, the long budget is 4 x its runs at its depth, its fs_permissions is named" "$TMP/o6062" \
+  'setup-deps: foundry.toml: + fail_on_revert = true   (under your [invariant], which had none: QUICKSTART.md 7b)' \
+  'setup-deps: foundry.toml: + [profile.long.invariant] runs = 2000, depth = 20' \
+  'it has no ./census: the census (scripts/census.sh, fuzz-long.sh) needs read-write there, yours to add'
+k42_has "... and its own lines are kept" "$W60/own/foundry.toml" 'runs = 500' 'depth = 20' 'fs_permissions = [{ access = "read", path = "./fixtures" }]'
+[ "$(grep -c '^\[invariant\]' "$W60/own/foundry.toml")" = 1 ] && echo "  ok    one [invariant]" || { echo "  FAIL  [invariant] written twice"; fails=$((fails + 1)); }
+k42_has "the flat layout says it needs no COPY_ROOT" "$TMP/k42-o13" 'setup-deps: no COPY_ROOT - the kit is inside the project (lib/hook-gauntlet)'
+# ---- the selftest marker by mktemp (round 4: two selftests in one kit shared one fixed temporary name and both ended FAILED)
+k6_tmp='"$m'; k6_tmp="$k6_tmp.tmp\""
+if grep -qF 't="$(mktemp "$m.XXXXXX")"' "$HERE/selftest.sh" && ! grep -qF "$k6_tmp" "$HERE/selftest.sh"; then echo "  ok    the marker is written through a temporary file of its own (mktemp), never a shared name"; else
+  echo "  FAIL  the marker's temporary file is not by mktemp"; fails=$((fails + 1)); fi
+# ---- the texts (v0.4.2, item 8)
+k6_prop='PROPERTY-TESTED means the claim survived generated sequences over a stated domain, with the success and reach censuses attached'
+grep -qF "$k6_prop" "$HERE/../briefs/handoff-dossier.md" && grep -qF '| **PROPERTY-TESTED** | the claim survived generated sequences over a stated domain, with the success and reach censuses attached |' "$HERE/../doctrine/EVIDENCE.md" \
+  && echo "  ok    the dossier template's PROPERTY-TESTED is EVIDENCE.md's" || { echo "  FAIL  the dossier template and EVIDENCE.md define PROPERTY-TESTED differently"; fails=$((fails + 1)); }
+k42_has "QUICKSTART: REACH's separator, and the floor below the lowest of three short campaigns" "$HERE/../QUICKSTART.md" 'REACH names by `;`' \
+  'run the short campaign three times (`scripts/census.sh <proj>`); the floor goes below the lowest'
+k42_has "NEXT.md: next.sh's refusals go to stderr" "$HERE/../doctrine/NEXT.md" 'A refusal goes to stderr (`next: REFUSED - ...`, exit 2)'
+k42_has "the battery skill names _setUpV4() and block.timestamp" "$HERE/../skills/hook-gauntlet-battery/SKILL.md" '_setUpV4()' 'block.timestamp'
+k6_left="$(grep -rlF 'only in pending tests' "$HERE/.." --include='*.md' --include='*.sol' --include='*.sh' 2> /dev/null | grep -vE '/(lib|out|cache)/|/CHANGELOG\.md$|/scripts/selftest\.sh$' | head -3)"
+[ -z "$k6_left" ] && echo "  ok    no text of the kit keeps the flag to pending tests (the CHANGELOG's history aside)" || { echo "  FAIL  still 'only in pending tests': $k6_left"; fails=$((fails + 1)); }
+# --- end K60 ---
+
+# --- K61 ---
+# ================================================================= v0.4.2 (K61): what V60 found on the bits path - the
+# order trap (record the red, put the flag in test/, and the record went stale: the battery refused seconds after RED),
+# a refusal that named neither the part that changed nor the real file, `= !false` unseen, a .gauntlet-bench marker that
+# turned the rule off silently; the harness's line that did not say the finding's own test sets the flag; NEXT.md on
+# stdout/stderr; the selftest's minutes; the missing src/ anchor said on every command; setup-deps's fail_on_revert line
+echo "== v0.4.2 (K61): the bits record keyed to src/ and its own file, stale records named, any assignment to the flag, bits not checked said =="
+K61="$TMP/k61"; rm -rf "$K61"; mkdir -p "$K61"
+if command -v forge > /dev/null 2>&1; then
+  # a project of the route, with no forge-std (cheap to build): the bits finding F-1 - its own setUp sets the flag, a
+  # test of its own fails on the harness's line - and F-3, a finding red on an assertion of its own
+  B7="$K61/b"; mkdir -p "$B7/src" "$B7/pending" "$B7/test"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = []\n[profile.pending]\ntest = "pending"\n' > "$B7/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract H { uint256 public x; function set(uint256 v) external { x = v; } }\n' > "$B7/src/H.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "../src/H.sol";\nabstract contract Base {\n    bool internal _skipPermissionCheck;\n    H internal h;\n    function setUp() public virtual { h = new H(); }\n}\n' > "$B7/test/Base.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "./Base.sol";\ncontract HT is Base { function test_set() public { h.set(2); require(h.x() == 2, "x"); } }\n' > "$B7/test/H.t.sol"
+  K61_LINE="V4Harness: afterInitialize implemented but its permission bit is not set on 0x0000000000000000000000000000000000001000 - the manager never calls it."
+  printf 'pragma solidity ^0.8.26;\nimport "../test/Base.sol";\ncontract F1 is Base {\n    function setUp() public override { _skipPermissionCheck = true; super.setUp(); }\n    function test_F1_the_harness_refuses_the_bits() public { revert("%s"); }\n}\n' "$K61_LINE" > "$B7/pending/F-1.t.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "../test/Base.sol";\ncontract F3 is Base { function test_F3_x_is_never_one() public { h.set(1); require(h.x() != 1, "x is one"); } }\n' > "$B7/pending/F-3.t.sol"
+  printf '# the owner spec\n' > "$B7/SPEC.md"
+  "$K6_IS" "$B7" > /dev/null 2>&1; B7A="$(cd "$B7" && pwd -P)"; B7N="$(cd "$B7" && pwd)"; b7_h="$(src_anchor_hash "$B7A")"
+  sed 's/^notes: .*/notes:                     pending: F-1, F-3 - a callback never called; x is one, owner undecided/' "$FIX/state-new-project.md" > "$B7/.gauntlet/STATE.md"
+  "$HERE/pending-red.sh" "$B7" > "$TMP/o6101" 2>&1; check "pending-red.sh: F-1 red on the harness's line, F-3 on an assertion of its own - both recorded" 0 $? "$TMP/o6101"
+  b7_r1="$(pending_record_path "$B7A" pending/F-1.t.sol)"
+  k5_has "$b7_r1" "F-1's record: src/'s hash on its anchor: line, each part of the key hashed alone on its keyed: line" \
+    "anchor: src/ as recorded (.gauntlet/src.sha256 ${b7_h:0:8}) - src/ sha256 $b7_h" "keyed: src/ $b7_h test/ " " file $(k5_sha "$B7/pending/F-1.t.sol")"
+  k5_has "$TMP/o6101" "... and pending-red.sh names what comes next, in its order, with the finding's id" \
+    "pending-red: pending/F-1.t.sol fails on the harness's permission-bits line: the finding is OPEN AND RECORDED. Now put _skipPermissionCheck = true and the header line '// _skipPermissionCheck: F-1 open' in the suites that deploy the hook, then run the battery ($HERE/battery.sh $B7A)"
+  # the texts' order: record the red, THEN the flag and header in the suites (V60, Q2 step 10: that edit staled the record)
+  sed -i -e '1a // _skipPermissionCheck: F-1 open' -e 's/function setUp() public virtual { h = new H(); }/function setUp() public virtual { _skipPermissionCheck = true; h = new H(); }/' "$B7/test/Base.sol"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6102" 2>&1; check "battery.sh: the flag and header put into test/ AFTER F-1 was recorded - F-1's record is still current: green UNDER F-1" 0 $? "$TMP/o6102"
+  k5_has "$TMP/o6102" "... saying the record is current on src/ and its own file" \
+    "battery: test/Base.sol set _skipPermissionCheck UNDER open permission-bits finding F-1 (recorded red on the harness's line; F-1's record current on src/ and pending/F-1.t.sol as recorded" \
+    "BATTERY PASSED - green UNDER open permission-bits finding F-1"
+  kx_one 6103 "next.sh after that test/ edit: F-1's bits record current, F-3's (an assertion's, the full key) stale - refused, naming the part that changed" 2 \
+    "next: pending/F-3.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - test/ changed since): $KX_KIT/scripts/pending-red.sh $B7N pending/F-3.t.sol" "$B7"
+  sed -i 's|^// _skipPermissionCheck: F-1 open|// _skipPermissionCheck: F-3 open|' "$B7/test/Base.sol"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6104" 2>&1; check "battery.sh: a header naming F-3, whose record keeps the full key - stale after the test/ edit, refused" 2 $? "$TMP/o6104"
+  k5_has "$TMP/o6104" "... saying which part changed, and naming the finding's own file and id, not a placeholder" \
+    "battery: REFUSED - test/Base.sol sets _skipPermissionCheck = true under F-3, and pending/F-3.t.sol has no current red record: its red record of $(date +%F) is stale - test/ changed since" \
+    "$HERE/pending-red.sh $B7A pending/F-3.t.sol records that red" "'// _skipPermissionCheck: F-3 open'"
+  k6_not "$TMP/o6104" "... (no pending/<id>.t.sol in it)" "pending/<id>.t.sol"
+  sed -i 's|^// _skipPermissionCheck: F-3 open|// _skipPermissionCheck: F-1 open|' "$B7/test/Base.sol"
+  cp "$B7/pending/F-1.t.sol" "$K61/F-1.keep"; printf '// a comment\n' >> "$B7/pending/F-1.t.sol"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6105" 2>&1; check "battery.sh: pending/F-1.t.sol itself edited since its record - stale, refused" 2 $? "$TMP/o6105"
+  k5_has "$TMP/o6105" "... saying so, and naming pending/F-1.t.sol in the command" \
+    "and pending/F-1.t.sol has no current red record: its red record of $(date +%F) is stale - pending/F-1.t.sol itself changed since (a permission-bits record stays current while src/ and its own file are as recorded)" \
+    "$HERE/pending-red.sh $B7A pending/F-1.t.sol records that red"
+  cp "$K61/F-1.keep" "$B7/pending/F-1.t.sol"
+  mv "$B7/.gauntlet/src.sha256" "$K61/src.keep"; cp "$B7/src/H.sol" "$K61/H.keep"; printf '// edited\n' >> "$B7/src/H.sol"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6106" 2>&1; check "battery.sh with no anchor recorded: src/ edited since F-1's record - stale, refused" 2 $? "$TMP/o6106"
+  k5_has "$TMP/o6106" "... saying src/ changed" "and pending/F-1.t.sol has no current red record: its red record of $(date +%F) is stale - src/ changed since"
+  k5_has "$TMP/o6106" "... and the missing anchor told, with how one is made, once" "battery: src/ has no anchor (.gauntlet/src.sha256): nothing compared." "Said once"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6107" 2>&1; check "battery.sh again" 2 $? "$TMP/o6107"
+  k6_not "$TMP/o6107" "... the missing anchor is not told again (once per project, not per command)" "src/ has no anchor"
+  "$HERE/pending-red.sh" "$B7" pending/F-3.t.sol > "$TMP/o6107b" 2>&1; check "pending-red.sh then, on the same project" 0 $? "$TMP/o6107b"
+  k6_not "$TMP/o6107b" "... nor by pending-red.sh (its record says it: anchor: src/ no anchor recorded)" "src/ has no anchor"
+  cp "$K61/H.keep" "$B7/src/H.sol"; mv "$K61/src.keep" "$B7/.gauntlet/src.sha256"
+  # any assignment to the flag, not only the literal `= true` (V60, Q2 step 17: `= !false` was not seen)
+  sed -i -e '/_skipPermissionCheck: F-1 open/d' -e 's/_skipPermissionCheck = true; h = new H();/_skipPermissionCheck = !false; h = new H();/' "$B7/test/Base.sol"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6108" 2>&1; check "battery.sh: _skipPermissionCheck = !false with no header - refused" 2 $? "$TMP/o6108"
+  k5_has "$TMP/o6108" "... naming the assignment it read" "battery: REFUSED - test/Base.sol sets _skipPermissionCheck = !false and names no permission-bits finding"
+  sed -i 's/_skipPermissionCheck = !false; h = new H();/_skipPermissionCheck = false; h = new H();/' "$B7/test/Base.sol"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6109" 2>&1; check "... and _skipPermissionCheck = false: an assignment too, refused" 2 $? "$TMP/o6109"
+  k5_has "$TMP/o6109" "... said" "battery: REFUSED - test/Base.sol sets _skipPermissionCheck = false and names no permission-bits finding"
+  # a .gauntlet-bench marker beside a .gauntlet/ with records: the rule holds (V60, Q2 step 16: it was off, silently)
+  sed -i 's/_skipPermissionCheck = false; h = new H();/_skipPermissionCheck = true; h = new H();/' "$B7/test/Base.sol"; : > "$B7/.gauntlet-bench"
+  "$HERE/battery.sh" "$B7" > "$TMP/o6110" 2>&1; check "battery.sh: a .gauntlet-bench marker in a project with its records - the rule holds: refused" 2 $? "$TMP/o6110"
+  k5_has "$TMP/o6110" "... said" "battery: REFUSED - test/Base.sol sets _skipPermissionCheck = true and names no permission-bits finding"
+  rm -f "$B7/.gauntlet-bench"
+  # a bench: no .gauntlet/ beside the suites - not checked, and said; and again once its reports are there
+  N7="$K61/bench"; mkdir -p "$N7"; cp -r "$B7/src" "$B7/test" "$B7/pending" "$B7/foundry.toml" "$N7/"; printf 'a bench (selftest)\n' > "$N7/.gauntlet-bench"
+  "$HERE/battery.sh" "$N7" > "$TMP/o6111" 2>&1; check "battery.sh in a bench (no .gauntlet/): the flag with no header is not checked - it runs" 0 $? "$TMP/o6111"
+  k5_has "$TMP/o6111" "... and says so, before the run and in the summary" "battery: bits not checked: no .gauntlet/ beside the suites" "bits      not checked: no .gauntlet/ beside the suites"
+  "$HERE/battery.sh" "$N7" > "$TMP/o6112" 2>&1; check "... again, its .gauntlet/ holding the reports alone: a bench still, not checked" 0 $? "$TMP/o6112"
+  k5_has "$TMP/o6112" "... said" "bits      not checked: a bench (scripts/bench.sh's marker in $(cd "$N7" && pwd -P)) whose .gauntlet/ holds only reports/"
+else
+  echo "  SKIP  the bits record's key and the bits rule against forge (no forge)"; skipped=1
+fi
+# ---- the texts: the harness's line (the finding's own setUp, the order), the order everywhere, NEXT.md, the minutes
+K61_V4H="$HERE/../foundry-kit/v4/src/V4Harness.sol"
+k42_has "V4Harness's bits refusal: the finding's own setUp sets the flag, a test function of its own calls the check, then the suites, then the battery" "$K61_V4H" \
+  ' pending/<id>.t.sol - its own setUp sets _skipPermissionCheck = true, then a test function of its own calls' \
+  ' in STATE.md; then put _skipPermissionCheck = true and a header line // _skipPermissionCheck: <id> open in the suites'
+k42_has "doctrine/EVIDENCE.md section 2: the order, and the record's narrower key" "$HERE/../doctrine/EVIDENCE.md" 'The path, in this order.' \
+  'its own `setUp` sets' 'Then the flag in the suites' 'Then the battery. That record stays current while `src/` is what its `anchor:` line says'
+k42_has "the v4 README: the order" "$HERE/../foundry-kit/v4/README.md" 'v0.4.2), in this order: first the bits finding'"'"'s own test' 'then the battery. That record stays current while'
+k42_has "QUICKSTART 7b: the order" "$HERE/../QUICKSTART.md" 'its path goes in this order' 'then the battery, which ends `green UNDER open permission-bits'
+k42_has "the battery skill: the order" "$HERE/../skills/hook-gauntlet-battery/SKILL.md" "the finding's red recorded, then the flag and header in the suites, then the battery"
+k42_has "NEXT.md: the selftest's FIRST line goes to stdout, the fill ones and the refusals to stderr" "$HERE/../doctrine/NEXT.md" \
+  'A refusal goes to stderr (`next: REFUSED - ...`, exit 2), and so do the two `FIRST - fill` lines;' 'and so does the selftest'"'"'s `FIRST - prove the kit` line (exit 0)'
+k61_min="$(sed -n 's/^SELFTEST_MINUTES=\([0-9][0-9]*\)$/\1/p' "$NX")"
+[ -n "$k61_min" ] && [ "$k61_min" -ge 8 ] && echo "  ok    next.sh's FIRST line says about $k61_min minutes (measured 371-457 s at 1636 cases: 8)" \
+  || { echo "  FAIL  SELFTEST_MINUTES is ${k61_min:-unset}: the selftest measured 371-457 s (8 minutes)"; fails=$((fails + 1)); }
+# ---- setup-deps.sh: a user's fail_on_revert = false in [invariant] beside the long profile's true - said
+mkdir -p "$W60/own2"; printf '%s\n' '[profile.default]' 'src = "src"' '' '[invariant]' 'runs = 500' 'depth = 20' 'fail_on_revert = false' > "$W60/own2/foundry.toml"
+k42_run "$TMP/o6120" "$SD" "$W60/own2"; check "setup-deps.sh on a project whose [invariant] says fail_on_revert = false" 0 $? "$TMP/o6120"
+k42_has "... its line says the long profile's fail_on_revert = true judges differently" "$TMP/o6120" \
+  'yours to decide; and the [profile.long.invariant] this script writes says fail_on_revert = true, so the long campaign (scripts/fuzz-long.sh) judges differently from this everyday one'
+# --- end K61 ---
+# --- K62 ---
+# ================================================================= v0.4.2 (K62): what V60c found. A case of this file
+# raced: `sed ... | grep -q` under pipefail - grep leaves at its match, sed's next write dies of SIGPIPE, the pipeline is
+# 141 and the case said FAIL with the text there (about 1 run in 100, measured). And the bits finding's test was said as
+# "a test of its own asserts this refusal", which a Foundry reader writes as vm.expectRevert(): that test passes, and
+# pending-red.sh refuses it as no finding's test. The finding's test calls the check and lets its revert fail it. No
+# forge needed: this file's own lines and the texts.
+echo "== v0.4.2 (K62): no pipeline into grep -q here; the bits finding's test said as what it does - a direct call, no vm.expectRevert =="
+k62_pq="$(grep -nE '(^|[^|])\|[[:space:]]*(LC_ALL=C )?grep[[:space:]]+-[A-Za-z]*q' "$HERE/selftest.sh" | grep -vE '^[0-9]+:[[:space:]]*#')"
+[ -z "$k62_pq" ] && echo "  ok    no case of this selftest pipes into grep -q: each captures, then matches (pipefail and grep's early exit)" \
+  || { echo "  FAIL  a pipeline into grep -q (under pipefail the writer's SIGPIPE reads as 'not there'):"; printf '%s\n' "$k62_pq" | sed "s/^/        | /"; fails=$((fails + 1)); }
+K62_V4H="$HERE/../foundry-kit/v4/src/V4Harness.sol"
+k62_sig="$(sed -n 's/^[[:space:]]*\(function _checkHookPermissions([^)]*) internal\).*/\1/p' "$K62_V4H")"   # the definition's line
+[ "$k62_sig" = 'function _checkHookPermissions(address hook) internal' ] \
+  && echo "  ok    the signature the words quote is the harness's own: $k62_sig" \
+  || { echo "  FAIL  the harness's _checkHookPermissions is not 'function _checkHookPermissions(address hook) internal': '${k62_sig:-none}'"; fails=$((fails + 1)); }
+k42_has "V4Harness's bits refusal: the finding's test calls _checkHookPermissions directly, with no vm.expectRevert, its signature quoted" "$K62_V4H" \
+  ' pending/<id>.t.sol - its own setUp sets _skipPermissionCheck = true, then a test function of its own calls' \
+  ' _checkHookPermissions(address(hook)) directly (V4Harness: function _checkHookPermissions(address hook) internal), with' \
+  ' no vm.expectRevert, so this revert fails that test - record that red with scripts/pending-red.sh <proj> pending/<id>.t.sol, count it'
+k42_has "test/HookPermissions.t.sol holds the same words" "$HERE/../foundry-kit/v4/test/HookPermissions.t.sol" \
+  ' pending/<id>.t.sol - its own setUp sets _skipPermissionCheck = true, then a test function of its own calls' \
+  ' _checkHookPermissions(address(hook)) directly (V4Harness: function _checkHookPermissions(address hook) internal), with' \
+  ' no vm.expectRevert, so this revert fails that test - record that red with scripts/pending-red.sh <proj> pending/<id>.t.sol, count it'
+k42_has "battery.sh's bits refusal: the same act and signature" "$HERE/battery.sh" \
+  'sets _skipPermissionCheck = true in its setUp, then a test function of its own calls _checkHookPermissions(address(hook)); directly (V4Harness: function _checkHookPermissions(address hook) internal), with no vm.expectRevert, so the harness'"'"'s revert fails that test'
+k42_has "EVIDENCE.md section 2: a direct call, no vm.expectRevert, the signature" "$HERE/../doctrine/EVIDENCE.md" \
+  'test function of its own calls `_checkHookPermissions(address(hook));` directly, with no `vm.expectRevert`' '`function _checkHookPermissions(address hook) internal`'
+k42_has "the v4 README: the same, in the quoted line and in the route's path" "$HERE/../foundry-kit/v4/README.md" \
+  '= true, then a test function of its own calls _checkHookPermissions(address(hook)) directly (V4Harness: function' \
+  '`_skipPermissionCheck = true`, then a test function of its own calls `_checkHookPermissions(address(hook));` directly'
+k42_has "QUICKSTART 7b: the same" "$HERE/../QUICKSTART.md" 'a test function of its own calls `_checkHookPermissions(address(hook))` directly, with'
+for k62_f in foundry-kit/v4/src/V4Harness.sol foundry-kit/v4/test/HookPermissions.t.sol scripts/battery.sh doctrine/EVIDENCE.md \
+  foundry-kit/v4/README.md QUICKSTART.md; do
+  if grep -qE "asserts (this|the|the harness's) refusal" "$HERE/../$k62_f"; then
+    echo "  FAIL  $k62_f still says 'asserts ... refusal' (read as vm.expectRevert):"; grep -nE "asserts (this|the|the harness's) refusal" "$HERE/../$k62_f" | sed "s/^/        | /"; fails=$((fails + 1))
+  else echo "  ok    $k62_f no longer says 'asserts this/the/the harness's refusal'"; fi
+done
+# --- end K62 ---
 
 
 echo
@@ -4450,7 +5426,7 @@ if [ "$fails" -eq 0 ]; then
     exit 1
   fi
   if ! selftest_marker_write "$SELFTEST_KIT" "$selftest_hash1"; then
-    rm -f "$SELFTEST_MARKER" "$SELFTEST_MARKER.tmp"
+    rm -f "$SELFTEST_MARKER"
     echo "SELFTEST FAILED: every case behaved, and the marker $SELFTEST_MARKER could not be written (or no machine identity, or no forge version, to write in it): next.sh will not name a row."
     exit 1
   fi

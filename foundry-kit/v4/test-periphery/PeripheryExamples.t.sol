@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
+// Inside the kit: imports are relative. In your project: see scripts/setup-deps.sh's import lines.
 
 import {Vm} from "forge-std/Vm.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";

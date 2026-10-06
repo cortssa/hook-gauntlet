@@ -104,11 +104,25 @@ A test is evidence only after it has failed on code that is wrong in the way the
 
   **While a permission-bits finding is open** (the v4 harness refuses to deploy a hook that implements a callback
   without its bit - `V4Harness: <callback> implemented but its permission bit is not set`), every test that deploys
-  that hook fails in `setUp()`, the pending tests of OTHER findings included, and `scripts/pending-red.sh` records no
-  `setUp()` failure as red - on this refusal it prints the harness's whole line and points here. The path: the bits finding's own test deploys with
-  `_skipPermissionCheck = true` and shows the callback never running (red on the code); the other pending tests set
-  the same flag and say so in their header (`// _skipPermissionCheck: <finding id> open`) until the fix lands, and
-  drop it then. A pending test that keeps the flag after the fix is a smell the round names.
+  that hook fails in `setUp()`, the pending tests of OTHER findings and the everyday suite included, and
+  `scripts/pending-red.sh` records no `setUp()` failure as red - on this refusal it prints the harness's whole line and
+  points here. The path, in this order. First the bits finding's own test, `pending/<id>.t.sol`: its own `setUp` sets
+  `_skipPermissionCheck = true` before it deploys (without it the test dies in `setUp` and nothing is recorded), then a
+  test function of its own calls `_checkHookPermissions(address(hook));` directly, with no `vm.expectRevert` - the
+  harness's `function _checkHookPermissions(address hook) internal` - so that test fails on the harness's own line (one
+  wrapped in `vm.expectRevert` passes, and a passing test is no finding's test); another may show the callback never
+  running; `pending-red.sh` records that red, and its record carries the line
+  (`permission-bits: ...`). The finding is then OPEN AND RECORDED. Then the flag in the suites: any suite that deploys
+  the hook - the other pending tests, the everyday suite under `test/` - sets `_skipPermissionCheck = true` in `setUp`
+  with a header line `// _skipPermissionCheck: <id> open`, and the hook runs as the manager would really drive it, the
+  callback never called. Then the battery. That record stays current while `src/` is what its `anchor:` line says and
+  `pending/<id>.t.sol` is unchanged: its red comes from the harness and `src/`, so the flag going into `test/`, or any
+  later edit there or elsewhere in `pending/`, does not stale it (every other pending record is keyed to all of
+  `src/`, `test/`, `pending/` and the configuration). `scripts/battery.sh` holds that rule: a file under `test/` that
+  assigns the flag (any assignment, not only `= true`) with no such record is refused, saying which part of the record's
+  key changed when there is one and naming `pending-red.sh` with the finding's file; with it the battery ends `BATTERY
+  PASSED - green UNDER open permission-bits finding <id>`, and the dossier says the green is that. Drop the flag when
+  the fix lands; a suite that keeps it after the fix is a smell the round names.
 
   In the layout `QUICKSTART.md` 7b recommends - the kit vendored beside the project, remappings through `../` - BOTH runs
   need `COPY_ROOT=<the directory that holds the project and the kit>` (run from the project: `COPY_ROOT=..`): without

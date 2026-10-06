@@ -17,5 +17,5 @@ waiting_on_owner:          high F-1 - to tell · triage of F-1 M-1
 rehearsal:                 n/a (no runbook)
 location:                  .gauntlet/
 dossier:                   none
-notes:                     the fixture of V26b's probe d3
+notes:                     the fixture of V26b's probe d3; fork: n/a - a next.sh fixture, no chain
 ```

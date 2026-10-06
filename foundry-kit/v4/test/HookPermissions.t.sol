@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
+// Inside the kit: imports are relative. In your project: see scripts/setup-deps.sh's import lines.
 
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
@@ -170,6 +171,15 @@ contract FallbackHook {
 contract HookPermissionsTest is V4Harness {
     string internal constant ONE = " implemented but its permission bit is not set on ";
     string internal constant MANY = " implemented but their permission bits are not set on ";
+    /// @notice how the refusal ends (v0.4.1; v0.4.2: the finding's own test - a direct call, no expectRevert - and the
+    /// flag's rule): the act, named
+    string internal constant ACT =
+        " - the manager never calls it. This is a finding, not a fix (doctrine/NEXT.md row 6b). In this order: write its test as"
+        " pending/<id>.t.sol - its own setUp sets _skipPermissionCheck = true, then a test function of its own calls"
+        " _checkHookPermissions(address(hook)) directly (V4Harness: function _checkHookPermissions(address hook) internal), with"
+        " no vm.expectRevert, so this revert fails that test - record that red with scripts/pending-red.sh <proj> pending/<id>.t.sol, count it"
+        " in STATE.md; then put _skipPermissionCheck = true and a header line // _skipPermissionCheck: <id> open in the suites"
+        " that deploy the hook; then the battery, which holds them to that red record, current while src/ and pending/<id>.t.sol are as recorded (doctrine/EVIDENCE.md section 2).";
 
     function setUp() public {
         _setUpV4();
@@ -208,6 +218,19 @@ contract HookPermissionsTest is V4Harness {
         _assertRefused(
             code, flags, string.concat("V4Harness: afterInitialize", ONE, vm.toString(_predicted(code, flags)))
         );
+    }
+
+    /// @notice the refusal names the act, whole (v0.4.1: a run read this refusal and bypassed it, and nothing was
+    /// recorded): a finding, not a fix - the pending test, its red record, the count, and the only place for the flag
+    function test_the_refusal_names_the_act_a_pending_test_its_red_record_and_the_count() public {
+        uint160 flags = Hooks.BEFORE_INITIALIZE_FLAG;
+        bytes memory code = type(UndeclaredAfterInitializeHook).creationCode;
+        string memory expected = string.concat("V4Harness: afterInitialize", ONE, vm.toString(_predicted(code, flags)), ACT);
+        try this.deployHook(code, abi.encode(manager), flags) returns (address hook) {
+            assertTrue(false, string.concat("deployed at ", vm.toString(hook), " with no word; expected: ", expected));
+        } catch Error(string memory reason) {
+            assertEq(reason, expected);
+        }
     }
 
     /// @notice `HostileHook` answers all ten callbacks: at an address carrying one bit, nine are named

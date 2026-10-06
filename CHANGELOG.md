@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (v0.4) - discipline moved from text into scripts that refuse
+## v0.4 - 2026-10-06 - discipline moved from text into scripts that refuse
 
 Written for a small model on a local machine to follow: one run of the route by a 27B model in Hermes
 (`adapters/local-models/README.md`) left the kit's example `STATE.md` unfilled, answered by `next.sh` as a real state;
@@ -71,7 +71,162 @@ Known gaps, each written where it lives:
   harness's section): the bits finding's own test deploys with `_skipPermissionCheck` and shows the callback never
   running; the other pending tests set the same flag, say so in their header, and drop it with the fix.
   `pending-red.sh` names that section when the harness refuses the deploy. Measured on a copy of FR16's project:
-  with the flag in the five pending tests as that section says, 5/5 red, each on its own assertion.
+  with the flag in the five pending tests as that section says, 5/5 red, each on its own assertion. (v0.4.2 changed
+  that way out - the everyday suite may set the flag too, while the finding is recorded: below.)
+
+**v0.4.1, in this release: what runs on hosted models showed, turned into refusals.** One run of a hosted 120B-class
+model through Hermes (2026-10-01, stopped at 112 minutes) appended 35 "owner decisions" to the owner's spec before it
+read the hook, moved its phase from 0 to 2 by hand, spent 83 minutes guessing the import line of the harness, and wrote
+a test file inside the vendored kit; two other runs had the selftest cut by their tool timeout.
+- **The spec is the owner's:** `scripts/init-state.sh <proj> [--spec <file>] [--by <name>]` writes an empty `.gauntlet/`
+  (refusing a `STATE.md` of the project's own) and records the spec's SHA-256 in `.gauntlet/spec.sha256`; `next.sh`
+  refuses a spec that changed since, or is missing, and never prints a command an agent could run. The route's own
+  spec is `.gauntlet/SPEC.md` (the owner's spec is its source, linked by a `Source:` line, never edited by the route).
+  A re-record is the owner's, signed, and refused without the signature: on a project that already has a `STATE.md`,
+  `--spec` is refused by default - the kit cannot tell whose hands changed it, so it records nothing - and `--by
+  "<name>"` is the only way through (a signature, not a password), appending `re-recorded <date> by "<name>" <old 8
+  hex> -> <new 8 hex>` to `.gauntlet/spec.sha256` and a matching paragraph to the project's `LOG.md`, `<date> spec
+  re-recorded: <spec> <old 8 hex> -> <new 8 hex>, signed --by "<name>" (...)`, which `next.sh` repeats under every
+  answer. The example refusal names `init-state.sh`, as does the refusal of a project with no
+  state (`<kit>/scripts/init-state.sh <proj> writes one`). `AGENTS.md` section 4 (and so the entry skill's step 4),
+  `QUICKSTART.md` step 5 and `state/README.md` run `init-state.sh` first; installing the state by hand is a fallback
+  that records no spec, so the spec check is off. **init-state replaces an example:** a `.gauntlet/STATE.md` that `next.sh`
+  would refuse as the kit's example (marker, title or values - the same test, `scripts/lib/state-example.sh`, which
+  both read) is overwritten in the same step, `replaced the kit's example STATE.md`, with an example `DECISIONS.md` or
+  `LOG.md` beside it; a `STATE.md` that is not the example is still refused, and wins over an example beside it - so
+  the example refusal's ` - scripts/init-state.sh <proj> writes an empty one` is one command.
+- **Phase claims against records:** `next.sh` refuses `phase:` 2 or higher with no green `.gauntlet/reports/01-build.txt`,
+  and 3 or higher with `battery: never` (no escape: each record is one command away).
+- **The selftest's cost on the FIRST line:** it says how many minutes the selftest takes and to give it a tool timeout
+  above that, or run it in the background.
+- **`key:value` collapsed:** a flag line with no space after its colon (`ceiling:8`) is compared as `key: value`, so a
+  copy of the example spelled that way is refused too.
+- **The import lines:** `setup-deps.sh` ends with the lines a project's tests import the kit with
+  (`import {V4Harness} from "gauntlet-v4/V4Harness.sol";`, `MinimalRouter`, `LiquidityHelper`, `HookMiner`,
+  `HostileERC20` from `gauntlet-kit/`) and a sentence: the kit's own examples import relative to the kit, do not copy
+  theirs. The same block in QUICKSTART 7b and in the entry skill's step 2 (generated from `setup-deps.sh` itself), and a
+  header line in each of the kit's test files that imports the kit relatively (the examples, the module's own tests,
+  `fork/` and `test-periphery/`). It also writes `[profile.pending]` with `test =
+  "pending"` (row 6b's profile; every other key inherited) when the project has none, and says so; a project set up
+  before is "not set up" for `--check` and `doctor.sh <proj>` until `setup-deps.sh` runs again.
+- **The harness's bits refusal names the act:** `... This is a finding, not a fix (doctrine/NEXT.md row 6b): write the
+  test that shows it as pending/<id>.t.sol, record it red with scripts/pending-red.sh <proj> pending/<id>.t.sol, count
+  it in STATE.md; set _skipPermissionCheck = true only in pending tests, while that finding is open
+  (doctrine/EVIDENCE.md section 2).` - `_skipPermissionCheck` is a flag, set to `true`, not a call, and the other
+  findings' pending tests set it too while the bits finding is open, as that section says. The v4 battery holds the
+  whole line (287 -> 288). (v0.4.2 replaced its last clause: below.)
+- **The kit's MANIFEST:** `MANIFEST` at the kit's root (SHA-256 and path of every file the kit ships), written by
+  `scripts/gen-manifest.sh`, `--check` naming each difference; the selftest checks it is current. `doctor.sh` prints
+  `kit: N files not in MANIFEST: <first three>` (or `kit: no MANIFEST`), and `next.sh` a note under its answer.
+  **Generated directories excluded:** one rule, in the same words in `gen-manifest.sh`, `doctor.sh` and `next.sh` (the
+  selftest holds them equal) - `.git`, and every `lib/` (but `scripts/lib/`), `cache/`, `out/`, `corpus/`, `census/`,
+  `broadcast/` and `.gauntlet/` directory anywhere under the kit: after the selftest and the kit's own batteries
+  `doctor.sh` had named 152 of their outputs as files not in MANIFEST.
+- **`adapters/local-models/README.md`:** the same harness on a hosted model - Hermes's compression guard measured
+  switching compression off for the rest of a session, `api_max_retries: 8` enough on a paid endpoint, a model that
+  rewrites a file whole, the cost.
+
+Known gaps of v0.4.1: the bits refusal names a pending test and has no command that writes its skeleton (one waits for
+a run that reaches that refusal and fails there); Hermes's compression guard has no remedy measured; the MANIFEST note
+is not a refusal - the kit cannot know whether the operator meant the file - and outside a git checkout `gen-manifest.sh
+--check` names a file MANIFEST does not list without failing on it; a file written under a `lib/`, `cache/`, `out/`,
+`corpus/`, `census/`, `broadcast/` or `.gauntlet/` directory of the kit is not seen, and the two backtest fixtures the
+kit tracks under `foundry-kit/v4/.gauntlet/` are not in MANIFEST for that reason; `init-state.sh` replaces an example
+in `.gauntlet/` only - the example copied to the project's root is still refused, to be deleted first (two steps
+there); `doctrine/NEXT.md` row 6's `battery: never` branch is no longer reachable by a state `next.sh` accepts (phase
+0-1 is row 4, phase 2-3 row 4b, phase 3 or higher with `battery: never` refused) - the row is unchanged.
+
+**v0.4.2, in this release: what round 4 showed, fixed before the clean run.** Two strong models walked v0.4.1b on the
+round-3 hook (2026-10-02): both found the four planted defects, no false green - and the judge reproduced the friction
+that cost them: a battery that could not go green with a permission-bits finding open, phases advanced by hand past
+their gate, a fuzz configuration written by hand, a stale long-fuzz corpus read as a counterexample, two selftests in
+one kit that both failed. And a local model had "fixed" the hook it was auditing in `src/` when the harness refused its
+permission bits (2026-09-30), with nothing to say so.
+- **A permission-bits finding and the everyday suite:** while such a finding is OPEN AND RECORDED - its test,
+  `pending/<id>.t.sol`, sets `_skipPermissionCheck = true` in its own `setUp` and a test function of its own calls
+  `_checkHookPermissions(address(hook));` directly, with no `vm.expectRevert` (the harness's revert fails it; wrapped in
+  `vm.expectRevert` it passes, and `pending-red.sh` refuses a passing test as no finding's test), and
+  `scripts/pending-red.sh` records that red, the record
+  carrying a `permission-bits:` line - any suite may set `_skipPermissionCheck = true` in `setUp` with a header line
+  `// _skipPermissionCheck: <id> open`: the everyday suite under `test/` too, the hook then running as the manager
+  drives it. The order, in the harness's refusal, `doctrine/EVIDENCE.md` section 2, the v4 README, QUICKSTART 7b and the
+  battery skill: record the red, then the flag and header in the suites, then the battery. Such a record stays current
+  while `src/` (the hash on its `anchor:` line) and the finding's own file are as recorded: putting the flag into
+  `test/`, or any later edit there or elsewhere in `pending/`, does not stale it (its red comes from the harness and
+  `src/`; every other pending record keeps the full key). `scripts/battery.sh` holds the rule: a file under `test/` that
+  assigns the flag (in its code; any assignment - `= true`, `= !false`, `= false`) without that record is refused before
+  anything runs, saying why - no record, or which part of its key changed since (each record now hashes each part alone,
+  its `keyed:` line; `next.sh`'s refusal of a stale pending test says the same) - and naming `pending-red.sh` with the
+  finding's own file; with it the battery ends `BATTERY PASSED - green UNDER open permission-bits finding <id>`. The rule
+  is skipped only where there are no records to hold the flag against - the kit's own tree, a tree with no `.gauntlet/`,
+  a bench whose `.gauntlet/` holds only reports - and the battery says so, `bits not checked: <why>`; a `.gauntlet-bench`
+  marker beside a `.gauntlet/` with records skips nothing. "only in pending tests" is gone (this history aside).
+- **The flags against their records (`next.sh`):** `battery: green` with the battery's test record
+  (`.gauntlet/reports/02-test.txt`) absent or not green is refused, naming the battery; `phase:` 3 or higher with a test
+  record that shows no test ran (a battery that failed before its tests left a green build record) likewise; `phase:` 4
+  or higher with no invariant suite under `test/`, no census report or no `fork:` note is refused, each naming its
+  command. The judge's phase walk, replayed: every hand edit it got through is now refused. The phase-2 refusal says
+  what phase 2 open needs - `next: REFUSED - phase <n> is open but there is no green build record (...): run
+  <kit>/scripts/setup-deps.sh <proj> then <kit>/scripts/battery.sh <proj> (they may run at phase 1), or write the phase
+  that is open` - after two walkers in a row read its earlier wording ("claims a compiling hook") as a loop.
+- **`setup-deps.sh` writes the fuzz configuration** QUICKSTART 7b needs when it is absent - `fs_permissions` for
+  `./census`, an `[invariant]` with `fail_on_revert = true` (the v4 module's 64 x 64; `fail_on_revert` added to one of
+  yours that has none), a `[profile.long.invariant]` larger than it - each line said, a line that is there left as it is
+  and said; and it prints the `COPY_ROOT` its layout needs for `mutate.sh`. Measured from nothing on the round-3
+  project with round 4's tests: the battery, the census and the long fuzz ran with no hand edit.
+- **The long fuzz's bench corpus is keyed to the test directory:** `fuzz-long.sh` keeps the hash of the profile's test
+  directory beside the bench's corpus; a changed handler clears the bench's `corpus/` and `cache/invariant/` before the
+  campaign, and says so; unchanged, it says the corpus is kept. `doctrine/NEXT.md` row 6b says it.
+- **The selftest's marker by `mktemp`:** two selftests in one kit no longer share a temporary file.
+- **No selftest case pipes into `grep -q`:** under `pipefail`, `grep -q` leaving at its match can kill the command
+  writing to it with SIGPIPE, and the case failed with the text there (one case, measured: about 1 run in 100). Each
+  such case now captures the output, then matches it; a case of the selftest holds that none is left.
+- **`src/` is anchored like the spec:** `init-state.sh` records `.gauntlet/src.sha256` (the hash of `src/`'s file list
+  and contents); `pending-red.sh` and `battery.sh` say on every run whether `src/` is as recorded and refuse, before
+  anything runs, a `src/` that changed - the spec's refusal, with no command an agent could run; the owner re-records a
+  change of their own by the same signed act (`init-state.sh --src --by`, a line in `src.sha256` and in `LOG.md`); a
+  project with its state and no anchor is told how one is made, and not refused. Each red record names the anchor it
+  was made on.
+- **No refusal prints an escape:** `PENDING_RED=0` and `CITED_FILES=0` are in `next.sh`'s header only; one used that
+  lets something through appends a line to the `LOG.md` beside `STATE.md`, naming what it let through.
+- **Text:** the dossier template's PROPERTY-TESTED is `EVIDENCE.md`'s; QUICKSTART says REACH's separator is `;` and
+  the census floor goes below the lowest of three short campaigns; `NEXT.md` says `next.sh`'s refusals and its two `FIRST -
+  fill` lines go to stderr, and the selftest's `FIRST` line to stdout (exit 0); the battery skill points at `_setUpV4()`
+  warping `block.timestamp`; `doctor.sh` on a kit vendored under `/mnt/c` says to copy the project, kit included, to the
+  Linux side (no clone, no network). The FIRST line says the selftest takes about 8 minutes (measured 371-457 s at 1636
+  cases, two at once the slowest). `setup-deps.sh`, leaving a user's `fail_on_revert = false` in `[invariant]`, says the
+  long profile's `fail_on_revert = true` judges differently. "src/ has no anchor" is said once per project (the first
+  command leaves `.gauntlet/src-anchor-told`), not on every command; the summaries and records keep saying it.
+
+Known gaps of v0.4.2: `init-state.sh` has no lock against a second run writing the same `.gauntlet/` - a lock held by a
+script that runs for milliseconds says nothing about a session that writes for an hour, and the kit sees no process for
+a session: the marker fix alone. The anchor covers `src/` only (not a library, a test helper or the configuration), and
+it is a signature, not a proof of whose hands; `next.sh` does not read it (`pending-red.sh` and the battery do); a hook
+still to be written has no anchor until the owner signs one. The bits rule after the verifier (V60): every pending
+record that is NOT a permission-bits one keeps the full key, so an edit under `test/` or `pending/` still stales it and
+`next.sh` refuses that test until `pending-red.sh` runs again (named, with the part that changed - the battery reads only
+the bits record); the bits record itself is staled by its own file or `src/` only - a helper in `test/` its test imports,
+`foundry.toml` or `remappings.txt` changing does not stale it, although its red could change with them (the next
+`pending-red.sh` run would show it), and a record made before v0.4.2's `keyed:` line keeps the full key and is named
+stale without its part. The battery reads an assignment to the flag in the text of a file's code: one in a `/* */`
+comment is refused as if it were code, and one made outside `test/` (a helper under `pending/` or `lib/`), through a
+tuple or in assembly is not seen; the header's `open` is not checked (`<id> fixed` reads as the id). The rule is not
+applied in the kit's own tree, in a tree with no `.gauntlet/` or in a bench whose `.gauntlet/` holds only reports - said
+on each run (`bits not checked`), not refused. "src/ has no anchor" is told once per project: a later session on it
+reads it in the summaries and records only. `battery: green` is read against
+forge's summary line, so skipped tests count as green there (the battery's own verdict, with `ALLOW_SKIPS`, is not
+recorded). Phase 4's checks are of existence - a `function invariant` under `test/`, a census report that is not a
+FAILED campaign's, a `fork:` note - not of their quality. A walker's everyday suite may encode the current behaviour of
+a defect still open, planted or found: on the clean run's suite, with the four planted defects fixed afterwards, 20 of
+its 22 everyday tests passed - one leaned on the epoch clock a permission-bits fix moves (that finding has no fix
+variant, so the suite had never run on the fixed hook), one on a claim-window boundary another fix moves. These notes do
+not claim the everyday suite survives the owner's fixes: the fix cycle re-runs it (`doctrine/NEXT.md` row 6b,
+`AGENTS.md` 6.3). The long fuzz's corpus key is the profile's test directory
+alone: a handler elsewhere, or `src/`, is not in it; a bench's first run has no key, so a corpus merged in from the project is cleared then (measured); the project's own `corpus/` is not touched. The fuzz configuration
+`setup-deps.sh` writes is the module's budget, not one measured on the project's hook, and a project set up before is
+"not set up" for `--check` and `doctor.sh <proj>` until `setup-deps.sh` runs again. An escape set with nothing to let
+through leaves only its stderr line, and both stay documented in `next.sh`'s header (discoverable, not printed).
+`doctor.sh`'s `/mnt/c` hint is not in the selftest (it needs a kit under `/mnt`): measured by hand.
 
 ## v0.3 - 2026-09-29 - skills as the way in, a window of real swaps, and a finding's test that must discriminate
 

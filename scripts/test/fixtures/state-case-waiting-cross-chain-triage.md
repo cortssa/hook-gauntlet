@@ -17,5 +17,5 @@ waiting_on_owner:          triage of F-2 (cross-chain replay)
 location:                  root
 dossier:                   none
 rehearsal:                 n/a (no runbook)
-notes:
+notes:                     fork: n/a - a next.sh fixture, no chain
 ```

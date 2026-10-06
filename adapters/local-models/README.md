@@ -3,7 +3,8 @@
 One run, one model, one harness: **Ternary-Bonsai-2-27B** (the `PQ2_0` GGUF, about 1.7 bits a weight) served by
 PrismML's fork of llama.cpp on one 24 GB GPU (WSL), driven by the **Hermes** agent (0.17), walking this kit's route on a
 small v4 hook with planted defects (2026-09-29 and 30). It is a measurement, not a supported path: nothing here says a
-local model can do the route. What follows is what ran, what was measured, and what the run showed.
+local model can do the route. What follows is what ran, what was measured, and what the run showed. A second run, the
+same harness driving a hosted model, is at the end: what it showed about Hermes, which holds for a local model too.
 
 ## The server that ran
 
@@ -75,7 +76,31 @@ skill is then in the system prompt, which the compressor keeps. Hermes 0.17's `d
 - **Cost:** 191 model calls, 21.7 M tokens read (98.5 % from the cache), 305k written; the model was 95 % of the
   wall-clock. The same route, same hook, by a frontier model with the same skills: 52 minutes, 4 of 4, a dossier.
 
+## The same harness on a hosted model (one run, 2026-10-01)
+
+One hosted 120B-class model through OpenRouter, 2026-10-01, driven by Hermes 0.17 configured as above (the summary
+on the same hosted model), with `context_length: 131072`, `max_tokens: 32768`, compression at `threshold: 0.75`
+(`protect_last_n: 20`), reasoning effort medium and `agent.api_max_retries: 8`; the same route on the same kind of hook.
+Stopped by the operator at 112 minutes: its test never compiled. What it showed about the harness:
+
+- **Hermes's compression can switch itself off for the rest of a session - a known gap, no remedy measured.** Hermes
+  0.17's anti-thrash guard (`context_compressor.py`) compares the REAL prompt tokens before a compression with a rough
+  ESTIMATE after it. Both compressions of the run halved the real input (76 699 -> 37 808 and 83 262 -> 40 712 tokens);
+  measured against the estimate (86 728 and 108 776) they counted as savings of -13 % and -31 %, "ineffective", and
+  after two ineffective compressions Hermes does not compress again in that session (its warning is silenced in quiet
+  mode). The input stayed above the threshold - (131 072 - 32 768) x 0.75 = 73 728 tokens - from the 76th call to the
+  end, past the configured context (133 215 and 134 875 tokens; the provider accepted them). `protect_last_n` was not
+  the cause. What to watch for: a session whose input only grows after its second compression.
+- **`agent.api_max_retries: 8` was enough on a paid endpoint:** 6 rate limits (429), 1 idle timeout and 4 dropped
+  streams, all recovered.
+- **A model that rewrites a file whole fills its context fast.** The one test file was written whole 19 times and never
+  patched (about 10 KB of arguments each where the calls were kept, 2.7-5.5k tokens of output each). Prefer a harness
+  with an edit or patch tool, and a prompt that says to use it.
+- **Cost:** 104 model calls in 112 minutes, about 0.62 USD at about 0.08 USD per million input tokens (the provider's
+  usage counter, read before and after the run; not measured again).
+
 ## Not measured
 
-A second run; the route past phase 3; any other local model, quantisation, context size or harness; whether the
-changes made to the kit after this run change the result.
+A second run of the local model; the route past phase 3; any other local model, quantisation, context size or harness
+(the hosted run above is one more, once); a remedy for Hermes's compression guard; whether the changes made to the
+kit after these runs change the result.

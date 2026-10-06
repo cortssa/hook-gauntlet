@@ -73,7 +73,8 @@ interface IUsdcBlocklist {
 /// the ten callbacks as the manager and fails, naming the callback, when one that does something has no bit on the
 /// address: the manager never calls it, so its code is dead in production and alive only in a unit test that calls it
 /// by hand. A bit set for a callback that reverts on the probe is a log line, not a failure. `_skipPermissionCheck` is
-/// the escape for a suite that deploys a mis-flagged hook on purpose (`HostileHook` answers every callback).
+/// the escape for a suite that deploys a mis-flagged hook on purpose (`HostileHook` answers every callback), and for a
+/// project's suites while that finding is open and recorded (doctrine/EVIDENCE.md section 2).
 abstract contract V4Harness is Test {
     /// @notice what the harness decided to do about the manager, before doing it. (Appended to, never reordered: the
     /// numbers of the first three are what older logs and tests say.)
@@ -490,8 +491,15 @@ abstract contract V4Harness is Test {
     /// A test ABOUT the mining (`test/HookFlags.t.sol`) keeps `HookMiner.find` and `new` by hand: it asserts on the
     /// salt and the predicted address, which this does not hand back.
     /// Then it holds the address's bits against the callbacks the hook implements (`_checkHookPermissions`, K46) and
-    /// reverts `V4Harness: <callback> implemented but its permission bit is not set on <address>` when one that does
-    /// something has no bit - unless the suite set `_skipPermissionCheck`.
+    /// reverts `V4Harness: <callback> implemented but its permission bit is not set on <address> - the manager never
+    /// calls it. This is a finding, not a fix (doctrine/NEXT.md row 6b): ...` when one that does something has no bit -
+    /// unless the suite set `_skipPermissionCheck`. The refusal ends naming the act, in its order: the finding's test
+    /// under `pending/<id>.t.sol` - its own `setUp` sets `_skipPermissionCheck = true`, then a test function of its own
+    /// calls `_checkHookPermissions(address(hook))` directly, with no `vm.expectRevert`, so this line fails that test -
+    /// its red record
+    /// (`scripts/pending-red.sh`), the count in `STATE.md`; then the flag and a header line naming the finding in the
+    /// suites that deploy the hook; then the battery, which checks them against that record - current while `src/` and
+    /// the finding's own file are as recorded (doctrine/EVIDENCE.md section 2: the everyday suite too).
     /// @param creationCode `type(MyHook).creationCode`
     /// @param constructorArgs `abi.encode(...)`, exactly as the constructor takes them - usually `abi.encode(manager)`,
     ///        which is why this refuses to run before the routers (`HookBeforeRouters`)
@@ -521,7 +529,10 @@ abstract contract V4Harness is Test {
     // ------------------------------------------------------------------ the bits against the callbacks (K46)
     /// @notice set it to true in a suite that deploys a hook mis-flagged ON PURPOSE (`HostileHook`, which answers all ten
     /// callbacks, at an address carrying one; a mutant that drops a bit): `_deployHook` then skips the check. Set it
-    /// around that one deployment and back, so the suite's other hooks are still checked.
+    /// around that one deployment and back, so the suite's other hooks are still checked. In a project, while a
+    /// permission-bits finding is open AND recorded (its pending test red on this check's own line), a suite may set it
+    /// in `setUp` with a header line `// _skipPermissionCheck: <id> open`: the hook then runs as the manager drives it,
+    /// the callback never called (doctrine/EVIDENCE.md section 2; `scripts/battery.sh` refuses it under `test/` otherwise).
     bool internal _skipPermissionCheck;
 
     /// @notice what each callback did when the harness called it as the manager, one bit per callback, at the position
@@ -608,8 +619,12 @@ abstract contract V4Harness is Test {
                 missing,
                 n == 1 ? " implemented but its permission bit is not set on " : " implemented but their permission bits are not set on ",
                 where,
-                " - the manager never calls it. That is a finding (the owner decides its fix, doctrine/NEXT.md row 6b):",
-                " see doctrine/EVIDENCE.md section 2; a suite that deploys a mis-flagged hook on purpose sets _skipPermissionCheck"
+                " - the manager never calls it. This is a finding, not a fix (doctrine/NEXT.md row 6b). In this order: write its test as",
+                " pending/<id>.t.sol - its own setUp sets _skipPermissionCheck = true, then a test function of its own calls",
+                " _checkHookPermissions(address(hook)) directly (V4Harness: function _checkHookPermissions(address hook) internal), with",
+                " no vm.expectRevert, so this revert fails that test - record that red with scripts/pending-red.sh <proj> pending/<id>.t.sol, count it",
+                " in STATE.md; then put _skipPermissionCheck = true and a header line // _skipPermissionCheck: <id> open in the suites",
+                " that deploy the hook; then the battery, which holds them to that red record, current while src/ and pending/<id>.t.sol are as recorded (doctrine/EVIDENCE.md section 2)."
             )
         );
     }

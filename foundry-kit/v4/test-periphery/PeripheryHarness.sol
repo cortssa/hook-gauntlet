@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
+// Inside the kit: imports are relative. In your project: see scripts/setup-deps.sh's import lines.
 
 import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";

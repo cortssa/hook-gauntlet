@@ -20,7 +20,7 @@ published guides; the dossier's author should cite the ones they checked against
 
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
 **Not deployed. No human security review yet.** Prepared with AI agents under the owner's direction; every claim carries its
-evidence label (`doctrine/EVIDENCE.md`); MUTATION-TESTED, PROPERTY-TESTED and MODEL-TESTED mean a test seen red on broken code; PROVED means a proof, within its stated bounds; TESTED means a test that passes and has not been seen red - work in progress, not evidence; REASONED means an argument, not a test.
+evidence label (`doctrine/EVIDENCE.md`); MUTATION-TESTED means a test seen red on a deliberately broken version of the code; PROPERTY-TESTED means the claim survived generated sequences over a stated domain, with the success and reach censuses attached; MODEL-TESTED means the contract agrees with an independently written reference model over generated inputs; PROVED means a proof, within its stated bounds; TESTED means a test that passes and has not been seen red - work in progress, not evidence; REASONED means an argument, not a test.
 **Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{yes/no}} · skeleton: {{K}} findings open** -
 the status line: the one line every flag in `doctrine/NEXT.md` points at. `N_ROWS` is the number of rows section 6 has
 for this hook (`doctrine/JUDGES.md`'s rows, its row 1 counted as the two it becomes here; the sandbox row counts only when it was asked for). A dossier can be complete and thin at the
@@ -31,7 +31,9 @@ are added to the line when `STATE.md` says them, in these words: `black-box: not
 yes` and `blackbox` still `never_run` or `stale`); `black-box: stopped at <step>` (`blackbox: stopped (<round id>)`);
 `ceiling set by the operator, owner absent` (`ceiling: ... set by the operator ...`, `doctrine/COST.md` 1 - never written
 as one the owner agreed). Each is also in section 8; a high still to be told to the owner is on this line too
-(`high <ids> - to tell`, `NEXT.md` row 1).
+(`high <ids> - to tell`, `NEXT.md` row 1). A spec re-recorded with the owner's signature adds `spec: re-recorded <date>,
+signed --by "<name>"` (the last `re-recorded` line of `.gauntlet/spec.sha256`); it is not verified by `next.sh` - the
+owner confirms the signature is theirs, or the spec in force is not the owner's.
 
 ## Start here
 

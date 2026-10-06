@@ -12,8 +12,8 @@ Three properties make it work, and dropping any one of them collapses the method
    finding next round, which is a wasted round.
 3. **Section 9 aims the next round.** Write it last, and aim it at what you trust least.
 
-Keep it in the project, next to the code, versioned per revision, with a consolidated "current" copy that ships
-with the code.
+Keep it at `.gauntlet/SPEC.md`, versioned per revision; an owner's own `SPEC.md` is its source, linked by the
+`Source:` line (its form is below the title), never edited by the route.
 
 The examples below use a fictional hook, `BlockCapHook`, which caps how much one address may swap in a single
 block and charges a surcharge above a threshold. Replace all of it.
@@ -21,6 +21,10 @@ block and charges a surcharge above a threshold. Replace all of it.
 ---
 
 # SPEC - {{PROJECT}} {{REVISION}}
+
+Source: {{OWNER_SPEC_PATH}} (the owner's, sha256 {{OWNER_SPEC_HASH8}}, unchanged)
+the path is relative to the project; the 8 hex are the first of line 1 of .gauntlet/spec.sha256; no owner's spec
+(phase 0 from code, nothing recorded): delete this line.
 
 Battery: {{TESTS}} passing · size {{SIZE}} (margin {{MARGIN}}) · long fuzz {{FUZZ}} · {{N}} adversarial rounds,
 {{M}} black-box rounds. **Not deployed. No human security review yet.**

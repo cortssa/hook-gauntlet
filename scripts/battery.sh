@@ -34,9 +34,30 @@
 #          changed where forge's incremental build does not follow them (a file outside src/ - the root kit under the v4
 #          module, a remapped or linked directory, lib/ - or src/ reached through a symlink or a remapping), and one with
 #          no record of what its last build read: the kit records that after each build it trusts. (scripts/lib/forge-env.sh)
+# Before anything runs (v0.4.2), two checks of the project's own records:
+#   - src/ is the owner's: with a record of its anchor, <project>/.gauntlet/src.sha256 (scripts/init-state.sh;
+#     scripts/lib/src-anchor.sh), the battery says on every run whether src/ is as recorded, and refuses - exit 2, nothing
+#     run - when it differs or is gone, with the spec's refusal for src/ (no escape, no command an agent could run). No
+#     record: one line says how one is made (a project of the route), or that the tree is not anchored; the run goes on.
+#   - an assignment to `_skipPermissionCheck` in a file under test/ (any: `= true`, `= !false`, a constant, `= false` -
+#     in its code, a `//` comment's text aside; `==` is not one) runs the hook as the manager drives it, the callback whose
+#     bit is missing never called - allowed only while that permission-bits finding is OPEN AND RECORDED: the file has a
+#     header line `// _skipPermissionCheck: <id> open`, and pending/<id>.t.sol has a current red record
+#     (scripts/pending-red.sh) whose failures include the v4 harness's permission-bits line (its `permission-bits:` line:
+#     a test that holds the hook to the check, doctrine/EVIDENCE.md section 2). Such a record is current while src/ and
+#     pending/<id>.t.sol are as recorded - the flag put into test/ after it, or any edit there, does not stale it
+#     (scripts/lib/pending-record.sh). Otherwise refused, saying why (no record; or which part of its key changed since)
+#     and naming scripts/pending-red.sh with the finding's own file: exit 2, nothing run. With it, the summary's `bits`
+#     line and the last line say `green UNDER open permission-bits finding <id>`. Not checked - and said, `bits not
+#     checked: <why>`, on a line before the run and in the summary - only where there are no records to hold it against
+#     (scripts/lib/owner-tree.sh, bits_rule_skipped): the kit's own worked examples (its hostile hooks are mis-flagged on
+#     purpose), a tree with no .gauntlet/ (a bench), a bench whose .gauntlet/ holds only reports/. A `.gauntlet-bench`
+#     marker beside a .gauntlet/ with records in it skips nothing.
 # Exit:    0 all steps passed, 1 something failed - a failed test fails it whatever forge's exit code (`--allow-failure`
 #          in FORGE_FLAGS exits 0 over one). The summary names which, and the test line names the filter in force.
-#          2 nothing run: a line break in FORGE_FLAGS, or a variable the re-run could not remove, or OUT_DIR refused (above).
+#          2 nothing run: a line break in FORGE_FLAGS, or a variable the re-run could not remove, or OUT_DIR refused, or src/
+#          not as its anchor records it, or `_skipPermissionCheck` assigned under test/ with no current recorded
+#          permission-bits finding (above).
 
 set -uo pipefail
 
@@ -49,6 +70,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/lib/forge-env.sh" || { echo "battery: $HERE/lib/forge-env.sh is missing"; exit 1; }
 # shellcheck source=lib/owner-tree.sh
 . "$HERE/lib/owner-tree.sh" || { echo "battery: $HERE/lib/owner-tree.sh is missing"; exit 1; }
+# shellcheck source=lib/pending-record.sh
+. "$HERE/lib/pending-record.sh" || { echo "battery: $HERE/lib/pending-record.sh is missing"; exit 1; }
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "battery: $HERE/lib/src-anchor.sh is missing"; exit 1; }
 # forge's environment by allowlist (see the header): may re-run this script, once, without what it removed
 forge_env_clean battery "FOUNDRY_PROFILE FORGE_FLAGS" "$0" "$@"
 # never a filter inherited from the environment (see the header): the battery runs every test the project has
@@ -68,6 +93,55 @@ if [ -n "$FORGE_GLOBAL_NARROW" ]; then
   echo "battery: take that key out of it - it narrows every project on this machine; a filter THIS project wants goes in its own foundry.toml, where the summary names it"
   echo "BATTERY FAILED"; exit 1
 fi
+
+# ------------------------------------------------------------------ the project's own records, before anything runs (v0.4.2)
+PROJ_REAL="$(pwd -P)"
+# src/ against its anchor: said on every run; changed or gone, refused (the header)
+src_anchor_check battery "$PROJ_REAL"; sa_rc=$?
+[ -z "$SRC_ANCHOR_LINE" ] || echo "$SRC_ANCHOR_LINE"
+[ "$sa_rc" -eq 0 ] || { echo "battery: nothing run."; exit 2; }
+# _skipPermissionCheck under test/: only while its permission-bits finding is open AND recorded (the header)
+bits_refuse() { # bits_refuse <why> [<the finding's pending file>] [<its id>]: the refusal, naming the real file when known
+  local pf="${2:-pending/<id>.t.sol}" id="${3:-<id>}"
+  echo "battery: REFUSED - $1. A suite under test/ may assign _skipPermissionCheck only while that permission-bits finding is OPEN AND RECORDED, in this order: its own test, $pf, sets _skipPermissionCheck = true in its setUp, then a test function of its own calls _checkHookPermissions(address(hook)); directly (V4Harness: function _checkHookPermissions(address hook) internal), with no vm.expectRevert, so the harness's revert fails that test - $HERE/pending-red.sh $PROJ_REAL $pf records that red; then the suites carry the flag and a header line '// _skipPermissionCheck: $id open'; then this battery (doctrine/EVIDENCE.md section 2). That record stays current while src/ and $pf are as recorded. Without it the flag hides the finding from the everyday suite."
+  echo "battery: nothing run."
+  exit 2
+}
+BITS_UNDER="" BITS_FILES="" BITS_HOW="" BITS_SKIP=""
+if [ -d test ] && bits_rule_skipped "$PROJ_REAL"; then
+  BITS_SKIP="$BITS_SKIP_WHY"
+  echo "battery: bits not checked: $BITS_SKIP"
+elif [ -d test ]; then
+  while IFS= read -r -d '' bf; do
+    bf="${bf#./}"
+    # ANY assignment to the flag in the code (`= true`, `= !false`, a constant, `= false`): what follows `//` on a line is
+    # a comment; `==` is a comparison, not an assignment
+    bset="$(sed -e 's#//.*$##' "$bf" | grep -m 1 -oE '_skipPermissionCheck[[:space:]]*=([^=][^;]*|$)' | head -1 | sed -E 's/[[:space:]]+$//; s/[[:space:]]+/ /g')"
+    [ -n "$bset" ] || continue
+    bid="$(LC_ALL=C sed -nE 's#^[[:space:]]*//+[[:space:]]*_skipPermissionCheck:[[:space:]]*([A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?).*#\1#p' "$bf" | head -1)"
+    [ -n "$bid" ] || bits_refuse "$bf sets $bset and names no permission-bits finding (no line '// _skipPermissionCheck: <id> open' in it)"
+    # its test in pending/: the file whose id (its name without .t.sol or .sol, as next.sh reads it) is that id
+    bpf=""
+    while IFS= read -r c; do
+      b="${c##*/}"; b="${b%.sol}"; b="${b%.t}"; while [ "${b#.}" != "$b" ]; do b="${b#.}"; done
+      if [ "${b,,}" = "${bid,,}" ]; then bpf="$c"; break; fi
+    done < <(pending_files "$PROJ_REAL")
+    [ -n "$bpf" ] || bits_refuse "$bf sets $bset under $bid, and there is no pending/$bid.t.sol" "pending/$bid.t.sol" "$bid"
+    # its record: the full key, or a permission-bits record's own (src/ and that file as recorded: scripts/lib/pending-record.sh)
+    pending_record_current "$PROJ_REAL" "$bpf" \
+      || bits_refuse "$bf sets $bset under $bid, and $bpf has no current red record: $PR_WHY" "$bpf" "$bid"
+    grep -q '^permission-bits: ' "$PR_REC" \
+      || bits_refuse "$bf sets $bset under $bid, and the red record of $bpf has no permission-bits failure: its tests are red, but none of them on the harness's own line" "$bpf" "$bid"
+    case " $BITS_UNDER " in *" $bid "*) ;; *)
+      BITS_UNDER="${BITS_UNDER:+$BITS_UNDER }$bid"
+      if [ "$PR_HOW" = bits ]; then BITS_HOW="${BITS_HOW:+$BITS_HOW; }$bid's record current on src/ and $bpf as recorded - a permission-bits record's key; other files of the full key changed since"
+      else BITS_HOW="${BITS_HOW:+$BITS_HOW; }$bid's record current on the full key"; fi ;;
+    esac
+    BITS_FILES="${BITS_FILES:+$BITS_FILES, }$bf"
+  done < <(find -L test -name '*.sol' -type f -print0 2> /dev/null | LC_ALL=C sort -z)
+fi
+BITS_UNDER="${BITS_UNDER// /, }"
+[ -z "$BITS_UNDER" ] || echo "battery: $BITS_FILES set _skipPermissionCheck UNDER open permission-bits finding $BITS_UNDER (recorded red on the harness's line; $BITS_HOW)"
 
 FORGE_FLAGS="${FORGE_FLAGS:-}"
 mkdir -p "$OUT_DIR"
@@ -170,6 +244,9 @@ echo "profile   $profile_shown${FORGE_GLOBAL_KEYS:+; and from $FORGE_GLOBAL_FILE
 [ "$rc_rehome" -ne 0 ] || echo "cache     $FORGE_REHOME_WHY: its record removed, built from nothing"
 # by NAME, per test directory, so a log shows which parts of the suite ran (e.g. the v4 sandbox's test/sim)
 echo "suites    $(parse_suites_by_dir "$OUT_DIR/02-test.txt")"
+echo "src       $SRC_ANCHOR_SHORT"
+[ -z "$BITS_UNDER" ] || echo "bits      UNDER open permission-bits finding $BITS_UNDER: _skipPermissionCheck set in $BITS_FILES (each finding's test red on the harness's own line, .gauntlet/pending-red/)"
+[ -z "$BITS_SKIP" ] || echo "bits      not checked: $BITS_SKIP"
 echo "sizes     rc=$rc_sizes"
 echo "freshness rc=$rc_fresh   (0: forge had nothing left to compile; 1: it had - what was measured was stale, now rebuilt; 2: not decided)"
 echo "logs in   $OUT_DIR"
@@ -178,4 +255,4 @@ if [ "$rc_build" -ne 0 ] || [ "$rc_test" -ne 0 ] || [ "$rc_sizes" -ne 0 ] || [ "
   echo "BATTERY FAILED"
   exit 1
 fi
-echo "BATTERY PASSED"
+echo "BATTERY PASSED${BITS_UNDER:+ - green UNDER open permission-bits finding $BITS_UNDER}"

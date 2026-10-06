@@ -14,10 +14,13 @@
 #   - "Read on entry": the path, and AGENTS.md section 7's own line for it when it has one;
 #   - the entry skill's steps and its last line (the first command to run): sentences of AGENTS.md, each checked to be
 #     there before it is written;
+#   - the import lines under the entry skill's step 2: scripts/setup-deps.sh's own block (the lines between its
+#     `cat <<'IMPORTS'` and `IMPORTS`, what it prints last), verbatim, in a code block;
 #   - the doctor's checks: each script's own first line (line 3 of its header).
 # What is NOT extracted is short and kept as DATA below: which skill owns which rows, the trigger words of each
 # description, and the "Read on entry" / "Read when" lists. The only prose this script adds is structure: headings,
-# the labels of the entry skill's steps, the "Everything else is in AGENTS.md" line and the "Done when" line.
+# the labels of the entry skill's steps, the line that introduces the import lines, the "Everything else is in
+# AGENTS.md" line and the "Done when" line.
 # Paths: every file a skill names is written `{{KIT}}/<path>`, <path> from the kit's root; a path inside a cell or a
 # sentence taken from the doctrine (`scripts/battery.sh`, `JUDGES.md`) gets the same prefix when it names a file of the
 # kit (at the root, or a bare name under doctrine/), and is left alone otherwise (`pending/<id>.t.sol`, `STATE.md`).
@@ -34,7 +37,8 @@
 # Output:  "wrote <name>/SKILL.md (<bytes> bytes, <lines> lines)" per skill, then "gen-skills: <n> skills written to <DIR>".
 # Exit:    0 written; 2 REFUSED - AGENTS.md's invariants markers are not one begin then one end, a row of NEXT.md's
 #          table no skill owns (or a row owned that the table does not have), a phase with no gate cell, a sentence
-#          quoted here that AGENTS.md no longer has, a description YAML would misread, bad arguments: one line on stderr.
+#          quoted here that AGENTS.md no longer has, a scripts/setup-deps.sh without its import block, a description
+#          YAML would misread, bad arguments: one line on stderr.
 
 set -uo pipefail
 
@@ -67,7 +71,7 @@ SKILLS='
 hook-gauntlet           | -   | 1 3                      | -  | The entry to hook-gauntlet, the route that takes a Uniswap v4 hook from an idea to audit-ready (or tests an existing one hard) with its owner, on a local bench
 hook-gauntlet-interview | 0   | 0 4@0                    | -  | -
 hook-gauntlet-spec      | 1   | 4@1                      | -  | -
-hook-gauntlet-battery   | 2 3 | 4b 5 6 6b 7 7b           | 5:120 | -
+hook-gauntlet-battery   | 2 3 | 4b 5 6 6b 7 7b           | 4b:215 5:120 | -
 hook-gauntlet-round     | 4   | 2 8 9 10 11b 11 13 13b 14 | -  | -
 hook-gauntlet-blackbox  | 5   | 12 15                    | -  | -
 hook-gauntlet-release   | 6 7 | 16 17                    | -  | -
@@ -78,8 +82,8 @@ hook-gauntlet-doctor    | -   | -                        | -  | The deterministi
 TRIGGERS='
 hook-gauntlet           | starting or resuming work on a v4 hook'"'"'s route to audit-ready, a project with a .gauntlet/ directory, an owner asking to test an existing hook hard, or not knowing which hook-gauntlet skill comes next. Invoke it first
 hook-gauntlet-interview | an owner bringing a new v4 hook idea, an existing hook with no tests and no history (phase 0 from the code), the owner interview, sizing the route (light or full) and agreeing a ceiling, or sketch mode while the design still moves
-hook-gauntlet-spec      | writing or revising the falsifiable SPEC.md of a v4 hook, deciding each attack class, the hostile-actor table, the invariants in words
-hook-gauntlet-battery   | writing Foundry tests for a v4 hook, the harness recipe (QUICKSTART 7b), a fork test, running the battery, the long fuzz, coverage, static triage (Slither or forge lint), a mutation, a backtest or the simulation sandbox, a fuzzer violation to turn into a test, the real pool manager'"'"'s bytecode, or any change to the bytecode
+hook-gauntlet-spec      | writing or revising the falsifiable spec of a v4 hook (.gauntlet/SPEC.md; an owner'"'"'s own SPEC.md is its source, never edited), deciding each attack class, the hostile-actor table, the invariants in words
+hook-gauntlet-battery   | writing Foundry tests for a v4 hook, the harness recipe (QUICKSTART 7b), a fork test, running the battery, the long fuzz, coverage, static triage, a mutation, a backtest or the simulation sandbox, a fuzzer violation to turn into a test, the real pool manager'"'"'s bytecode, or any change to the bytecode
 hook-gauntlet-round     | briefing an audit round, reading and triaging a round'"'"'s report, the invariant or action that would have caught a finding, a verifier pass, a round the environment stopped, the ceiling, or the loop'"'"'s exit
 hook-gauntlet-blackbox  | the black-box round - a source-free bench, the spec'"'"'s promises attacked from outside
 hook-gauntlet-release   | freezing a release candidate (promotion, a hash manifest, reproducible bytecode) or rehearsing a deployment runbook on a fork, simulated and never broadcast
@@ -99,7 +103,7 @@ hook-gauntlet-interview | when  | doctrine/RETROFIT.md          | the hook alrea
 hook-gauntlet-interview | when  | doctrine/CHANGES.md           | the design is still moving (sketch mode, section 1)
 hook-gauntlet-interview | when  | doctrine/UPSTREAM.md          | the security-framework self-score (section 2), and every protocol fact
 hook-gauntlet-interview | when  | state/DECISIONS.md            | the shape of an entry, and the `source:` forms with the owner absent
-hook-gauntlet-spec      | entry | briefs/spec-template.md       | the shape of SPEC.md; fill the placeholders, do not rewrite the rules
+hook-gauntlet-spec      | entry | briefs/spec-template.md       | the shape of .gauntlet/SPEC.md; fill the placeholders, do not rewrite the rules
 hook-gauntlet-spec      | entry | doctrine/HOOK-ATTACKS.md      | -
 hook-gauntlet-spec      | when  | doctrine/V4-ACCOUNTING.md     | the hook moves value (takes, settles, holds tokens, returns deltas)
 hook-gauntlet-spec      | when  | doctrine/INVARIANTS.md        | writing the invariants in words
@@ -109,7 +113,8 @@ hook-gauntlet-spec      | when  | doctrine/UPSTREAM.md          | a fact about t
 hook-gauntlet-battery   | entry | doctrine/JUDGES.md            | the question each judge answers, and how each one lies
 hook-gauntlet-battery   | entry | QUICKSTART.md                 | steps 7b (the harness) and 8 (one command per judge)
 hook-gauntlet-battery   | when  | doctrine/UPSTREAM.md          | a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory
-hook-gauntlet-battery   | when  | AGENTS.md                     | section 5, Cost: before a long fuzz campaign, say how long and how much
+hook-gauntlet-battery   | when  | doctrine/EVIDENCE.md          | a permission-bits refusal: the finding'"'"'s red recorded, then the flag and header in the suites, then the battery (section 2)
+hook-gauntlet-battery   | when  | foundry-kit/v4/README.md      | block.timestamp in a test: _setUpV4() warps it to V4_T0
 hook-gauntlet-round     | entry | doctrine/LOOP.md              | -
 hook-gauntlet-round     | entry | briefs/audit-round.md         | the round'"'"'s brief; fill the placeholders, do not rewrite the rules
 hook-gauntlet-round     | when  | doctrine/TRIAGE.md            | a finding to triage
@@ -144,10 +149,13 @@ STEPS='
 With skills | do not read `AGENTS.md`, `doctrine/NEXT.md` or `QUICKSTART.md` whole: read the section a skill names, when it names it.
 The project'"'"'s dependencies | run `scripts/setup-deps.sh <proj>` - it writes the project'"'"'s `remappings.txt` and `foundry.toml` lines for the kit'"'"'s libraries and builds it; never copy a library into the project (`QUICKSTART.md` steps 3 and 7b).
 A hook that already exists | An existing hook with tests or a history (audits, reports, a log) -> `doctrine/RETROFIT.md` after `AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
-A new project | Before phase 0, install the state convention in the owner'"'"'s project: copy the three files from `state/`, and its `.gitignore`, into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook
+A new project | Before phase 0, install the state convention in the owner'"'"'s project: run `scripts/init-state.sh <proj>` - it writes `.gauntlet/` with a new project'"'"'s `STATE.md`, `DECISIONS.md`, `LOG.md` and `.gitignore`, and records the spec'"'"'s hash, because the spec is the owner'"'"'s (`--spec <file>` when it is not `SPEC.md` at the project'"'"'s root). Only as a fallback, by hand: copy the three files from `state/`, and its `.gitignore`, into `.gauntlet/` and empty the examples, which describe a fictional hook (`state/README.md`) - that records no spec, so the spec check is off.
 Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`) | Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
 Where next | `scripts/next.sh <proj>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first
 '
+# the step after which the entry skill quotes scripts/setup-deps.sh's import lines (its label above), and where they are
+IMPORTS_AFTER="The project's dependencies"
+IMPORTS_FROM="$HERE/setup-deps.sh"
 # the entry skill's last line: a sentence of AGENTS.md (section 3b), quoted and checked like the steps - the first
 # command, so that a model that loaded the skill runs the script before it reads anything else (K45)
 LASTLINE='Your next command is `scripts/next.sh <proj>`. Run it; do not read it.'
@@ -286,6 +294,12 @@ case "$(squash "$(cat "$AGENTS")")" in
   *"$(squash "$LASTLINE")"*) ;;
   *) refuse "the entry skill's last line quotes a sentence AGENTS.md no longer has: '$LASTLINE'." ;;
 esac
+IMPORTS_BLOCK="$(awk "/^  cat <<'IMPORTS'\$/ { on = 1; next } /^IMPORTS\$/ { on = 0 } on" "$IMPORTS_FROM" 2> /dev/null)"
+case "$IMPORTS_BLOCK" in
+  import\ *) ;;
+  *) refuse "$IMPORTS_FROM has no import block (the lines between \`cat <<'IMPORTS'\` and \`IMPORTS\`) for the entry skill's step '$IMPORTS_AFTER'." ;;
+esac
+case "$STEPS" in *"$IMPORTS_AFTER |"*) ;; *) refuse "the entry skill has no step '$IMPORTS_AFTER' to put setup-deps.sh's import lines under." ;; esac
 
 # partcell <cell> <bytes>: the cell up to its last sentence that ends within <bytes> (a ".", "?" or "!", a closing "**"
 # or ")" after it, then a space); nothing when no sentence ends that early
@@ -354,6 +368,11 @@ render() {
       label="$(trim "$label")"; [ -n "$label" ] || continue; text="$(trim "$text")"; n=$((n + 1))
       case "$text" in *[.?!]) ;; *) text+="." ;; esac
       printf '%d. **%s.** %s\n' "$n" "$label" "$(kitpaths "$text")"
+      if [ "$label" = "$IMPORTS_AFTER" ]; then
+        printf '\n   It ends with the import lines for your tests (`{{KIT}}/scripts/setup-deps.sh`'"'"'s own, verbatim):\n\n   ```\n'
+        printf '%s\n' "$IMPORTS_BLOCK" | sed 's/^/   /'
+        printf '   ```\n\n'
+      fi
     done <<< "$STEPS"
     echo
   fi

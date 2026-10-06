@@ -18,6 +18,15 @@
 # The record's first line is `pending-red: red <pending/file> key=<key> <YYYY-MM-DD>`; then the failing tests and the
 # last 20 lines of forge's output. next.sh takes a record only when its first line has that shape, names the file,
 # and carries the key its name carries: an empty or handwritten file is "unreadable".
+# Each part of the key is also hashed alone and written in the record, its `keyed:` line (v0.4.2): when a record is no
+# longer current, the reader says WHICH part changed since it was made (src/, test/, pending/, the file itself,
+# foundry.toml, remappings.txt) instead of only "not current".
+# One kind of record stays current under a narrower key (v0.4.2, decided after V60): a record whose failures include the
+# v4 harness's permission-bits refusal (its `permission-bits:` line - a test that holds the hook to the harness's
+# check). Its red comes from the harness and src/, not from the test helpers: it stays current while src/ is what the
+# record's `anchor:` line says it was (the hash of src/ written there) and the finding's own file is unchanged (its
+# hash on the `keyed:` line) - an edit elsewhere in test/ or pending/ (the everyday suite gaining the flag and the
+# header, a phase-3 test added) does not stale it. Every other record keeps the full key above.
 #
 # Source it:  . "$HERE/lib/pending-record.sh"
 
@@ -43,6 +52,91 @@ pending_record_key() {
                      for f in $PENDING_KEY_FILES; do if [ -f "$f" ]; then printf '%s\0' "$f"; fi; done; } | LC_ALL=C sort -z) \
       | while IFS= read -r -d '' f; do printf '%s  %s\n' "$(_pr_sha256 "$proj/$f")" "$f"; done
   } | _pr_sha256
+}
+
+# pending_key_part <proj> <part>: one part of the key, hashed alone (64 hex): a directory (src, test, pending) the same way
+# as the key (its file list and contents; the hash of nothing when it is absent), a file (foundry.toml, remappings.txt,
+# or a pending/ file) its own SHA-256, `none` when it is absent. src's is the anchor of src/ (scripts/lib/src-anchor.sh).
+pending_key_part() {
+  local proj="$1" part="${2%/}" f
+  if [ -f "$proj/$part" ]; then _pr_sha256 "$proj/$part"; return 0; fi
+  case "$part" in src | test | pending) ;; *) echo none; return 0 ;; esac
+  {
+    # every command here ends true: the callers run under pipefail
+    if [ -d "$proj/$part" ]; then
+      (cd "$proj" && { find -L "$part" -type f -print0 2> /dev/null || :; } | LC_ALL=C sort -z) \
+        | while IFS= read -r -d '' f; do printf '%s  %s\n' "$(_pr_sha256 "$proj/$f")" "$f"; done
+    fi
+  } | _pr_sha256
+}
+
+# pending_record_keyed <proj> <pending/...sol>: the record's `keyed:` line - each part of the key hashed alone, and the
+# file itself: `keyed: src/ <h> test/ <h> pending/ <h> foundry.toml <h> remappings.txt <h> file <h>`
+pending_record_keyed() {
+  local proj="$1" rel="$2" out="keyed:" d f
+  # shellcheck disable=SC2086   # the lists are words, on purpose
+  for d in $PENDING_KEY_DIRS; do out="$out $d/ $(pending_key_part "$proj" "$d")"; done
+  # shellcheck disable=SC2086
+  for f in $PENDING_KEY_FILES; do out="$out $f $(pending_key_part "$proj" "$f")"; done
+  printf '%s file %s\n' "$out" "$(pending_key_part "$proj" "$rel")"
+}
+
+# pending_record_current <proj> <pending/...sol>: is there a CURRENT red record of that file? 0 yes - PR_REC its path,
+# PR_HOW `key` (the full key) or `bits` (a permission-bits record under its narrower key: src/ and its own file as
+# recorded); 1 no - PR_STATE `none` (no record of it), `stale` (one made on another key) or `unreadable` (one with the
+# current key's name whose first line is not the record's), and PR_WHY the words: which part of the key changed since
+# the record was made, as far as the record says (its `keyed:` and `anchor:` lines).
+# shellcheck disable=SC2034   # PR_REC, PR_HOW, PR_STATE and PR_WHY: read by the scripts that source this
+PR_REC="" PR_HOW="" PR_STATE="" PR_WHY=""
+# shellcheck disable=SC2034
+pending_record_current() {
+  local proj="$1" rel="$2" rec dir base c k kd line date srcnow filenow src_was file_was why part was now parts i
+  PR_REC="" PR_HOW="" PR_STATE="none" PR_WHY="no red record of it in .gauntlet/pending-red/"
+  rec="$(pending_record_path "$proj" "$rel")" || { PR_WHY="it does not exist"; return 1; }
+  if [ -e "$rec" ]; then
+    if pending_record_ok "$rec" "$rel" "${rec##*.}"; then PR_REC="$rec" PR_HOW="key"; return 0; fi
+    PR_STATE="unreadable" PR_WHY="its record ($rec) is unreadable: an empty or handwritten file"; return 1
+  fi
+  # a record made on another key: the newest readable one says what it was made on
+  dir="$(dirname "$rec")"; base="$(basename "${rel#pending/}")"
+  c=""
+  while IFS= read -r k; do
+    kd="${k##*.}"; [[ $kd =~ ^[0-9a-f]{64}$ ]] || continue
+    pending_record_ok "$k" "$rel" "$kd" || continue
+    if [ -z "$c" ] || [ "$k" -nt "$c" ]; then c="$k"; fi
+  done < <(find "$dir" -maxdepth 1 -type f -name "$base.*" ! -name "$base.log" ! -name '*.tmp' 2> /dev/null)
+  [ -n "$c" ] || return 1
+  IFS= read -r line < "$c"; date="${line##* }"
+  srcnow="$(pending_key_part "$proj" src)"; filenow="$(pending_key_part "$proj" "$rel")"
+  src_was="$(sed -nE 's/^anchor: .* - src\/ sha256 ([0-9a-f]{64})$/\1/p' "$c" | head -1)"
+  file_was="$(sed -nE 's/^keyed: .* file ([0-9a-f]{64})$/\1/p' "$c" | head -1)"
+  # the permission-bits record: current while src/ and the finding's own file are as it says
+  if grep -q '^permission-bits: ' "$c" && [ -n "$src_was" ] && [ -n "$file_was" ]; then
+    if [ "$src_was" = "$srcnow" ] && [ "$file_was" = "$filenow" ]; then PR_REC="$c" PR_HOW="bits" PR_STATE=""; PR_WHY=""; return 0; fi
+    why=""
+    [ "$file_was" = "$filenow" ] || why="$rel itself"
+    [ "$src_was" = "$srcnow" ] || why="${why:+$why and }src/"
+    PR_STATE="stale" PR_WHY="its red record of $date is stale - $why changed since (a permission-bits record stays current while src/ and its own file are as recorded)"
+    return 1
+  fi
+  PR_STATE="stale"
+  line="$(sed -n '/^keyed: /{p;q;}' "$c")"
+  if [ -z "$line" ]; then
+    PR_WHY="its red record of $date is stale - one of $PENDING_KEY_SAYS changed since; that record does not say which"
+    return 1
+  fi
+  read -ra parts <<< "${line#keyed: }"
+  why=""
+  for ((i = 0; i + 1 < ${#parts[@]}; i += 2)); do
+    part="${parts[i]}" was="${parts[i + 1]}"
+    case "$part" in
+      file) now="$filenow"; [ "$was" = "$now" ] || why="${why:+$why, }$rel itself" ;;
+      pending/) now="$(pending_key_part "$proj" pending)"; [ "$was" = "$now" ] || [ "$file_was" != "$filenow" ] || why="${why:+$why, }pending/ (another file there)" ;;
+      *) now="$(pending_key_part "$proj" "$part")"; [ "$was" = "$now" ] || why="${why:+$why, }$part" ;;
+    esac
+  done
+  PR_WHY="its red record of $date is stale - ${why:-one of $PENDING_KEY_SAYS} changed since"
+  return 1
 }
 
 # pending_record_dir <proj>: where the records live

@@ -50,3 +50,39 @@ report_dir_allowed() {
   echo "${pad}(scripts/bench.sh, BENCH_ROOT outside the project) and run it there."
   return 1
 }
+
+# bits_rule_skipped <project-dir>: 0, and the words in BITS_SKIP_WHY, where scripts/battery.sh does NOT hold a suite's
+#   `_skipPermissionCheck` against the project's records (v0.4.2) - only where there are no such records to hold it
+#   against: the kit's own worked examples (this checkout's foundry-kit/ and anything under it: its hostile hooks are
+#   mis-flagged on purpose); a tree with no .gauntlet/ beside its suites (a bench: bench.sh never copies the project's
+#   .gauntlet/); a bench (bench.sh's marker, here or above) whose .gauntlet/ holds nothing but the reports/ a script of
+#   the kit wrote there. A `.gauntlet-bench` marker alone skips nothing (V60: a project with its records and such a file
+#   had the rule turned off, silently): beside a .gauntlet/ with records in it the rule holds. The battery prints the
+#   words, `bits not checked: <why>`. 1 otherwise: the rule holds.
+# shellcheck disable=SC2034   # BITS_SKIP_WHY: read by the scripts that source this
+BITS_SKIP_WHY=""
+# shellcheck disable=SC2034   # BITS_SKIP_WHY: read by the scripts that source this
+bits_rule_skipped() {
+  local proj_real d kit other
+  BITS_SKIP_WHY=""
+  proj_real="$(cd "$1" 2> /dev/null && pwd -P)" || return 1
+  kit="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../foundry-kit" 2> /dev/null && pwd -P)"
+  if [ -n "$kit" ]; then case "$proj_real/" in "$kit"/*)
+    BITS_SKIP_WHY="the kit's own worked examples (its hostile hooks are mis-flagged on purpose; no project's records here)"; return 0 ;; esac; fi
+  if [ ! -d "$proj_real/.gauntlet" ]; then
+    BITS_SKIP_WHY="no .gauntlet/ beside the suites (a bench, or a tree without the route's records): there is no red record here to hold _skipPermissionCheck against - the project's own battery does"
+    return 0
+  fi
+  other="$(find "$proj_real/.gauntlet" -mindepth 1 -maxdepth 1 ! -name reports -print -quit 2> /dev/null)"
+  [ -z "$other" ] || return 1
+  d="$proj_real"
+  while :; do
+    if [ -f "$d/.gauntlet-bench" ]; then
+      BITS_SKIP_WHY="a bench (scripts/bench.sh's marker in $d) whose .gauntlet/ holds only reports/: there is no red record here to hold _skipPermissionCheck against - the project's own battery does"
+      return 0
+    fi
+    [ "$d" != "/" ] || break
+    d="$(dirname "$d")"
+  done
+  return 1
+}

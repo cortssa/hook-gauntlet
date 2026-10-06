@@ -88,9 +88,10 @@
 #   - the kit is proven on this machine: scripts/selftest.sh, ending PASSED, leaves <kit>/.gauntlet/selftest-passed with
 #     the SHA-256 of the kit's scripts, a hash of the machine's identity and forge's version (scripts/lib/kit-proof.sh).
 #     Absent, with one of the three missing, or written for other scripts, on another machine or with another forge,
-#     this prints ONE line, `next: FIRST - prove the kit on this machine: <kit>/scripts/selftest.sh (then run next.sh
-#     again) - <which>` (the scripts / the machine / forge), and exits 0 - nothing else, no row. --check-table does not
-#     look;
+#     this prints ONE line, `next: FIRST - prove the kit on this machine: <kit>/scripts/selftest.sh - it takes about <N>
+#     minutes; give it a tool timeout above that or run it in the background (then run next.sh again) - <which>` (the
+#     scripts / the machine / forge; <N> is SELFTEST_MINUTES below, measured - v0.4.1, D3), and exits 0 - nothing else, no
+#     row (but the MANIFEST note, below). --check-table does not look;
 #   - a test in pending/ that STATE.md does not name is refused: the project is the STATE.md's directory (its parent
 #     when that directory is .gauntlet/), and each .sol file below its pending/ (subdirectories and hidden files too:
 #     row 6b's profile compiles and runs them all) needs a note `pending: <id> ...`, the id its name without .t.sol or
@@ -111,11 +112,14 @@
 #     REGRESSION round" on it, twice);
 #   - each .sol file below pending/ needs its record of being seen RED on src/ as it stands, written by
 #     scripts/pending-red.sh (scripts/lib/pending-record.sh: keyed by the SHA-256 of the file list and contents of src/,
-#     test/, pending/, foundry.toml and remappings.txt - edit any and the record is not the current one): without it
-#     `next: pending/<file> - not seen red on the code as it stands: <kit>/scripts/pending-red.sh <proj> pending/<file>`
-#     (exit 2). The record is read: its first line `pending-red: red <file> key=<key> <date>`, for that file and the
+#     test/, pending/, foundry.toml and remappings.txt - edit any and the record is not the current one; a record whose
+#     failure is the v4 harness's permission-bits line stays current while src/ and that file are as recorded, v0.4.2):
+#     without it `next: pending/<file> - not seen red on the code as it stands: <kit>/scripts/pending-red.sh <proj>
+#     pending/<file>` (exit 2), and with a record made on another key the same line says, in brackets before the
+#     command, which part of the key changed since (`its red record of <date> is stale - test/ changed since`). The record is read: its first line `pending-red: red <file> key=<key> <date>`, for that file and the
 #     key in its name, else `next: pending/<file>: record unreadable - run scripts/pending-red.sh again` (exit 2). A
-#     directory below pending/ named *.sol is refused (it is not a test file). Escape: PENDING_RED=0, said on stderr;
+#     directory below pending/ named *.sol is refused (it is not a test file). Escape: PENDING_RED=0, said on stderr -
+#     never printed in a refusal (v0.4.2) - and, when it lets a test through, written down (below, "a used escape");
 #   - a file STATE.md or DECISIONS.md cites under the project - a path starting `pending/`, `test/`, `src/` or
 #     `.gauntlet/reports/` (or the same after `./`) whose last part has an extension - must be a non-empty regular file
 #     (not LOG.md's: a LOG is history, and a file it names may be gone since, legitimately - K47):
@@ -124,7 +128,47 @@
 #     block (the flag block's `pending:` notes excepted: they are read), one after `to write`, `planned` or `TODO` on
 #     the same line, one followed by `*`, `?`, `<`, `{` or `[` (a pattern or a placeholder), one with `..` (a range),
 #     one inside a longer path (`lib/forge-std/src/Test.sol`); one found in a bench (.gauntlet/bench/<name>/) exists.
-#     Escape: CITED_FILES=0, said on stderr.
+#     Escape: CITED_FILES=0, said on stderr - never printed in a refusal (v0.4.2) - and written down when it lets a
+#     citation through (below).
+#   - a used escape (v0.4.2): PENDING_RED=0 or CITED_FILES=0 that let through what the check would have refused appends
+#     one line to the LOG.md beside STATE.md, its own paragraph - `<date> next.sh ran with PENDING_RED=0, an escape: it
+#     let through <the files, and why each> - not checked here (the owner reads this line, and the dossier carries it)`
+#     (CITED_FILES=0 likewise, naming each citation) - and says so on stderr. Set, and nothing to let through: the
+#     stderr line alone. (A walker read an escape in a refusal and used it; one used leaves only stderr behind.)
+# And, v0.4.1 (what the hosted and local walks of 2026-09-30/10-01 showed):
+#   - the spec is the owner's: with <proj>/.gauntlet/spec.sha256 (`<sha256>  <the spec's path relative to the project>`,
+#     written by scripts/init-state.sh), a spec whose hash differs is refused, `next: REFUSED - <spec> changed since
+#     init-state recorded it: the spec is the owner's. Undo the change (put the owner's text back) and write what you
+#     assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec - phase 1's rows - is
+#     <proj>/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4). The owner, present, re-records a change of
+#     their own with scripts/init-state.sh, signed; an agent never does it.` - and a spec that is gone, the same with
+#     `is missing`. No record: nothing said. No escape, and the refusal never prints a command an agent could run.
+#     When spec.sha256 carries a `re-recorded` line (init-state --spec --by), every answer but the FIRST carries one note
+#     under it, `next: note - the spec <spec> was re-recorded [(<N> re-records; the last:)] on <date>, signed --by
+#     "<name>" (<old8> -> <new8>; .gauntlet/spec.sha256): the owner confirms that signature is theirs, or the spec in
+#     force is not the owner's` - as the MANIFEST note is printed, never a refusal. Checked before the example (below);
+#   - the K40 refusal of an example STATE.md names the command that writes an empty one: `... ("empty the examples") -
+#     <kit>/scripts/init-state.sh <proj> writes an empty one`;
+#   - `key:value` with no space after the first colon is `key: value` in the comparison with the example's values;
+#   - the phase against its records, once the flags are read: `phase:` 2 or higher with no green build record
+#     (<proj>/.gauntlet/reports/01-build.txt, forge's success line in it), and `phase:` 3 or higher with `battery: never`,
+#     are refused, naming scripts/battery.sh (the first also scripts/setup-deps.sh before it: both may run at phase 1).
+#     No escape;
+#   - and the flags against their records (v0.4.2: a judge walked phase 2 -> 3 -> 4 by hand edits, `battery: green` typed
+#     over a battery that had FAILED, and phase 4 with no invariant suite, no census and no fork note were answered with
+#     a row): `battery: green` with the battery's test record, <proj>/.gauntlet/reports/02-test.txt, absent or not green
+#     (forge's summary line read by scripts/lib/parse.sh: no test failed, at least one passed) is refused, naming
+#     scripts/battery.sh; `phase:` 3 or higher with a 02-test.txt that shows no test ran (absent, or no summary - the
+#     battery FAILED before its tests: its green 01-build.txt is not a battery that ran) likewise; `phase:` 4 or higher
+#     (phase 3 closed) with no invariant suite under test/ (no .sol file there with a `function invariant...(`), with no
+#     census report (.gauntlet/reports/06-census.txt or 06-census-gate.txt, one that is not a FAILED campaign's) or with
+#     no `fork:` note (read at the start of a note item, as `real manager:` is) is refused, each naming its command:
+#     the suite (QUICKSTART.md 7b, then scripts/battery.sh), scripts/census.sh, the note itself. No escape;
+#   - after the answer, whatever it is, `next: note - the kit has N files not in its MANIFEST (<first three>): ...` on
+#     stdout when the kit's root has a MANIFEST and files under the kit are not in it - deps, builds, .git and what the
+#     kit's own runs write (corpus/, census/, broadcast/, .gauntlet/) aside, by the rule scripts/gen-manifest.sh and
+#     scripts/doctor.sh use too (below, THE EXCLUSIONS, kit_files and manifest_note). Not a refusal: the exit code is
+#     unchanged.
 # Readings of NEXT.md this script makes, each from NEXT.md's own words: `phase` advances only when a phase's gate is met,
 # so rows 4 and 4b are `phase` 0-1 and 2-3; "promoted" is `last_promotion=no` (`yes` = changed since, no longer promoted;
 # `n/a` = never promoted); "the loop is over" (rows 15-18b) is row 14's condition; a finding from outside the fuzzer
@@ -133,9 +177,10 @@
 # Usage:   scripts/next.sh [STATE.md | <proj>] [--judge <row>=true|false[,<row>=true|false...]]... [--table <NEXT.md>]
 #          scripts/next.sh --check-table [<NEXT.md>]     the drift guard alone
 #   STATE.md defaults to .gauntlet/STATE.md, then ./STATE.md; a project's directory <proj> reads <proj>/.gauntlet/STATE.md,
-#   then <proj>/STATE.md. --table defaults to the kit's doctrine/NEXT.md.
+#   then <proj>/STATE.md - neither, `next: REFUSED - <proj> has no .gauntlet/STATE.md and no STATE.md:
+#   <kit>/scripts/init-state.sh <proj> writes one (or give the STATE.md)`. --table defaults to the kit's doctrine/NEXT.md.
 #   Before any row: the kit's selftest marker (above); without it, or not for these scripts, this machine and this
-#   forge, the one line `next: FIRST - ...` and exit 0.
+#   forge, the one line `next: FIRST - ...` (above: it says what the selftest costs) and exit 0.
 #   --judge answers a row that needs judgement: `true` makes it true (it is then given, if it is the first), `false`
 #   passes it. Row 3 (waiting on the owner) is not one: `--judge 3=...` is refused - answer `false` each row below that
 #   depends on the owner's answer; when nothing below stands and nothing is left to judge, the pause is given.
@@ -148,13 +193,14 @@
 # Env:     NEXT_SELFTEST=1  the selftest's own cases: the marker is not checked, and the first line on stderr says so
 #          every time it is set (a user never sets it; any other value is refused)
 #          PENDING_RED=0  the tests in pending/ are not checked for their red record; said on stderr every time (any
-#          other value is refused)
+#          other value is refused), and a line in the LOG.md beside STATE.md when it lets one through (above)
 #          CITED_FILES=0  the files STATE.md and DECISIONS.md cite are not checked (LOG.md never is); said on stderr
-#          every time (any other value is refused)
+#          every time (any other value is refused), and a line in that LOG.md when it lets one through
 # Exit:    0 the row given is the first true one, or the pause, or FIRST (the kit not proven here); 1 no row is true and
 #          nothing waits on the owner: the table has a hole or a flag is stale (NEXT.md's STOP rule); 2 REFUSED - a flag
 #          missing, of an unknown value, a malformed line, a bad --judge, a pending/ test and the notes disagreeing, or the
-#          table and NEXT.md disagree: one line on stderr naming what - and, one line on stderr too, a state file that is
+#          table and NEXT.md disagree, the spec changed or gone since init-state recorded it, a phase or a battery flag its
+#          records do not bear out: one line on stderr naming what - and, one line on stderr too, a state file that is
 #          still the kit's example (next: FIRST - fill ...), a pending/ test with no current, readable red record, a cited file
 #          that is not a non-empty regular file; 3 a row above the one given needs judgement
 #          (named), or rows still need judgement before the pause can be given.
@@ -167,6 +213,13 @@ TABLE="$HERE/../doctrine/NEXT.md"
 refuse() { echo "next: REFUSED - $*" >&2; exit 2; }
 
 KIT="$(cd "$HERE/.." && pwd)"
+# what the selftest costs, said in the FIRST line (v0.4.1, D3: a walker gave it a 300 s tool timeout, twice, and it was
+# cut short at ~320 s). Measured 2026-10-01: the full scripts/selftest.sh, PASSED (1408 cases, forge 1.8.1, Linux under
+# WSL2), 331 to 359 s in three runs; again at 1477 cases, 336 s alone and 339-348 s under load (another selftest
+# running beside it) - 6 minutes left 3-7 % of margin, so 7. Measure it again when the selftest grows.
+# Measured again 2026-10-05 at 1636 cases (v0.4.2): 371-402 s alone, 386 s with the configuration variables exported,
+# 423-457 s two at once - above 7 minutes, so 8.
+SELFTEST_MINUTES=8
 # the selftest's own cases run without the marker - said on one line every time, never silently (K31)
 case "${NEXT_SELFTEST-}" in
   "") ;;
@@ -196,11 +249,11 @@ esac
 #   <name>=<v>[,<v>...] (one of) | <name>!=<v> | <name>><n> (a number above n) | row:<id> (that row's condition) | -
 #   (always). Names: the flags of STATE.md, and the parts parse_state below derives from them.
 ROWS='
-0   | 25f90dc5 | act  | -                   | phase=sketch | -
+0   | 4373c98d | act  | -                   | phase=sketch | -
 1   | 7b9700dd | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high: {highs_not_recorded} not recorded to tell) that the owner has not been told of? The owner present: false once they have been told (a told: note is not read); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
 2   | 64c00456 | gate | 11,11b,12,13,13b,15 | ceiling=reached | -
 3   | 8949c656 | act  | -                   | waiting_on_owner!=none | -
-4   | a019d2cf | act  | -                   | phase=0,1 | -
+4   | 46e1bfdb | act  | -                   | phase=0,1 | -
 4b  | 2473e53b | act  | -                   | phase=2,3 | -
 5   | 2a2d739a | act  | -                   | - | has the fuzzer reported a violation of a promise that is not yet a deterministic test?
 6   | e0949a62 | act  | -                   | bytecode_changed_since.last_battery=yes ; battery=never | -
@@ -348,13 +401,8 @@ pairs() {
   for k in "$@"; do [ -n "${seen[$k]+x}" ] || refuse "$f: $k= is missing."; done
 }
 
-flag_block() { # flag_block <STATE.md>: the flag block's lines (the first fenced block with a phase: line); exit 1 when none
-  LC_ALL=C awk '
-    { sub(/\r$/, "") }
-    /^```/ { if (inb && has) { found = 1; exit } inb = !inb; n = 0; has = 0; next }
-    inb { buf[++n] = $0; if ($0 ~ /^phase:/) has = 1 }
-    END { if (!found) exit 1; for (i = 1; i <= n; i++) print buf[i] }' "$1"
-}
+# flag_block, and the kit's example test (is_kit_example, example_by_values): lib/state-example.sh, read by
+# scripts/init-state.sh too - sourced below, after --check-table (which reads no STATE.md and needs no library)
 parse_state() {
   local st="$1" block line n=0 name val prev=""
   block="$(flag_block "$st")" \
@@ -644,6 +692,47 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# after the answer, whatever it is (a row, the pause, FIRST, a refusal), one line on stdout when the kit holds files its
+# MANIFEST does not list (v0.4.1, D6: a walker's `cd` drifted into the kit and wrote a test under
+# foundry-kit/v4/test/examples/proj/ - nothing noticed). MANIFEST, at the kit's root, is one line per file in sha256sum's
+# format, `<hash>  <path relative to the kit>` (scripts/gen-manifest.sh writes it; only the paths are read here). Not a
+# refusal: the exit code is the answer's. No MANIFEST: nothing said. Not for --check-table, which reads no project.
+# Generated outputs are not intruders: the selftest and the kit's own batteries write corpus/ and .gauntlet/reports/
+# inside the kit (K52), and they are excluded below.
+# THE EXCLUSIONS - one rule, in the same words in scripts/gen-manifest.sh, scripts/doctor.sh and scripts/next.sh (the
+# selftest holds these lines equal in the three): MANIFEST itself; `.git`, file or directory, at any depth; and every
+# directory named in KIT_SKIP_DIRS, anywhere under the kit - dependencies (lib/, but scripts/lib/: the scripts' own
+# library, source), builds (cache/, out/) and what the kit's own runs write (corpus/, census/, broadcast/, .gauntlet/,
+# where the selftest's marker is). The kit's .gitignore names the same directories.
+KIT_SKIP_DIRS="lib cache out corpus census broadcast .gauntlet"
+kit_files() { # kit_files: every file and link under the kit but the exclusions above, one path from the kit's root per line
+  local kit_prune=() d
+  for d in $KIT_SKIP_DIRS; do [ ${#kit_prune[@]} = 0 ] || kit_prune+=(-o); kit_prune+=(-name "$d"); done
+  (cd "$KIT" && find . \( -name .git -o \( -type d \( "${kit_prune[@]}" \) ! -path ./scripts/lib \) \) -prune \
+    -o \( -type f -o -type l \) -print 2> /dev/null) | sed 's#^\./##' | LC_ALL=C awk -v skip="$KIT_SKIP_DIRS" '
+    BEGIN { k = split(skip, s, " "); for (i = 1; i <= k; i++) dir[s[i]] = 1 }
+    $0 == "" || $0 == "MANIFEST" { next }
+    { n = split($0, p, "/")
+      for (i = 1; i <= n; i++) {
+        if (p[i] == ".git") next
+        if (i < n && (p[i] in dir) && !(i == 2 && p[1] == "scripts" && p[i] == "lib")) next
+      }
+      print }' | LC_ALL=C sort -u
+}
+manifest_note() {
+  local m="$KIT/MANIFEST" extra n first
+  [ -f "$m" ] || return 0
+  extra="$(kit_files | LC_ALL=C awk 'NR == FNR { sub(/\r$/, ""); if (match($0, /^[0-9A-Fa-f]+ [ *]/)) { p = substr($0, RLENGTH + 1); sub(/^\.\//, "", p); listed[p] = 1 } next }
+      !($0 in listed)' "$m" -)"
+  [ -n "$extra" ] || return 0
+  n="$(grep -c . <<< "$extra")"
+  first="$(head -3 <<< "$extra" | paste -sd, - | sed 's/,/, /g')"
+  if [ "$n" = 1 ]; then echo "next: note - the kit has 1 file not in its MANIFEST ($first): the kit is not to be changed; move it out"
+  else echo "next: note - the kit has $n files not in its MANIFEST ($first): the kit is not to be changed; move them out"; fi
+}
+on_exit() { local rc=$?; [ -z "${SPEC_NOTE:-}" ] || echo "$SPEC_NOTE"; manifest_note; exit "$rc"; }
+if [ "$check_only" != 1 ]; then trap on_exit EXIT; fi
+
 # before any row: the kit's own tools proven on this machine, for these scripts and this forge (K31, K31b). Not for
 # --check-table, which reads no STATE.md
 if [ "$check_only" != 1 ] && [ "${NEXT_SELFTEST-}" != 1 ]; then
@@ -651,7 +740,7 @@ if [ "$check_only" != 1 ] && [ "${NEXT_SELFTEST-}" != 1 ]; then
   # shellcheck source=lib/kit-proof.sh
   . "$HERE/lib/kit-proof.sh"
   if ! kit_why="$(kit_proof_check "$KIT")"; then
-    echo "next: FIRST - prove the kit on this machine: $KIT/scripts/selftest.sh (then run next.sh again) - $kit_why"
+    echo "next: FIRST - prove the kit on this machine: $KIT/scripts/selftest.sh - it takes about $SELFTEST_MINUTES minutes; give it a tool timeout above that or run it in the background (then run next.sh again) - $kit_why"
     exit 0
   fi
 fi
@@ -679,7 +768,9 @@ fi
 if [ -d "$STATE" ]; then
   if [ -f "${STATE%/}/.gauntlet/STATE.md" ]; then STATE="${STATE%/}/.gauntlet/STATE.md"
   elif [ -f "${STATE%/}/STATE.md" ]; then STATE="${STATE%/}/STATE.md"
-  else refuse "$STATE has no .gauntlet/STATE.md and no STATE.md: give the STATE.md, or install the state convention (state/README.md)."; fi
+  else # the command that writes one, absolute like the other refusals' (V50: a walk from nothing read state/README.md here)
+    P_NONE="$(cd "$STATE" && pwd)" || refuse "cannot enter $STATE."
+    refuse "$P_NONE has no .gauntlet/STATE.md and no STATE.md: $KIT/scripts/init-state.sh $P_NONE writes one (or give the STATE.md)"; fi
 fi
 [ -f "$STATE" ] || refuse "$STATE does not exist."
 
@@ -687,51 +778,135 @@ fi
 # K40: a STATE.md that is still the kit's example is not a state, and no row is read from it (the local-model walk: next.sh answered
 # "row 13 - a REGRESSION round ... r05" on the example BlockCapHook, twice, and the walker gave up on next.sh). Known by
 # its marker line, or by the example hook's name in the title (the first "# " line); the DECISIONS.md and LOG.md beside
-# it likewise. In STATE.md the marker counts anywhere; in DECISIONS.md and LOG.md only as a whole line (K48: an honest
-# LOG.md that quoted the line it had deleted was refused, with no way out but editing an append-only file - V40).
-# And STATE.md by its values (K48: the example with its marker deleted, as the line itself says, and retitled, as
-# QUICKSTART 5 says, answered "row 13 - a REGRESSION round" again - V40): a flag block that shares three or more
-# non-generic lines with the kit's own state/STATE.md (found from this script's place) is the example. The lines are
-# compared with the spacing collapsed on both sides - each trimmed, its runs of spaces and tabs one space (K49: the
-# example re-aligned, one space after each colon, the same values, walked to row 13 again - V41) - and the refusal
-# names the example's own line, whatever the spacing of the copy.
-# The generic flags (phase, battery, blackbox, dossier, rehearsal, real_manager_battery, location) are left out: a new
-# project's can match the example's by chance. No escape: an example is never a state.
-EXAMPLE_MARKER='*Example file. The project is fictional. Delete this and start yours.*'
-is_kit_example() { # is_kit_example <file> <1: the marker counts only as a whole line>: 0 when it is the kit's example
-  LC_ALL=C awk -v whole="$2" -v marker="$EXAMPLE_MARKER" '{ sub(/\r$/, "") }
-    whole != 1 && index($0, "Example file. The project is fictional.") { found = 1; exit }
-    whole == 1 && $0 == marker { found = 1; exit }
-    !titled && /^# / { titled = 1; if ($0 ~ /BlockCapHook/) { found = 1; exit } }
-    END { exit found ? 0 : 1 }' "$1"
-}
-EXAMPLE_NONGENERIC='^(last_audit_round|last_other_round|open_findings|ceiling|waiting_on_owner|notes|bytecode_changed_since):'
-example_values() { # example_values <STATE.md>: the example's own lines for its flag block's non-generic lines that are
-  # the kit's example's once the spacing is collapsed (each trimmed, runs of spaces and tabs one space), in its order
-  local ex="$KIT/state/STATE.md" mine theirs
-  [ -f "$ex" ] || return 0
-  theirs="$(flag_block "$ex" | grep -E "$EXAMPLE_NONGENERIC")" || return 0
-  mine="$(flag_block "$1" | grep -E "$EXAMPLE_NONGENERIC")" || return 0
-  LC_ALL=C awk 'function sq(s) { gsub(/[ \t]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s); return s }
-    NR == FNR { k = sq($0); if (!(k in ex)) ex[k] = $0; next }
-    { k = sq($0) } (k in ex) && !seen[k]++ { print ex[k] }' <(printf '%s\n' "$theirs") - <<< "$mine"
-}
+# it likewise. In STATE.md the marker counts anywhere; in DECISIONS.md and LOG.md only as a whole line (K48). And
+# STATE.md by its values (K48, K49, D7): a flag block that shares three or more non-generic lines with the kit's own
+# state/STATE.md (found from this script's place), the spacing collapsed and `key:value` read as `key: value` on both
+# sides, is the example; the refusal names the example's own line. The test is lib/state-example.sh's (is_kit_example,
+# example_by_values), the one scripts/init-state.sh calls to replace an example in the same step. No escape: an
+# example is never a state.
+# shellcheck source=lib/state-example.sh
+. "$HERE/lib/state-example.sh" || refuse "$HERE/lib/state-example.sh is missing (the flag block, and the test of the kit's example)."
 ST_DIR="$(cd "$(dirname "$STATE")" && pwd)" || refuse "cannot read the directory of $STATE."
+# the project: the STATE.md's directory, or its parent when that directory is .gauntlet/
+if [ "$(basename "$ST_DIR")" = ".gauntlet" ]; then PROJ="$(dirname "$ST_DIR")"; else PROJ="$ST_DIR"; fi
+
+# ------------------------------------------------------------------------------------------------ the spec is the owner's
+# v0.4.1, D1: a walker appended 35 "owner decisions" to the owner's SPEC.md before it had read the hook, three of them
+# false on the code and one the inverse of a defect planted there; nothing refused it. scripts/init-state.sh records
+# the spec's hash in <proj>/.gauntlet/spec.sha256 (`<sha256>  <the spec's path relative to the project>`, the
+# .gauntlet/ beside STATE.md); with that record, a spec whose hash differs, or that is gone, is refused. No escape: the
+# owner's re-record (init-state.sh --spec ... --by "<name>", v0.4.1b D1b: signed, refused without the signature) is the
+# way on, and it is a written act - and the refusal never prints that command. No record: nothing said (a project
+# set up by hand, or before v0.4.1).
+c_sha256() { if command -v sha256sum > /dev/null 2>&1; then sha256sum < "$1" | cut -d' ' -f1; else shasum -a 256 < "$1" | cut -d' ' -f1; fi; }
+c_rec="$PROJ/.gauntlet/spec.sha256"
+if [ -f "$c_rec" ]; then
+  c_line="$(sed -n '1{s/\r$//;p;}' "$c_rec")"
+  [[ $c_line =~ ^([0-9a-f]{64})\ \ (.+)$ ]] \
+    || refuse "$c_rec is not '<sha256>  <the spec's path>' (scripts/init-state.sh writes it): the owner records the spec again, signed (scripts/init-state.sh --spec ... --by)."
+  c_want="${BASH_REMATCH[1]}"; c_spec_rel="${BASH_REMATCH[2]}"; c_spec="$c_spec_rel"
+  case "$c_spec" in /*) ;; *) c_spec="$PROJ/$c_spec" ;; esac
+  # the re-record note (D1b): when spec.sha256 carries a `re-recorded` line, every answer but the FIRST one carries it,
+  # under the answer as the MANIFEST note does, never a refusal of its own - the owner confirms the signature is theirs,
+  # or the spec in force is not the owner's. The last re-recorded line; with more than one, the count before it.
+  c_rr="$(grep -c '^re-recorded ' "$c_rec" 2> /dev/null)" || c_rr=0
+  if [ "${c_rr:-0}" -gt 0 ]; then
+    c_last="$(grep '^re-recorded ' "$c_rec" | tail -n 1)"
+    if [[ $c_last =~ ^re-recorded\ ([^\ ]+)\ by\ \"(.*)\"\ ([0-9a-f]{8}|none)\ -\>\ ([0-9a-f]{8})$ ]]; then   # old8 is `none` when there was no record before
+      if [ "$c_rr" -gt 1 ]; then c_rp="($c_rr re-records; the last:) "; else c_rp=""; fi
+      SPEC_NOTE="next: note - the spec $c_spec_rel was re-recorded ${c_rp}on ${BASH_REMATCH[1]}, signed --by \"${BASH_REMATCH[2]}\" (${BASH_REMATCH[3]} -> ${BASH_REMATCH[4]}; .gauntlet/spec.sha256): the owner confirms that signature is theirs, or the spec in force is not the owner's"
+    fi
+  fi
+  c_tail="the spec is the owner's. Undo the change (put the owner's text back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec - phase 1's rows - is $PROJ/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4). The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an agent never does it."
+  [ -f "$c_spec" ] || refuse "$c_spec is missing since init-state recorded it: $c_tail"
+  [ "$(c_sha256 "$c_spec")" = "$c_want" ] || refuse "$c_spec changed since init-state recorded it: $c_tail"
+fi
+
 for c_f in "$STATE" "$ST_DIR/DECISIONS.md" "$ST_DIR/LOG.md"; do
   [ -f "$c_f" ] || continue
   c_whole=1; [ "$c_f" != "$STATE" ] || c_whole=0
   if is_kit_example "$c_f" "$c_whole"; then
-    echo "next: FIRST - fill $(basename "$c_f"): it is still the kit's example (state/README.md, \"empty the examples\")" >&2
+    # STATE.md: init-state.sh writes the three empty (v0.4.1, D1), and replaces a .gauntlet/STATE.md that is the
+    # example - and the example DECISIONS.md/LOG.md beside it - in the same step (K52; the same test, the library's).
+    # Not for a DECISIONS.md or LOG.md beside a STATE.md of the project's own: init-state.sh refuses that STATE.md
+    # (nor for the kit's own example read in place, <kit>/state/STATE.md: the kit is not a project)
+    c_cmd=""; [ "$c_f" != "$STATE" ] || [ "$ST_DIR" = "$KIT/state" ] || c_cmd=" - $KIT/scripts/init-state.sh $PROJ writes an empty one"
+    echo "next: FIRST - fill $(basename "$c_f"): it is still the kit's example (state/README.md, \"empty the examples\")$c_cmd" >&2
     exit 2
   fi
   [ "$c_f" = "$STATE" ] || continue
-  c_same="$(example_values "$c_f")"
-  if [ "$(grep -c . <<< "$c_same")" -ge 3 ]; then
+  if c_same="$(example_by_values "$c_f" "$KIT")"; then
     echo "next: FIRST - fill STATE.md: its values are still the kit's example's ($(head -1 <<< "$c_same"))" >&2
     exit 2
   fi
 done
 parse_state "$STATE"
+
+# ------------------------------------------------------------------------------------------------ the phase against its records
+# v0.4.1, D2: a walker wrote `phase: 2` seventeen minutes after `phase: 0`, by hand, while this script answered "row 4 -
+# finish it" - and the hook never compiled. The kit cannot measure phase 1; it can measure the records a later phase
+# claims. `phase:` 2 or higher (phase 2 OPEN, doctrine/NEXT.md) needs a green build record: the battery's,
+# <proj>/.gauntlet/reports/01-build.txt (scripts/battery.sh tees `forge build` into it) - forge's own success line in it
+# (`Compiler run successful`, with or without warnings, or `No files changed, compilation skipped`) and no `Compiler run
+# failed`. The refusal names the way in - two walkers in a row read its earlier wording ("claims a compiling hook") as
+# a loop: setup-deps.sh then battery.sh, which may run while phase 1 is open. `phase:` 3 or higher claims phase 2
+# closed, and its gate includes a battery run: `battery: never` is refused. No escape: the records are one command away.
+build_green() { # build_green <01-build.txt>: 0 when it is forge's record of a build that succeeded
+  [ -f "$1" ] || return 1
+  LC_ALL=C sed -e 's/\r$//' -e "s/$(printf '\033')\[[0-9;]*m//g" "$1" | LC_ALL=C awk '
+    /Compiler run failed/ { bad = 1 }
+    /^(\[[^]]*\] )?(Compiler run successful|No files changed, compilation skipped)/ { ok = 1 }
+    END { exit (ok && !bad) ? 0 : 1 }'
+}
+if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 2 ]; then
+  build_green "$PROJ/.gauntlet/reports/01-build.txt" \
+    || refuse "phase ${V[phase]} is open but there is no green build record (.gauntlet/reports/01-build.txt): run $KIT/scripts/setup-deps.sh $PROJ then $KIT/scripts/battery.sh $PROJ (they may run at phase 1), or write the phase that is open"
+  [ "${V[phase]}" -lt 3 ] || [ "${V[battery]}" != never ] \
+    || refuse "phase ${V[phase]} claims phase 2 closed and battery is never: $KIT/scripts/battery.sh $PROJ, or write the phase that is open"
+fi
+# v0.4.2: the flags against their records (the header). The battery's test record, read by forge's own summary line
+# (scripts/lib/parse.sh, parse_test_summary: "passed failed skipped total"), and phase 3's gate items for `phase:` 4+.
+# shellcheck source=lib/parse.sh
+. "$HERE/lib/parse.sh" || refuse "$HERE/lib/parse.sh is missing (forge's summary line, read in the battery's record)."
+c_test="$PROJ/.gauntlet/reports/02-test.txt"
+c_sum="$(parse_test_summary "$c_test" 2> /dev/null)" || c_sum=""
+c_pass="" c_fail="" c_total=""
+[ -z "$c_sum" ] || read -r c_pass c_fail _ c_total <<< "$c_sum"
+if [ "${V[battery]}" = green ]; then
+  if [ ! -f "$c_test" ]; then c_why="there is no test record (.gauntlet/reports/02-test.txt)"
+  elif [ -z "$c_sum" ]; then c_why="its test record (.gauntlet/reports/02-test.txt) has no summary of forge's: no test ran"
+  elif [ "$c_fail" != 0 ]; then c_why="its test record (.gauntlet/reports/02-test.txt) says $c_fail test(s) FAILED"
+  elif [ "$c_pass" = 0 ]; then c_why="its test record (.gauntlet/reports/02-test.txt) says 0 tests passed: no test ran"
+  else c_why=""; fi
+  [ -z "$c_why" ] || refuse "battery is green and $c_why: $KIT/scripts/battery.sh $PROJ, then write the battery flag its verdict gives"
+fi
+if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 3 ] && { [ -z "$c_sum" ] || [ "${c_total:-0}" = 0 ]; }; then
+  refuse "phase ${V[phase]} claims phase 2 closed and the battery's test record (.gauntlet/reports/02-test.txt) shows no test ran - a battery that failed before its tests left only a build record: $KIT/scripts/battery.sh $PROJ, or write the phase that is open"
+fi
+if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 4 ]; then
+  # phase 3's gate (AGENTS.md section 3, NEXT.md row 4b): an invariant suite, a census, the fork question answered
+  c_inv="$( { [ -d "$PROJ/test" ] && grep -rlE --include='*.sol' 'function[[:space:]]+invariant[A-Za-z0-9_]*[[:space:]]*\(' "$PROJ/test" 2> /dev/null; } | head -1)"
+  [ -n "$c_inv" ] \
+    || refuse "phase ${V[phase]} claims phase 3 closed and there is no invariant suite under $PROJ/test (no .sol file with a function invariant...()): write it on the kit's InvariantBase (QUICKSTART.md 7b), then $KIT/scripts/battery.sh $PROJ - or write the phase that is open"
+  c_cen=""
+  for c_f in 06-census.txt 06-census-gate.txt; do
+    c_p="$PROJ/.gauntlet/reports/$c_f"
+    if [ -s "$c_p" ] && ! grep -q 'the campaign FAILED - no census' "$c_p"; then c_cen="$c_p"; break; fi
+  done
+  [ -n "$c_cen" ] \
+    || refuse "phase ${V[phase]} claims phase 3 closed and there is no census report (.gauntlet/reports/06-census.txt or 06-census-gate.txt): $KIT/scripts/census.sh $PROJ - or write the phase that is open"
+  c_fork=""
+  for c_line in ${NOTE_LINES[@]+"${NOTE_LINES[@]}"}; do
+    IFS=';' read -ra c_items <<< "${c_line//$'\302\267'/;}"
+    for c_item in ${c_items[@]+"${c_items[@]}"}; do
+      c_item="$(trim "$c_item")"
+      if [[ $c_item =~ ^[-*+][[:space:]]+(.*)$ ]]; then c_item="${BASH_REMATCH[1]}"; fi
+      if [[ $c_item =~ ^fork: ]]; then c_fork=1; fi
+    done
+  done
+  [ -n "$c_fork" ] \
+    || refuse "phase ${V[phase]} claims phase 3 closed and the fork question is unanswered: write the note 'fork: <what ran against what exists, or n/a - no chain, no manager yet>' in STATE.md notes (NEXT.md row 4b) - or write the phase that is open"
+fi
 
 # ------------------------------------------------------------------------------------------------ pending/ and the notes
 # NEXT.md row 6b: a phase-3 test that shows the code breaking a promise, the owner absent, goes to pending/<id>.t.sol,
@@ -801,30 +976,45 @@ check_pending() {
 # shellcheck source=lib/pending-record.sh
 . "$HERE/lib/pending-record.sh" || refuse "$HERE/lib/pending-record.sh is missing (the pending/ red records)."
 check_pending "$STATE"
-if [ "$(basename "$ST_DIR")" = ".gauntlet" ]; then PROJ="$(dirname "$ST_DIR")"; else PROJ="$ST_DIR"; fi
 
 # ------------------------------------------------------------------------------------------------ pending/: seen red (K41)
 # A test in pending/ is a finding's test only once it has been seen RED on src/ as it stands (EVIDENCE.md section 2):
 # scripts/pending-red.sh runs it under row 6b's profile and, when it is red, writes the record this reads
 # (scripts/lib/pending-record.sh: keyed by the SHA-256 of the file list and contents of src/, test/, pending/,
-# foundry.toml and remappings.txt, so an edit to any of them leaves no current record). the local-model walk's judge:
+# foundry.toml and remappings.txt, so an edit to any of them leaves no current record - but a permission-bits record,
+# current while src/ and its own file are as recorded, v0.4.2; a stale one is refused saying which part changed since,
+# from the record's own `keyed:` line). the local-model walk's judge:
 # the one pending test of the local-model walk did not compile, and mended it PASSED on the planted code; DECISIONS.md
 # called it red. The first file with no current record is refused. A current record is READ (K48: an empty file with
 # the key's name was taken - V40): its first line must be `pending-red: red <file> key=<key> <date>`, for that file and
-# the key its name carries; an empty or handwritten one is "unreadable". PENDING_RED=0 turns this off, and says so on
-# stderr (above).
-if [ "${PENDING_RED-}" != 0 ]; then
-  while IFS= read -r c_f; do
-    c_rec="$(pending_record_path "$PROJ" "$c_f")" || continue
-    if [ -e "$c_rec" ]; then
-      pending_record_ok "$c_rec" "$c_f" "${c_rec##*.}" && continue
-      echo "next: $c_f: record unreadable - run scripts/pending-red.sh again ($KIT/scripts/pending-red.sh $PROJ $c_f; PENDING_RED=0 skips this check, and says so)" >&2
-      exit 2
-    fi
-    echo "next: $c_f - not seen red on the code as it stands: $KIT/scripts/pending-red.sh $PROJ $c_f (PENDING_RED=0 skips this check, and says so)" >&2
-    exit 2
-  done < <(pending_files "$PROJ")
-fi
+# the key its name carries; an empty or handwritten one is "unreadable". PENDING_RED=0 lets them through, says so on
+# stderr (above), and writes down what it let through (escape_used, below) - the refusal never names it (v0.4.2).
+# escape_used <the variable> <what it let through>: one line, its own paragraph, in the LOG.md beside STATE.md, and on
+# stderr (the header: a used escape)
+escape_used() {
+  local logf="$ST_DIR/LOG.md" entry
+  entry="$(date +%F) next.sh ran with $1=0, an escape: it let through $2 - not checked here (the owner reads this line, and the dossier carries it)"
+  if [ -e "$logf" ] && [ ! -f "$logf" ]; then echo "next: $1=0 let through $2 - and $logf is not a file: nothing written down" >&2; return 0; fi
+  if [ -s "$logf" ] && [ -n "$(tail -c 1 "$logf")" ]; then printf '\n' >> "$logf"; fi
+  if [ -s "$logf" ] && [ -n "$(tail -n 1 "$logf")" ]; then printf '\n' >> "$logf"; fi
+  if printf '%s\n' "$entry" >> "$logf" 2> /dev/null; then echo "next: $1=0 let through $2 - written down in $logf" >&2
+  else echo "next: $1=0 let through $2 - and $logf could not be written" >&2; fi
+}
+c_let=""
+while IFS= read -r c_f; do
+  [ -f "$PROJ/$c_f" ] || continue
+  # current: on the full key, or a permission-bits record on its own (src/ and the file as recorded: pending-record.sh)
+  pending_record_current "$PROJ" "$c_f" && continue
+  case "$PR_STATE" in
+    unreadable) c_msg="next: $c_f: record unreadable - run scripts/pending-red.sh again ($KIT/scripts/pending-red.sh $PROJ $c_f)"; c_why="record unreadable" ;;
+    stale) c_msg="next: $c_f - not seen red on the code as it stands ($PR_WHY): $KIT/scripts/pending-red.sh $PROJ $c_f"; c_why="not seen red on the code as it stands: $PR_WHY" ;;
+    *) c_msg="next: $c_f - not seen red on the code as it stands: $KIT/scripts/pending-red.sh $PROJ $c_f"; c_why="not seen red on the code as it stands" ;;
+  esac
+  if [ "${PENDING_RED-}" = 0 ]; then c_let="${c_let:+$c_let, }$c_f ($c_why)"; continue; fi
+  echo "$c_msg" >&2
+  exit 2
+done < <(pending_files "$PROJ")
+[ -z "$c_let" ] || escape_used PENDING_RED "$c_let"
 
 # ------------------------------------------------------------------------------------------------ cited files exist (K41)
 # A file the route's own record cites must exist (the local-model walk's judge: DECISIONS.md cited five tests in pending/ and a fork test
@@ -837,8 +1027,8 @@ fi
 # range, `pending/F-1..F-4.t.sol`: FR16's LOG.md). The first that is a non-empty regular file neither from the
 # project's directory nor in one of its benches (.gauntlet/bench/<name>/: a verifier's `test/verify/V01.t.sol` in its
 # bench, A/B round 3) is refused, saying whether it does not exist, is empty or is a directory (K48: a 0-byte
-# test/fork/Fork.t.sol, or a directory by that name, passed as "exists" - V40). CITED_FILES=0 turns this off, and says
-# so on stderr (above).
+# test/fork/Fork.t.sol, or a directory by that name, passed as "exists" - V40). CITED_FILES=0 lets them through, says
+# so on stderr (above), and writes down what it let through (escape_used) - the refusal never names it (v0.4.2).
 cited_paths() { # cited_paths <file> <1 when it is STATE.md>: "<line number> TAB <path>" per citation
   LC_ALL=C awk -v isstate="$2" '
     { sub(/\r$/, "") }
@@ -864,25 +1054,26 @@ cited_paths() { # cited_paths <file> <1 when it is STATE.md>: "<line number> TAB
       }
     }' "$1"
 }
-if [ "${CITED_FILES-}" != 0 ]; then
-  for c_f in "$STATE" "$ST_DIR/DECISIONS.md"; do
-    [ -f "$c_f" ] || continue
-    c_is=0; [ "$c_f" != "$STATE" ] || c_is=1
-    while IFS=$'\t' read -r c_n c_p; do
-      # a non-empty regular file (K48: an empty file or a directory at the cited path passed as "exists" - V40)
-      [ -f "$PROJ/$c_p" ] && [ -s "$PROJ/$c_p" ] && continue
-      c_hit=""   # a path written relative to a bench named on its line (`.gauntlet/bench/v01`, `test/verify/V01.t.sol`)
-      for c_b in "$PROJ"/.gauntlet/bench/*/; do [ -f "$c_b$c_p" ] && [ -s "$c_b$c_p" ] && { c_hit=1; break; }; done
-      [ -z "$c_hit" ] || continue
-      if [ -d "$PROJ/$c_p" ]; then c_what="is a directory"
-      elif [ -f "$PROJ/$c_p" ]; then c_what="is empty"
-      elif [ -e "$PROJ/$c_p" ]; then c_what="is not a regular file"
-      else c_what="does not exist"; fi
-      echo "next: $(basename "$c_f") cites a file that $c_what: $c_p (line $c_n of $c_f; CITED_FILES=0 skips this check, and says so)" >&2
-      exit 2
-    done < <(cited_paths "$c_f" "$c_is")
-  done
-fi
+c_let=""
+for c_f in "$STATE" "$ST_DIR/DECISIONS.md"; do
+  [ -f "$c_f" ] || continue
+  c_is=0; [ "$c_f" != "$STATE" ] || c_is=1
+  while IFS=$'\t' read -r c_n c_p; do
+    # a non-empty regular file (K48: an empty file or a directory at the cited path passed as "exists" - V40)
+    [ -f "$PROJ/$c_p" ] && [ -s "$PROJ/$c_p" ] && continue
+    c_hit=""   # a path written relative to a bench named on its line (`.gauntlet/bench/v01`, `test/verify/V01.t.sol`)
+    for c_b in "$PROJ"/.gauntlet/bench/*/; do [ -f "$c_b$c_p" ] && [ -s "$c_b$c_p" ] && { c_hit=1; break; }; done
+    [ -z "$c_hit" ] || continue
+    if [ -d "$PROJ/$c_p" ]; then c_what="is a directory"
+    elif [ -f "$PROJ/$c_p" ]; then c_what="is empty"
+    elif [ -e "$PROJ/$c_p" ]; then c_what="is not a regular file"
+    else c_what="does not exist"; fi
+    if [ "${CITED_FILES-}" = 0 ]; then c_let="${c_let:+$c_let, }$c_p (cited by $(basename "$c_f") line $c_n; it $c_what)"; continue; fi
+    echo "next: $(basename "$c_f") cites a file that $c_what: $c_p (line $c_n of $c_f)" >&2
+    exit 2
+  done < <(cited_paths "$c_f" "$c_is")
+done
+[ -z "$c_let" ] || escape_used CITED_FILES "$c_let"
 
 # ------------------------------------------------------------------------------------------------ the table, top to bottom
 # The gates first (NEXT.md: a gate that is true turns its rows off wherever they stand - row 14's are above it), then

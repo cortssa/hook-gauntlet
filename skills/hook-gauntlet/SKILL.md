@@ -26,8 +26,20 @@ Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. Thi
 
 1. **With skills.** do not read `{{KIT}}/AGENTS.md`, `{{KIT}}/doctrine/NEXT.md` or `{{KIT}}/QUICKSTART.md` whole: read the section a skill names, when it names it.
 2. **The project's dependencies.** run `{{KIT}}/scripts/setup-deps.sh <proj>` - it writes the project's `remappings.txt` and `foundry.toml` lines for the kit's libraries and builds it; never copy a library into the project (`{{KIT}}/QUICKSTART.md` steps 3 and 7b).
+
+   It ends with the import lines for your tests (`{{KIT}}/scripts/setup-deps.sh`'s own, verbatim):
+
+   ```
+   import {V4Harness} from "gauntlet-v4/V4Harness.sol";
+   import {MinimalRouter} from "gauntlet-v4/MinimalRouter.sol";
+   import {LiquidityHelper} from "gauntlet-v4/LiquidityHelper.sol";
+   import {HookMiner} from "gauntlet-v4/HookMiner.sol";
+   import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
+   The kit's own examples import these relative to the kit (../../src/...): do not copy their import lines.
+   ```
+
 3. **A hook that already exists.** An existing hook with tests or a history (audits, reports, a log) -> `{{KIT}}/doctrine/RETROFIT.md` after `{{KIT}}/AGENTS.md`; without them -> phase 0, the code as the sketch to specify.
-4. **A new project.** Before phase 0, install the state convention in the owner's project: copy the three files from `{{KIT}}/state/`, and its `.gitignore`, into `.gauntlet/` (the default; the project root also works - write which in `STATE.md`) and empty the examples, which describe a fictional hook.
+4. **A new project.** Before phase 0, install the state convention in the owner's project: run `{{KIT}}/scripts/init-state.sh <proj>` - it writes `.gauntlet/` with a new project's `STATE.md`, `DECISIONS.md`, `LOG.md` and `.gitignore`, and records the spec's hash, because the spec is the owner's (`--spec <file>` when it is not `SPEC.md` at the project's root). Only as a fallback, by hand: copy the three files from `{{KIT}}/state/`, and its `.gitignore`, into `.gauntlet/` and empty the examples, which describe a fictional hook (`{{KIT}}/state/README.md`) - that records no spec, so the spec check is off.
 5. **Resuming (`STATE.md`, `DECISIONS.md`, `LOG.md`).** Any agent that arrives with no context reads those three files and continues. If they disagree with the repository, the repository wins and you fix the files.
 6. **Where next.** `{{KIT}}/scripts/next.sh <proj>` computes it from the flags: it refuses a flag it cannot read, and names the row, or the rows that need your judgement first.
 

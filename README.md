@@ -155,7 +155,9 @@ foundry-kit/     hostile ERC-20, handler base with a campaign census, reusable a
 foundry-kit/v4/  harness for two pool managers (source, or your chain's real bytecode), address mining, a hostile
                  hook, a worked dynamic-fee hook
 scripts/         battery - fuzz-long - census - mutate - size - bench - release-guard - assert-fresh-build -
-                 install-v4 - fetch-bytecode - selftest
+                 install-v4 - fetch-bytecode - selftest - setup-deps - gen-manifest
+MANIFEST         the SHA-256 of every file the kit ships (scripts/gen-manifest.sh); scripts/doctor.sh names a file
+                 in the kit that it does not list (the kit is not to be changed by a project that vendors it)
 adapters/        claude-code/ (the supported adapter, the path this was run on); experimental/codex/ (untested)
 ```
 

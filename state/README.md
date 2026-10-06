@@ -11,11 +11,47 @@ LOG.md          one entry per change                           - append only
 
 ## Installing
 
-Copy the three files into the project (a `.gauntlet/` directory works well, or the project root), then **empty the
+Run `scripts/init-state.sh <proj>` (with `--spec <file>` when the spec is not `SPEC.md` at the project's root). It writes
+`<proj>/.gauntlet/`: `STATE.md` with the starting values below and the example's section headings, `DECISIONS.md` and
+`LOG.md` with their titles and their rules and no entries, and `.gitignore`; and it records the spec's SHA-256 in
+`.gauntlet/spec.sha256` (`<sha256>  <the spec's path relative to the project>`; no spec found, it says so and records
+nothing), and the anchor of `src/` - the SHA-256 of its file list and contents - in `.gauntlet/src.sha256` (`<sha256>
+src/`; no file under `src/` yet, a hook still to be written, it says so and records nothing). Then it prints the next
+command, `scripts/next.sh <proj>`. It refuses a project that already has a `STATE.md`
+(in `.gauntlet/` or at the root), and keeps a `DECISIONS.md` or `LOG.md` of the project's own. The kit's example is not
+a state: a `.gauntlet/STATE.md` that `next.sh` would refuse as the example (below: its marker, its title or its values)
+is replaced in the same step (`replaced the kit's example STATE.md`), and so is an example `DECISIONS.md` or `LOG.md`
+in `.gauntlet/` - unless a `STATE.md` of the project's own is there: the STATE wins, and it is refused. The example
+copied to the project's root is named as such: delete it, then run it again. **The spec is the owner's:** with that record, `scripts/next.sh`
+refuses a spec whose hash differs, or that is gone - `next: REFUSED - <spec> changed since init-state recorded it: the
+spec is the owner's. Undo the change (put the owner's text back) and write what you assumed in DECISIONS.md (source:
+assumed, owner absent); the route's own spec - phase 1's rows - is <proj>/.gauntlet/SPEC.md, never the owner's file
+(AGENTS.md section 4). The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an
+agent never does it.` (or `is missing`; exit 2, no escape). On a project that has its `STATE.md`, `--spec` is **refused
+by default** - the kit cannot tell whose hands changed the spec, so it records nothing; the owner's SIGNATURE
+(`--by`, documented in the header of `scripts/init-state.sh`) is the only way through (a signature, not a password). With
+it, line 1 of `.gauntlet/spec.sha256` becomes the new hash and one line is appended, `re-recorded <date> by "<name>"
+<old 8 hex> -> <new 8 hex>`, and a matching paragraph is appended to the `LOG.md` beside that `STATE.md` - `<date> spec
+re-recorded: <spec> <old 8 hex> -> <new 8 hex>, signed --by "<name>" (init-state --spec --by: the kit cannot tell whose
+hands these were; the owner reads this line, and the dossier carries it)` - and `next.sh` repeats the re-record,
+signed, under every answer. No record (a project set up by hand), nothing is said. **`src/` is the owner's too**
+(v0.4.2): with `.gauntlet/src.sha256`, `scripts/pending-red.sh` and `scripts/battery.sh` say on every run whether `src/` is
+as recorded, and refuse before anything runs when it differs or is gone - the spec's refusal, for the code: undo the
+change, write what you assumed in `DECISIONS.md`; a finding's fix is the owner's decision, shown on a copy
+(`scripts/mutate.sh`), never in `src/`; the owner re-records a change of their own, signed (`--src` with `--by`, the
+same act as the spec's: a `re-recorded` line in `src.sha256` and a paragraph `<date> src/ re-recorded: <old 8 hex> ->
+<new 8 hex>, signed ...` in `LOG.md`). No record on a project that has its state (set up before v0.4.2): one line says
+how one is made, once per project (the first command leaves `.gauntlet/src-anchor-told`; the battery's summary and the
+records keep saying it), and nothing is refused. Each red record of `pending-red.sh` names the anchor it was made on. A project with no state at all is refused by `next.sh <proj>` with the
+command: `next: REFUSED - <proj> has no .gauntlet/STATE.md and no STATE.md: <kit>/scripts/init-state.sh <proj> writes
+one (or give the STATE.md)`.
+
+Or by hand, only as a fallback - it records no spec, so the spec check is off: copy the three files into the project (a `.gauntlet/` directory works well, or the project root), then **empty the
 examples**: `scripts/next.sh` refuses a `STATE.md`, or the `DECISIONS.md` and `LOG.md` beside it, that is still the
 example - its line "Example file. The project is fictional." (in `DECISIONS.md` and `LOG.md` only as a line of its own:
 a log entry that quotes it is not the example) or `BlockCapHook` in its title - with `next: FIRST - fill STATE.md: it is
-still the kit's example (state/README.md, "empty the examples")` (exit 2, no escape). Emptying `STATE.md` means:
+still the kit's example (state/README.md, "empty the examples")` (exit 2, no escape) - for `STATE.md` followed by
+` - <kit>/scripts/init-state.sh <proj> writes an empty one`. Emptying `STATE.md` means:
 keep its flag block (the fenced block at the top: `next.sh` reads nothing else) and its section headers, retitle it for
 your hook, delete the example's prose, and write the starting values of a new project into the flags:
 
@@ -39,7 +75,7 @@ notes:
 (`location:` is where you put the three files - `.gauntlet/` or `root`; `ceiling:` stays `not agreed (phase 0)` until
 the owner agrees one, then says it as agreed; `notes:` starts empty.) A `STATE.md` whose flag block still shares three
 or more lines with the example's - the same values, whatever the spacing (each line trimmed and its runs of spaces and
-tabs made one, on both sides) - counting `last_audit_round`, `last_other_round`, `open_findings`, `ceiling`,
+tabs made one, on both sides; a line written `key:value`, no space after its first colon, read as `key: value`) - counting `last_audit_round`, `last_other_round`, `open_findings`, `ceiling`,
 `waiting_on_owner`, `notes` and `bytecode_changed_since`, not the flags a new project can share by chance - is the
 example with its marker deleted and its title changed, and is refused the same way: `next: FIRST - fill STATE.md: its
 values are still the kit's example's (<the first shared line, as the example has it>)`. Copy `state/.gitignore` into `<project>/.gauntlet/` too, wherever the three files go: the benches live in
@@ -85,11 +121,37 @@ all three recorded. With no marker, one with a field missing, or one written for
 renamed since; a fresh clone), on another machine (the kit copied there with its `.gauntlet/`, or a project copied
 with the kit in `lib/hook-gauntlet` - "another machine" as `/etc/machine-id` tells, or the hostname where there is
 none, as on macOS: a clone that kept both is not seen) or with another forge, `next.sh` prints one line - `next: FIRST - prove the kit
-on this machine: <kit>/scripts/selftest.sh (then run next.sh again) - <which>`, where `<which>` says the scripts, the
+on this machine: <kit>/scripts/selftest.sh - it takes about <N> minutes; give it a tool timeout above that or run it in
+the background (then run next.sh again) - <which>`, where `<N>` is the selftest's measured time (a tool timeout of 300 s
+cut it short, twice) and `<which>` says the scripts, the
 machine or forge (`... changed since its selftest passed`, `its marker does not record ...`, or `the selftest has not
 passed here`) - and exits 0, nothing else. It is a property of the machine and the kit, not of the hook:
 not a `STATE.md` flag. The dossier's section 10 cites it. `--check-table` does not look. The selftest's own cases run
 `next.sh` with `NEXT_SELFTEST=1`, which it names on stderr every time it is set; a user never sets it.
+
+The phase is read against its records (exit 2, no escape: the records are one command away): `phase:` 2 or higher (phase 2
+open) needs a green build record - `.gauntlet/reports/01-build.txt`, where `scripts/battery.sh` writes forge's build
+output, with forge's success line in it (`Compiler run successful`, or `No files changed, compilation skipped`) and no
+`Compiler run failed`; `scripts/setup-deps.sh` and then `scripts/battery.sh` may run while phase 1 is open, so the
+record is there before `phase: 2` is written. Without it, it is `next: REFUSED - phase <n> is open but there is no
+green build record (.gauntlet/reports/01-build.txt): run <kit>/scripts/setup-deps.sh <proj> then
+<kit>/scripts/battery.sh <proj> (they may run at phase 1), or write the phase that is open`;
+`phase:` 3 or higher with `battery: never` is `next: REFUSED - phase <n> claims phase 2 closed and battery is never:
+<kit>/scripts/battery.sh <proj>, or write the phase that is open`. The flags against their records too (v0.4.2):
+`battery: green` with the battery's test record, `.gauntlet/reports/02-test.txt`, absent or not green (forge's summary
+line: no test failed, at least one passed) is `next: REFUSED - battery is green and <what the record says>:
+<kit>/scripts/battery.sh <proj>, then write the battery flag its verdict gives`; `phase:` 3 or higher with a test record
+that shows no test ran - the battery failed before its tests, and its green build record is not a battery that ran - is
+refused, naming the battery; `phase:` 4 or higher (phase 3 closed) with no invariant suite under `test/` (no `.sol` file
+with a `function invariant...(`), no census report (`.gauntlet/reports/06-census.txt` or `06-census-gate.txt`, not a
+FAILED campaign's) or no `fork: <what ran against what exists, or n/a - no chain, no manager yet>` note is refused, each
+naming its command (the suite on `InvariantBase` - `QUICKSTART.md` 7b - then the battery; `scripts/census.sh <proj>`;
+the note). Every refusal of `next.sh` goes to stderr, its answers to stdout. And after its answer, whatever it is, when the kit
+has a `MANIFEST` at its root (one line per file, `<sha256>  <path>`) and a file under the kit is not in it - not
+counting `MANIFEST` itself, `.git`, and any `lib/` (but `scripts/lib/`, the scripts' own), `cache/`, `out/`,
+`corpus/`, `census/`, `broadcast/` or `.gauntlet/` directory (dependencies, builds, and what the kit's own runs
+write - the selftest's marker is in `.gauntlet/`) - the rule `scripts/gen-manifest.sh` and `scripts/doctor.sh` use too - it adds one line on stdout, `next: note - the kit has N files not in its MANIFEST (<the first
+three>): the kit is not to be changed; move them out` (not a refusal: the exit code is the answer's).
 
 It refuses (exit 2, one line naming the flag) a flag that is missing, a value not on the flag's list, a line of the
 block that is not `name: value`, a `ceiling` of no known shape (`not agreed ...`, `undecided ...`, or `N model rounds
@@ -115,20 +177,28 @@ before); the project's `cache/fuzz`, `cache/invariant`, `cache/solidity-files-ca
 (measured). Forge itself writes the project's `cache/test-failures` (the pending tests that failed), which nothing in
 the kit reads (`--rerun` is never used). The record's key is the SHA-256 of the file list and contents of `src/`,
 `test/`, `pending/`, `foundry.toml` and `remappings.txt`, so an edit to any of them - a helper the test imports
-included - needs a new run (not keyed: the libraries and the compiler). The record says what it is on its first line,
-`pending-red: red <file> key=<key> <date>`, then the failing tests and the last 20 lines of forge's output; `next.sh`
-reads that line. Without a current record: `next: pending/<file> - not seen red on the code as it stands:
-<kit>/scripts/pending-red.sh <proj> pending/<file>`; with one whose first line is not that, for that file and the key in
+included - needs a new run (not keyed: the libraries and the compiler); each part is also hashed alone on the record's
+`keyed:` line, so a stale record is named with the part that changed. One exception (v0.4.2): a record whose failure is
+the v4 harness's permission-bits line stays current while `src/` (the hash on its `anchor:` line) and the file itself
+are as recorded - its red comes from the harness and `src/`, not from the test helpers. The record says what it is on
+its first line, `pending-red: red <file> key=<key> <date>`, then the failing tests and the last 20 lines of forge's
+output; `next.sh` reads that line. Without a current record: `next: pending/<file> - not seen red on the code as it
+stands: <kit>/scripts/pending-red.sh <proj> pending/<file>` - with a stale one, the part that changed in brackets before
+the command (`(its red record of <date> is stale - test/ changed since)`); with one whose first line is not that, for that file and the key in
 its name (an empty or handwritten file): `next: pending/<file>: record unreadable - run scripts/pending-red.sh again`
-(exit 2 both; `PENDING_RED=0` skips them and says so on stderr). A directory below `pending/` named `*.sol` is refused:
-a test there is a file. When the v4 harness refuses the deploy in `setUp()` (`V4Harness: ... permission bit ...`),
-`pending-red.sh` prints the harness's whole line and says that refusal IS the finding: record it, then
-`doctrine/EVIDENCE.md` section 2, "while a permission-bits finding is open", for the other pending tests. And a file
+(exit 2 both). A directory below `pending/` named `*.sol` is refused: a test there is a file. When the v4 harness
+refuses the deploy in `setUp()` (`V4Harness: ... permission bit ...`), `pending-red.sh` prints the harness's whole line
+and says that refusal IS the finding, and how its test records it: `_skipPermissionCheck = true` in `setUp`, and the
+hook held to the check in a test of its own, `_checkHookPermissions(address(hook));` - that red's record carries a
+`permission-bits:` line; then the suites set the flag with a header line `// _skipPermissionCheck: <id> open`; then the
+battery (`doctrine/EVIDENCE.md` section 2, "while a permission-bits finding is open"; `scripts/battery.sh` checks a
+suite under `test/` against that record). And a file
 that `STATE.md` or `DECISIONS.md` cites must be a non-empty regular file (not `LOG.md`'s: a log is history, and a file
 it names may have been moved or deleted since, legitimately): a path starting `pending/`, `test/`, `src/` or
 `.gauntlet/reports/` whose last part has an extension, looked up from the project and in its benches
 (`.gauntlet/bench/<name>/`), else `next: DECISIONS.md cites a file that does not exist: <path>` - or `that is empty`,
-`that is a directory` (exit 2; `CITED_FILES=0` skips it and says so). Not a citation: a path in a fenced code block (the flag block's `pending:`
+`that is a directory` (exit 2). No refusal prints an escape (v0.4.2: the two these checks have are in `scripts/next.sh`'s
+header, and one used appends a line to `LOG.md` naming what it let through). Not a citation: a path in a fenced code block (the flag block's `pending:`
 notes are read), after `to write`, `planned` or `TODO` on its line, followed by `*`, `?`, `<`, `{` or `[`, or with
 `..` in it.
 Then it prints the first true row: `next: row <id> - <the action, as NEXT.md words it>` and `because:`

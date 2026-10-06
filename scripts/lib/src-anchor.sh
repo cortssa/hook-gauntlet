@@ -1,0 +1,90 @@
+# shellcheck shell=bash
+#
+# src-anchor.sh - the anchor of src/: the code under audit is the owner's, as the spec is. Recorded by
+# scripts/init-state.sh in <proj>/.gauntlet/src.sha256, compared by scripts/pending-red.sh and scripts/battery.sh on
+# every run (v0.4.2). Source it:  . "$HERE/lib/src-anchor.sh"
+#
+# The problem it solves: a walker of the route met the harness's refusal of its hook's permission bits and "fixed" it in
+# the hook it was auditing - `afterInitialize: false -> true` in src/, a function added before that so that its own test
+# would compile - and nothing said so: pending-red.sh keys its record on src/ AS IT STANDS, so a red over an edited hook
+# was a valid record, and the battery ran on it. The guard that existed (the spec's hash) lived in next.sh, which that
+# walker had stopped running. So src/ is anchored like the spec, and checked where the evidence is made.
+#
+# The anchor: the SHA-256 of the lines "<sha256 of the file>  <path>", one per file below src/ (followed through
+# symlinks), in the C locale's order of their paths - the file list and the contents (scripts/lib/pending-record.sh's
+# key, for src/ alone). The record, <proj>/.gauntlet/src.sha256: line 1 `<sha256>  src/`; then one line per signed
+# re-record, `re-recorded <date> by "<name>" <old8> -> <new8>` (init-state.sh --src --by, the owner's act).
+# What it does not do: tell whose hands changed src/ (the kit cannot), anchor anything outside src/ (a library, a test).
+
+# src_anchor_hash <proj>: the anchor of <proj>/src (64 hex); exit 1 and nothing printed when there is no src/
+src_anchor_hash() {
+  local proj="$1" f
+  [ -d "$proj/src" ] || return 1
+  {
+    # every command here ends true: the callers run under pipefail
+    (cd "$proj" && { find -L src -type f -print0 2> /dev/null || :; } | LC_ALL=C sort -z) \
+      | while IFS= read -r -d '' f; do printf '%s  %s\n' "$(_sa_sha256 "$proj/$f")" "$f"; done
+  } | _sa_sha256
+}
+_sa_sha256() { # _sa_sha256 [<file>]: hex only
+  if command -v sha256sum > /dev/null 2>&1; then sha256sum "$@" | cut -d' ' -f1
+  else shasum -a 256 "$@" | cut -d' ' -f1; fi
+}
+
+# src_anchor_check <who> <proj>: one line in SRC_ANCHOR_LINE, always - what this run is comparing src/ with - and
+#   0  src/ is as recorded; or there is no record (a project of the route with no record is told how one is made, once
+#      per project - the first command to see it leaves .gauntlet/src-anchor-told, and the later ones print no line;
+#      a tree that is not a project of the route - no STATE.md: the kit's own module, a bench, someone else's - is
+#      named as not anchored);
+#   2  REFUSED: src/ differs from the record, or is gone, or the record is not of its shape - SRC_ANCHOR_LINE is the
+#      refusal, the spec's in next.sh for src/: no escape, and no command an agent could run.
+#   SRC_ANCHOR_SHORT is the same in a few words, for a summary line or a record.
+# shellcheck disable=SC2034   # read by the scripts that source this
+SRC_ANCHOR_LINE="" SRC_ANCHOR_SHORT=""
+# shellcheck disable=SC2034   # SRC_ANCHOR_LINE and SRC_ANCHOR_SHORT: read by the scripts that source this
+src_anchor_check() {
+  local who="$1" proj="$2" rec line want now rr last tail
+  rec="$proj/.gauntlet/src.sha256"
+  tail="the code under audit is the owner's. Undo the change (put the owner's code back) and write what you assumed in DECISIONS.md (source: assumed, owner absent): a finding's fix is the owner's decision (doctrine/NEXT.md row 6b), shown on a copy (scripts/mutate.sh), never written into src/. The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an agent never does it. Nothing run."
+  if [ ! -f "$rec" ]; then
+    if [ -f "$proj/.gauntlet/STATE.md" ] || [ -f "$proj/STATE.md" ]; then
+      SRC_ANCHOR_SHORT="no anchor recorded (.gauntlet/src.sha256)"
+      # told ONCE per project (v0.4.2, after V60: on every command it was noise): the first command to see it says how
+      # one is made and leaves .gauntlet/src-anchor-told; after that the line is empty - the battery's summary and each
+      # red record still say `no anchor recorded`
+      if [ -f "$proj/.gauntlet/src-anchor-told" ]; then SRC_ANCHOR_LINE=""; return 0; fi
+      SRC_ANCHOR_LINE="$who: src/ has no anchor (.gauntlet/src.sha256): nothing compared. scripts/init-state.sh records it when it writes a new project's state; on this project, which has its state, recording it is the owner's act, signed (--src --by; the header of scripts/init-state.sh says how). Said once: the next commands say it in their summary and records only."
+      if [ -d "$proj/.gauntlet" ]; then
+        printf '%s %s told: src/ has no anchor (.gauntlet/src.sha256) - said once, here; the summaries and records keep saying it\n' "$(date +%F)" "$who" > "$proj/.gauntlet/src-anchor-told" 2> /dev/null || :
+      fi
+    else
+      SRC_ANCHOR_SHORT="not anchored here (no .gauntlet/src.sha256, no STATE.md)"
+      SRC_ANCHOR_LINE="$who: src/ is not anchored here (no .gauntlet/src.sha256 and no STATE.md: not a project of the route) - nothing compared."
+    fi
+    return 0
+  fi
+  line="$(sed -n '1{s/\r$//;p;}' "$rec")"
+  if ! [[ $line =~ ^([0-9a-f]{64})\ \ src/?$ ]]; then
+    SRC_ANCHOR_SHORT="REFUSED: the record is not of its shape"
+    SRC_ANCHOR_LINE="$who: REFUSED - $rec is not '<sha256>  src/' (scripts/init-state.sh writes it): the owner records it again, signed (scripts/init-state.sh --src). Nothing run."
+    return 2
+  fi
+  want="${BASH_REMATCH[1]}"
+  if ! now="$(src_anchor_hash "$proj")"; then
+    SRC_ANCHOR_SHORT="REFUSED: src/ is missing since it was recorded (${want:0:8})"
+    SRC_ANCHOR_LINE="$who: REFUSED - $proj/src is missing since init-state recorded it (.gauntlet/src.sha256 ${want:0:8}): $tail"
+    return 2
+  fi
+  if [ "$now" != "$want" ]; then
+    SRC_ANCHOR_SHORT="REFUSED: src/ changed since it was recorded (${want:0:8}, now ${now:0:8})"
+    SRC_ANCHOR_LINE="$who: REFUSED - $proj/src changed since init-state recorded it (.gauntlet/src.sha256 ${want:0:8}, now ${now:0:8}): $tail"
+    return 2
+  fi
+  rr="" last="$(grep '^re-recorded ' "$rec" 2> /dev/null | tail -n 1)"
+  if [[ $last =~ ^re-recorded\ ([^\ ]+)\ by\ \"(.*)\"\ ([0-9a-f]{8}|none)\ -\>\ ([0-9a-f]{8})$ ]]; then
+    rr="; re-recorded on ${BASH_REMATCH[1]}, signed by \"${BASH_REMATCH[2]}\" (${BASH_REMATCH[3]} -> ${BASH_REMATCH[4]}): the owner confirms that signature is theirs"
+  fi
+  SRC_ANCHOR_SHORT="as recorded (.gauntlet/src.sha256 ${want:0:8})"
+  SRC_ANCHOR_LINE="$who: src/ is as recorded (.gauntlet/src.sha256 ${want:0:8})$rr."
+  return 0
+}

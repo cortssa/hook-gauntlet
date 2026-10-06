@@ -177,7 +177,7 @@ behaviour, the upstream one is right.
 | `test/TokenReentry.t.sol` | a currency's own transfer hook re-entering the manager DURING SETTLEMENT (`TokenCallbackActor`): every door before and after the balances move, a topping-up payer, a hook paying its own delta, a stale synced slot |
 | `test/ManagerSelection.t.sol` | tests of the harness's own decision about which manager |
 | `test/HookFlags.t.sol` | the mining, and the two different refusals of a wrong address |
-| `test/HookPermissions.t.sol` | the third refusal, the harness's (K46): a callback implemented with no bit fails `_deployHook` by name; what the probe sees and that it leaves nothing; `_skipPermissionCheck` |
+| `test/HookPermissions.t.sol` | the third refusal, the harness's (K46): a callback implemented with no bit fails `_deployHook` by name, with the whole line of the refusal (the act it names); what the probe sees and that it leaves nothing; `_skipPermissionCheck` |
 | `test/HarnessClock.t.sol` | the clock every suite starts at, `V4_T0` / `V4_BLOCK0` (K46) |
 | `test/HostileHook.t.sol` | one test per switch on the hostile hook, plus all ten entry points driven once |
 | `test/Harness.t.sol` | the fixtures' own smoke test |
@@ -997,9 +997,15 @@ test that calls it by hand. (It is easy to miss by reading: `key.hooks.afterInit
 an unconditional call, and it is not - `Hooks` checks the bit first.) So `_deployHook` calls each of the ten callbacks as the manager - under STATICCALL first, so that nothing it does stays;
 a callback whose bit is NOT set and that reverts with no data there is called once more for real inside a state snapshot
 reverted straight after, which is how a callback that writes is seen - and fails naming it: `V4Harness: afterInitialize
-implemented but its permission bit is not set on 0x... - the manager never calls it. That is a finding ...: see
-doctrine/EVIDENCE.md section 2` - in a project that refusal is a finding, the owner decides its fix (`doctrine/NEXT.md`
-row 6b), and `scripts/pending-red.sh` prints it whole and names that section. "Implemented" means it returned or reverted with an error of its
+implemented but its permission bit is not set on 0x... - the manager never calls it. This is a finding, not a fix
+(doctrine/NEXT.md row 6b). In this order: write its test as pending/<id>.t.sol - its own setUp sets _skipPermissionCheck
+= true, then a test function of its own calls _checkHookPermissions(address(hook)) directly (V4Harness: function
+_checkHookPermissions(address hook) internal), with no vm.expectRevert, so this revert fails that test - record that red
+with scripts/pending-red.sh <proj> pending/<id>.t.sol, count it in STATE.md; then put _skipPermissionCheck = true and a header
+line // _skipPermissionCheck: <id> open in the suites that deploy the hook; then the battery, which holds them to that red
+record, current while src/ and pending/<id>.t.sol are as recorded (doctrine/EVIDENCE.md section 2).` - in a project that refusal is a finding, the owner decides its fix, and the refusal
+names the act (`test/HookPermissions.t.sol` holds the whole line); `scripts/pending-red.sh` prints it whole and names
+that section. "Implemented" means it returned or reverted with an error of its
 own; `NotImplemented()`, `HookNotImplemented()` (the examples', v4-periphery's and OpenZeppelin's `BaseHook`'s), no data,
 or what a selector no hook has gets, mean not implemented (override `_isNotImplementedRevert` for another name). A bit set
 for a callback that reverts on the probe is a log line, not a failure (`WARNING` when it is not implemented: every pool of
@@ -1016,9 +1022,18 @@ with 5 M). On this module the three tests that deploy an example hook in their b
 figure above for the hand-written pair is from before the check.
 
 While a permission-bits finding is OPEN on the hook under test, every suite that deploys it fails in `setUp()` - the
-pending tests of other findings included. The route's path (`doctrine/EVIDENCE.md` section 2): the bits finding's own
-test sets `_skipPermissionCheck = true` and shows the callback never running; the other pending tests set the same flag,
-say so in their header, and drop it when the fix lands.
+pending tests of other findings and the everyday suite included. The route's path (`doctrine/EVIDENCE.md` section 2,
+v0.4.2), in this order: first the bits finding's own test, `pending/<id>.t.sol` - its own `setUp` sets
+`_skipPermissionCheck = true`, then a test function of its own calls `_checkHookPermissions(address(hook));` directly
+(`function _checkHookPermissions(address hook) internal`) with no `vm.expectRevert`, so it fails on the harness's line
+(wrapped in `vm.expectRevert` it passes, and `pending-red.sh` refuses it as no finding's test) - and
+`scripts/pending-red.sh` records that red (its record carries a `permission-bits:`
+line); then the flag in `setUp` with a header line `// _skipPermissionCheck: <id> open` in every suite that deploys the
+hook - the everyday suite under `test/` too: the hook then runs as the manager would really drive it, the callback never
+called; then the battery. That record stays current while `src/` and `pending/<id>.t.sol` are as recorded - the flag
+going into `test/`, or a later edit there, does not stale it. `scripts/battery.sh` refuses a file under `test/` that
+assigns the flag without that record, saying why and naming `pending-red.sh` with the finding's file, and with it ends
+`BATTERY PASSED - green UNDER open permission-bits finding <id>`. Drop the flag when the fix lands.
 
 ### Which refusal catches what
 

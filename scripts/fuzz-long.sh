@@ -43,6 +43,14 @@
 #                     The bench keeps the campaign's corpus/ and census/ from one run to the next (bench.sh BENCH_KEEP):
 #                     a refresh never deletes them, and a corpus/ the project has is merged in. census/long.tsv is THIS run's
 #                     census and starts empty; another run's census under another name (GAUNTLET_CENSUS) stays.
+#                     The corpus is kept for the test directories it was recorded on (v0.4.2): the bench keeps the hash of
+#                     the file list and contents of the profile's test directory (forge config's `test`, test/ by
+#                     default - the handlers live there) in <bench>/.corpus-tests.sha256, and when it differs - a handler
+#                     changed, its selectors with it - or there is none, the bench's corpus/ and cache/invariant/ (the
+#                     failures forge persisted) are cleared before the campaign, and a line says so; unchanged, a line
+#                     says the corpus is kept. (A corpus recorded against another handler replays stale selectors: a
+#                     strong model's long campaign went red for that, an environmental reason, measured 2026-10-02.) The
+#                     project's own corpus/ and cache/ are never touched (doctrine/NEXT.md row 6b says when to clear them).
 #                     When the campaign PASSED and wrote one, its absolute path is printed alone on a line,
 #                     `census: <path>`: the file the gate reads (scripts/census.sh --aggregate <path>). A FAILED campaign has
 #                     no census (forge writes a line per shrink replay): the file is renamed <name>.FAILED.tsv, named, and
@@ -145,7 +153,7 @@ if [ "$USE_BENCH" = "1" ] && [ "$ESTIMATE_ONLY" != "1" ]; then
   # `rsync --delete` removed both (the project has neither), and every long run with a bench started from an empty corpus.
   # A corpus the project has of its own is merged in, never replacing the bench's.
   # (a corpus directory from the environment is not taken - forge-env.sh - and the one this script sets is under corpus/)
-  keep="${REL_IN:+$REL_IN/}corpus ${REL_IN:+$REL_IN/}census"
+  keep="${REL_IN:+$REL_IN/}corpus ${REL_IN:+$REL_IN/}census ${REL_IN:+$REL_IN/}.corpus-tests.sha256"
   # the bench lives in THIS project's .gauntlet/ (not in the parent's, when the parent is what is benched): bench.sh
   # allows a root strictly under a .gauntlet directory inside what it copies, and no copy enters one
   bench_root="${BENCH_ROOT:-$SRC/.gauntlet/bench}"
@@ -256,6 +264,25 @@ echo "fuzz-long: a failure is then shrunk (shrink_run_limit $shrink, about 10 mi
 if [ "$ESTIMATE_ONLY" = "1" ]; then
   echo "fuzz-long: ESTIMATE_ONLY=$ESTIMATE_GIVEN - the cost above, and no campaign: nothing was run, nothing written. The same command without it runs the campaign."
   exit 0
+fi
+
+# the bench's corpus against the test directories it was recorded on (the header, USE_BENCH): cleared when they changed
+if [ "$USE_BENCH" = "1" ]; then
+  ck_dir="$(printf '%s\n' "$cfg" | awk '/^test = / { v = $3; gsub(/"/, "", v); print v; exit }')"; ck_dir="${ck_dir:-test}"
+  ck_now="$( { [ -d "$ck_dir" ] && (find -L "$ck_dir" -type f -print0 2> /dev/null || :) | LC_ALL=C sort -z \
+    | while IFS= read -r -d '' f; do printf '%s  %s\n' "$(sha256sum < "$f" | cut -d' ' -f1)" "$f"; done; } | sha256sum | cut -d' ' -f1)"
+  ck_was="$(sed -n '1{s/\r$//;s/ .*//;p;}' .corpus-tests.sha256 2> /dev/null)"
+  if [ -n "$ck_was" ] && [ "$ck_was" = "$ck_now" ]; then
+    echo "fuzz-long: the bench's corpus was recorded on these test directories ($ck_dir/ ${ck_now:0:8}): kept"
+  elif [ -e corpus ] || [ -e cache/invariant ]; then
+    rm -rf corpus cache/invariant
+    if [ -n "$ck_was" ]; then ck_why="$ck_dir/ changed since the bench's corpus was recorded (${ck_was:0:8} -> ${ck_now:0:8}: a handler, its selectors)"
+    else ck_why="the bench's corpus has no record of the test directories it was recorded on"; fi
+    echo "fuzz-long: $ck_why - the bench's corpus/ and cache/invariant/ cleared: this campaign starts from none (a corpus of another handler replays stale selectors)"
+  else
+    echo "fuzz-long: the bench has no corpus yet: this campaign records one for $ck_dir/ (${ck_now:0:8})"
+  fi
+  printf '%s  %s/\n' "$ck_now" "$ck_dir" > .corpus-tests.sha256
 fi
 
 # the campaign's census: one line per run, written by HandlerBase.writeCensus if the suite calls it, added up below

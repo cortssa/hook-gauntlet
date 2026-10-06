@@ -18,5 +18,5 @@ waiting_on_owner:          high pending - to tell · triage of F-1 M-1
 rehearsal:                 n/a (no runbook)
 location:                  .gauntlet/
 dossier:                   skeleton (2 open, 2 judges not done)
-notes:
+notes:                     fork: n/a - a next.sh fixture, no chain
 ```

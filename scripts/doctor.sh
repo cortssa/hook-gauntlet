@@ -10,6 +10,11 @@
 # Output:  one line per requirement - `ok <name> <version>`, `missing <name> - <why>` or `optional-missing <name> - <why>` -
 #          each missing item followed by indented lines with the command for THIS system: Linux (apt), macOS (brew), or
 #          Windows outside WSL (Git Bash / MSYS / Cygwin): the WSL steps first, then the Linux commands, run inside WSL.
+#          Then the kit's own files against its MANIFEST (scripts/gen-manifest.sh, the same exclusions - deps, builds,
+#          .git, and what the kit's own runs write: corpus/, census/, broadcast/, .gauntlet/): `kit: N files
+#          not in MANIFEST: <first three>` when a file under the kit is not listed (a file written into the kit - it is
+#          not to be changed: move it out), `kit: no MANIFEST` when there is none, nothing when every file is listed;
+#          never a missing item (the kit cannot know whether the operator meant it).
 #          With <proj>, one line more before the last: `deps: ok`, or `deps: <proj>: not set up - scripts/setup-deps.sh
 #          <proj>` (what `scripts/setup-deps.sh --check` reads: remappings.txt and foundry.toml as step 7b writes them;
 #          nothing written), and then `deps` is a missing item.
@@ -66,7 +71,11 @@ case "$sys" in
     case "$KIT" in
       /mnt/*)
         need linux-side "the kit is on the Windows side of WSL (under /mnt/): line ends and file watchers break across the boundary"
-        echo "  install: inside WSL, in your Linux home: git clone <url-of-this-repository> ~/hook-gauntlet   (then run everything from there)" ;;
+        case "$KIT" in
+          */lib/hook-gauntlet)   # vendored in a project (QUICKSTART 7b): the copy is the way, no clone and no network (v0.4.2)
+            echo "  install: the kit is vendored at <project>/lib/hook-gauntlet: copy the directory that holds that lib/ - the project and the kit in it - to your Linux home, inside WSL: cp -r ${KIT%/lib/hook-gauntlet} ~/   (no clone, no network; then run everything from the copy)" ;;
+          *) echo "  install: inside WSL, in your Linux home: git clone <url-of-this-repository> ~/hook-gauntlet   (then run everything from there)" ;;
+        esac ;;
       *) echo "ok linux-side" ;;
     esac ;;
   macos) echo "ok platform macOS $(uname -r 2> /dev/null) (untested by the kit: its scripts are exercised on Linux)" ;;
@@ -148,6 +157,40 @@ else
   head="$(git -C "$V4" rev-parse HEAD 2> /dev/null)"
   if [ -n "$pin" ] && [ "$head" = "$pin" ]; then echo "ok v4-core $(printf '%s' "$head" | cut -c1-12) (the pin in scripts/install-v4.sh)"; else
     need v4-core "foundry-kit/v4/lib/v4-core is at ${head:-no commit}, the pin is ${pin:-unreadable}"; v4_install "V4_FORCE=1 "; fi
+fi
+
+# ---------------------------------------------------------------------------- the kit's own files against its MANIFEST
+# A file there that the MANIFEST does not list is named, not counted missing: the kit cannot know whether the operator
+# meant it. Generated outputs are not intruders (K52: after the selftest and the kit's own batteries this line named
+# 152 files of corpus/ and .gauntlet/reports/). Walked with the shell's own globs (no find: bash 3.2 and a bare PATH too).
+# THE EXCLUSIONS - one rule, in the same words in scripts/gen-manifest.sh, scripts/doctor.sh and scripts/next.sh (the
+# selftest holds these lines equal in the three): MANIFEST itself; `.git`, file or directory, at any depth; and every
+# directory named in KIT_SKIP_DIRS, anywhere under the kit - dependencies (lib/, but scripts/lib/: the scripts' own
+# library, source), builds (cache/, out/) and what the kit's own runs write (corpus/, census/, broadcast/, .gauntlet/,
+# where the selftest's marker is). The kit's .gitignore names the same directories.
+KIT_SKIP_DIRS="lib cache out corpus census broadcast .gauntlet"
+kit_walk() { # kit_walk <dir> <its path from the kit, "" or ending in />: every file under it, one path a line
+  local x n
+  for x in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    [ -e "$x" ] || [ -L "$x" ] || continue
+    n="${x##*/}"
+    [ "$n" = .git ] && continue
+    if [ -d "$x" ] && [ ! -L "$x" ]; then
+      case " $KIT_SKIP_DIRS " in *" $n "*) [ "$2$n" = scripts/lib ] || continue ;; esac
+      kit_walk "$x" "$2$n/"
+    else
+      [ "$2$n" = MANIFEST ] && continue
+      printf '%s\n' "$2$n"
+    fi
+  done
+}
+if [ ! -f "$KIT/MANIFEST" ]; then
+  echo "kit: no MANIFEST"
+else
+  kit_extra="$(kit_walk "$KIT" "" | awk -v mf="$KIT/MANIFEST" 'BEGIN { while ((getline l < mf) > 0) { sub(/\r$/, "", l); m[substr(l, 67)] = 1 } } !($0 in m)')"
+  if [ -n "$kit_extra" ]; then
+    echo "kit: $(printf '%s\n' "$kit_extra" | awk 'END { print NR }') files not in MANIFEST: $(printf '%s\n' "$kit_extra" | awk 'NR <= 3 { printf "%s%s", (NR > 1 ? ", " : ""), $0 }')"
+  fi
 fi
 
 # ---------------------------------------------------------------------------- optional

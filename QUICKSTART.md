@@ -116,15 +116,26 @@ lies: `doctrine/SIMULATE.md`. It is optional and owner-requested; nothing waits 
 
 ## 5. Install the state convention in YOUR project
 
-The kit keeps nothing about your hook in its own tree. In your project:
+The kit keeps nothing about your hook in its own tree. For your project:
 
 ```sh
-mkdir -p .gauntlet/briefs .gauntlet/reports
-cp <kit>/state/STATE.md <kit>/state/DECISIONS.md <kit>/state/LOG.md .gauntlet/   # <kit> = where step 1 cloned it
-cp <kit>/state/.gitignore .gauntlet/   # the benches live in .gauntlet/bench/ (step 9): copies of the project, never committed
+<kit>/scripts/init-state.sh <proj>   # <kit> = where step 1 cloned it; --spec <file> when the spec is not <proj>/SPEC.md
+mkdir -p <proj>/.gauntlet/briefs <proj>/.gauntlet/reports
 ```
 
-Then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines but keep, in `STATE.md`, the section headers and the flag block at the top (the title is the one line that
+It writes `<proj>/.gauntlet/`: `STATE.md` with a new project's starting values (the flag block `doctrine/NEXT.md`
+reads, the section headers), `DECISIONS.md` and `LOG.md` with their rules and no entries, and `.gitignore` (the benches
+live in `.gauntlet/bench/`, step 9: copies of the project, never committed) - and it records the spec's SHA-256: the
+spec is the owner's, and `scripts/next.sh` refuses it changed until the owner re-records it, signed (`init-state.sh
+--spec <spec> --by "<name>"`, refused without the signature; it writes a line in `LOG.md` and in `.gauntlet/spec.sha256`,
+and `next.sh` repeats it under every answer). The route's own spec is `.gauntlet/SPEC.md`, never the owner's file. It
+also anchors `src/` (`.gauntlet/src.sha256`, the hash of its file list and contents; nothing when there is no hook
+yet): `scripts/pending-red.sh` and `scripts/battery.sh` refuse to run on a `src/` that changed since - a finding's fix is
+the owner's, shown on a copy, never written into `src/` - until the owner re-records it, signed (`--src`, the same
+act). It refuses a project that already has a `STATE.md` of its own.
+
+Only as a fallback, by hand - it records no spec, so the spec check is off: copy `<kit>/state/STATE.md`,
+`DECISIONS.md`, `LOG.md` and `.gitignore` into `.gauntlet/`, then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines but keep, in `STATE.md`, the section headers and the flag block at the top (the title is the one line that
 names the hook: retitle it), and in `DECISIONS.md` and `LOG.md` the rules paragraph at the top (their only
 headers are the fictional entries: delete those whole), set to the starting values `doctrine/NEXT.md` gives. `.gauntlet/` is the default
 location; the project root works too - write which in `STATE.md`, it is a decision. Everything the route produces
@@ -163,7 +174,14 @@ and `doctrine/FUZZ-ACTIONS.md`; the kit's own suites under `foundry-kit/test/` a
 **One command writes the dependency lines below: `<kit>/scripts/setup-deps.sh <proj>`.** It finds the kit walking up
 from `<proj>` for `lib/hook-gauntlet` (or `--kit PATH`), writes or repairs `remappings.txt` and the `[profile.default]`
 lines of `foundry.toml` for that layout, prints each line it wrote or changed, then runs `forge build` (`--dry-run`: it
-prints, and writes and builds nothing). It never copies a library into the project, and refuses one that has its own
+prints, and writes and builds nothing). It also writes a `[profile.pending]` with `test = "pending"` and nothing else
+when the project has none (row 6b's profile: `FOUNDRY_PROFILE=pending forge test --match-path 'pending/*'`; every
+other key is inherited from `[profile.default]`), and the fuzz configuration this step needs when it is absent:
+`fs_permissions` for `./census`, an `[invariant]` with `fail_on_revert = true` (the kit's v4 module's 64 x 64; one of
+yours gets `fail_on_revert = true` if it has none) and a `[profile.long.invariant]` larger than it for
+`scripts/fuzz-long.sh` - a line that is there is left as it is, and said. Before the import lines for your tests (below)
+it prints the `COPY_ROOT` the layout needs for `scripts/mutate.sh` (`COPY_ROOT=..` for a `proj/` beside the kit; none
+for the kit inside the project). It never copies a library into the project, and refuses one that has its own
 `lib/forge-std` or `lib/v4-core` (a copy of the kit's? remove it, or `SETUP_DEPS_KEEP_LIB=1`), a kit without Uniswap's
 sources (step 3), a project with no kit in reach. Measured 2026-09-30: FR16's layout (the eight remappings and the
 `foundry.toml` lines it writes are that project's, byte for byte), a project with the kit's libraries copied into its
@@ -192,12 +210,34 @@ and the file's remappings with `<kit>/foundry-kit/v4/` prefixed: `forge-std/`, `
 `v4-core/`, `@uniswap/v4-core/`, `v4-periphery/`, `permit2/`, `openzeppelin-contracts/` (the last two matter only with the
 periphery installed, `V4_WITH_PERIPHERY=1`), and `gauntlet-kit/=<kit>/foundry-kit/src/`; plus ONE the file does not
 carry because the module reaches its own sources directly: `gauntlet-v4/=<kit>/foundry-kit/v4/src/` for `V4Harness` and
-`HookMiner`), and its scenarios from `foundry-kit/v4/test/`. Offline, this recipe is also the substitute for the
+`HookMiner`), and its scenarios from `foundry-kit/v4/test/`.
+
+**The import lines, in your project's tests** - what `setup-deps.sh` prints last, verbatim; they compile through the
+remappings above (`gauntlet-v4/` is `<kit>/foundry-kit/v4/src/`, so the file follows it directly - not
+`gauntlet-v4/src/...`):
+
+```
+import {V4Harness} from "gauntlet-v4/V4Harness.sol";
+import {MinimalRouter} from "gauntlet-v4/MinimalRouter.sol";
+import {LiquidityHelper} from "gauntlet-v4/LiquidityHelper.sol";
+import {HookMiner} from "gauntlet-v4/HookMiner.sol";
+import {HostileERC20} from "gauntlet-kit/HostileERC20.sol";
+The kit's own examples import these relative to the kit (../../src/...): do not copy their import lines.
+```
+
+Offline, this recipe is also the substitute for the
 official `v4-template` layout that phase 2's gate names (`AGENTS.md` section 3): write it in the dossier's section 8 as a
 divergence - the question (does the hook build the way Uniswap's template builds a hook?), this recipe as the answer,
 and why the template was not fetched. In each test's `setUp`: `_setUpV4();` then
 `hook = MyHook(_deployHook(type(MyHook).creationCode, abi.encode(manager), <its flags>));` - the harness mines the address
-and refuses to run before the routers exist (`foundry-kit/v4/README.md`, "Address mining for the flag bits"). Every test that creates the PoolManager is then compiled under the
+and refuses to run before the routers exist (`foundry-kit/v4/README.md`, "Address mining for the flag bits"). It also
+refuses a hook that implements a callback whose permission bit is not set (`V4Harness: ... permission bit is not set`):
+that is a finding, not a fix, and its path goes in this order - its test `pending/<id>.t.sol` (its own `setUp` sets
+`_skipPermissionCheck = true`; a test function of its own calls `_checkHookPermissions(address(hook))` directly, with
+no `vm.expectRevert`, so the harness's revert fails it),
+recorded red by `scripts/pending-red.sh <proj> pending/<id>.t.sol`; then `_skipPermissionCheck = true` and the header
+line `// _skipPermissionCheck: <id> open` in your suites; then the battery, which ends `green UNDER open permission-bits
+finding <id>` (`doctrine/EVIDENCE.md` section 2). Every test that creates the PoolManager is then compiled under the
 restricted via-IR profile, so the hook the tests, the fuzz and the mutants deploy is the `<Hook>.manager.json` build, not the
 default `<Hook>.json`: THAT is the audited artefact - `size.sh` prints both rows, cite the `.manager` one; promotion hashes it;
 a hook deployed from any other profile is a different artefact (`NEXT.md`, bytecode changed). A hook that HOLDS tokens has a worked example since 2026-09-24: `DeltaFeeHook` (a fee taken by
@@ -222,7 +262,7 @@ Deterministic tools on your machine, no model. Run them on your project director
 | branch coverage | `forge coverage --report summary --no-match-coverage '<the regex in doctrine/JUDGES.md row 4>'` (this reruns your everyday campaign: about two minutes at forge's default 256 x 500, seconds at the v4 recipe's 64 x 64; a hook next to the PoolManager's IR restriction, the 7b layout: add `--ir-minimum`, or forge measures the wrong build and maps hits to the wrong lines - `doctrine/JUDGES.md` row 4) (`--ir-minimum` also if it will not compile) | branch numbers for `src/` in the dossier, and the uncovered branches named |
 | dirty memory, junk bits | `forge test --brutalize` in `<proj>` | the same suite green (`doctrine/JUDGES.md` row 6) |
 | long fuzz | say how long first (`AGENTS.md` section 5): `ESTIMATE_ONLY=1 scripts/fuzz-long.sh <proj>` prints what it will cost and stops, no campaign (the run prints it again before its campaign starts) - runs x depth, the everyday campaigns' time from the battery's last log scaled by calls, and that a failure is then shrunk (`shrink_run_limit`; about 10 minutes on a v4 hook, measured); read them to the owner, and stop there if it is too much. `scripts/fuzz-long.sh <proj>` (needs a `[profile.long.invariant]` whose runs x depth is LARGER than your everyday budget - the script prints both and the block to paste; a sub-directory project: `USE_BENCH=0`, or see `foundry-kit/v4/README.md`) | exit 0 with the campaign lines and `runs in which the handler met an UNEXPLAINED revert: 0`; `NOTHING PROVEN` (exit 2) means no campaign ran - never a pass |
-| campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor; set the floor **below** your measured range, never in it |
+| campaign census | the GATE judges the long campaign: `CORE="deposit withdraw" REACH="fee at the cap;pool at the price limit" MIN_PCT=25 scripts/census.sh --aggregate <bench>/census/long.tsv <proj>` (CORE names are separated by spaces, REACH names by `;` - a boundary's name has spaces in it; the path `fuzz-long.sh` printed; the record goes to `<proj>/.gauntlet/reports/06-census-gate.txt` and the last line is `census gate: PASSED - ...` or `FAILED - ...`; with CORE and REACH both empty it says `NOTHING JUDGED`). `scripts/census.sh <proj>` without `--aggregate` runs the everyday campaign again and judges that one - a smoke check, not the gate; the two write different report files | every CORE action and REACH boundary met the floor. The floor: run the short campaign three times (`scripts/census.sh <proj>`); the floor goes below the lowest - one campaign's number sits inside the noise |
 | mutation | `TEST_FLAGS="--match-contract <YourUnitTests>" scripts/mutate.sh <proj> src/Hook.sol 'old' 'new'` for one aimed change (`TEST_FLAGS` is read by mutate.sh only - the battery ignores it; set it on the command line, not with `export`. It is expanded unquoted by the script: no inner quotes - a `--match-path` needs its glob bare; without `TEST_FLAGS` each mutant reruns the whole battery, campaign included: minutes each on forge's defaults; dependencies reached by RELATIVE paths outside the project: `COPY_ROOT=<their common parent>`; absolute remappings need nothing; the mutated copy goes under `BENCH_ROOT`, else `<proj>/.gauntlet/bench`); `forge test --mutate src/Hook.sol --match-path 'test/unit/*'` for the score - against the fast tests only (`doctrine/JUDGES.md`, mutation) | `KILLED`; read every survivor (`doctrine/EVIDENCE.md` §2) |
 | the REAL manager of your chain | `RPC_URL=… scripts/fetch-bytecode.sh <address>`, then `V4_MANAGER=fixture scripts/battery.sh <proj>` | the fixture battery green; required before the black-box round and before promotion, not before round 1 |
 | the kit's own suites on an Ethereum mainnet fork | `export RPC_URL=…` (in your own terminal), then `scripts/fetch-bytecode.sh --block 26050000 0x000000000004444c5dc75cB358380D2e3dE08A90 foundry-kit/v4/fixtures/PoolManager.hex`, then `FOUNDRY_PROFILE=fork V4_MANAGER=fork scripts/battery.sh foundry-kit/v4` (the default battery never runs the fork suites; `foundry-kit/v4/README.md`, "The fork") | `BATTERY PASSED` with `suites test/backtest=4 test/examples=4 test/fork=7`; fork tests for YOUR hook on YOUR chain are still yours to write (`AGENTS.md` phase 3) |

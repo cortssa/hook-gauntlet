@@ -5,12 +5,13 @@ bugs that cost the most live in what is NOT generic: your own arithmetic, your o
 Those come from `INVARIANTS.md` (who can lose what), from the spec's assumptions (`EVIDENCE.md` 8), and from the pool
 manager's accounting rules, which every delta-touching hook must model operation by operation (`V4-ACCOUNTING.md`).
 
-**ADAPT: this is a prompt list, not a checklist to tick.** For each class decide one of four things and write it in
-`SPEC.md`: *applies* (then it is a row in the hostile-actor table, with a test); *does not apply to this hook* (say why
-in section 7, out of scope); *applies and is accepted* (section 6, with a number); or ***prevented by an admission
-rule or an operational procedure, not by the code*** (section 5: name the rule, the probe that checks it, who runs
-the probe, and what happens if it is violated anyway). The fourth is not a weaker answer, but it is the one an
-auditor most needs to see, because those are the guarantees that stop holding the day an operator stops looking.
+**ADAPT: this is a prompt list, not a checklist to tick.** For each class decide one of four things and write it
+in the route's spec, `.gauntlet/SPEC.md`: *applies* (then it is a row in the hostile-actor table, with a test);
+*does not apply to this hook* (say why in section 7, out of scope); *applies and is accepted* (section 6, with
+a number); or ***prevented by an admission rule or an operational procedure, not by the code*** (section 5: name
+the rule, the probe that checks it, who runs the probe, and what happens if it is violated anyway). The fourth is
+not a weaker answer, but it is the one an auditor most needs to see, because those are the guarantees that stop
+holding the day an operator stops looking.
 "Does not apply" is itself a claim: it needs an architectural predicate someone can check, the evidence, and the
 counter-example you tried - not a search result (`EVIDENCE.md` 6) - and one discovery round is told to break that list.
 A class with no decision is a hole - and "not supported" is not a decision until something REFUSES it and a test
