@@ -204,23 +204,25 @@ jobs:
       - name: the dossier template renders as a PDF
         run: python3 scripts/dossier-pdf.py briefs/handoff-dossier.md "$RUNNER_TEMP/handoff-dossier.pdf"
       # the log is kept, and uploaded when the job fails: a red on the daily schedule is read days later, and the job's
-      # own console is the only other copy of what went wrong
+      # own console is the only other copy of what went wrong. It lives OUTSIDE the checkout: this job runs in a git
+      # checkout, where gen-manifest.sh lists what git would add, so a log written inside the tree is a file the
+      # MANIFEST does not list and the selftest's MANIFEST case goes red (v0.4's first CI run).
       - name: selftest
         shell: bash
         run: |
           set -o pipefail   # without it the step's exit code would be tee's, and a red selftest would pass
-          mkdir -p selftest-logs
-          scripts/selftest.sh 2>&1 | tee selftest-logs/selftest.txt
+          mkdir -p "$RUNNER_TEMP/selftest-logs"
+          scripts/selftest.sh 2>&1 | tee "$RUNNER_TEMP/selftest-logs/selftest.txt"
       - name: the dossier cases ran here (a skip for a missing reportlab or pypdf is not a pass)
         run: |
-          grep -q '^  ok    no line of the fixture is lost on the way to paper' selftest-logs/selftest.txt \
+          grep -q '^  ok    no line of the fixture is lost on the way to paper' "$RUNNER_TEMP/selftest-logs/selftest.txt" \
             || { echo "the dossier-pdf.py cases did not run: reportlab or pypdf missing on the runner"; exit 1; }
       - name: keep the selftest log (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: selftest-log
-          path: selftest-logs/selftest.txt
+          path: ${{ runner.temp }}/selftest-logs/selftest.txt
           if-no-files-found: warn
 
   shellcheck:
