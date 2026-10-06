@@ -232,7 +232,7 @@ if command -v git > /dev/null 2>&1 && [ -f "$DK/scripts/doctor.sh" ]; then
   # doc <out> <dirs before the base, colon-separated> [VAR=value...]: the doctor on the fake machine, RPC_URL unset unless given
   doc() { local o="$1" p="$2"; shift 2; env -u RPC_URL -u ETH_RPC_URL HOME="$DH" PATH="$p:$DR/trap:$DB" "$@" "$BASH" "$DK/scripts/doctor.sh" > "$o" 2>&1; }
   # every line is `ok|missing|optional-missing <name> ...`, an indented line (a command, a step), or the last line
-  doc_shape() { ! grep -vE '^(ok|missing|optional-missing) [A-Za-z0-9_.-]+( |$)|^  |^kit: (no MANIFEST|[0-9]+ files not in MANIFEST: .+)$|^doctor: (ready|missing: .+)$' "$1"; }
+  doc_shape() { ! grep -vE '^(ok|missing|optional-missing) [A-Za-z0-9_.-]+( |$)|^  |^static: (forge lint only|slither [0-9.]+(, aderyn [0-9.]+)?|aderyn [0-9.]+)$|^kit: (no MANIFEST|[0-9]+ files not in MANIFEST: .+)$|^doctor: (ready|missing: .+)$' "$1"; }
   expect_line() { # expect_line <label> <file> <grep -E pattern>...: every pattern is found
     local label="$1" f="$2" pat miss=""; shift 2
     for pat in "$@"; do grep -qE -- "$pat" "$f" || miss="$miss [$pat]"; done
@@ -282,6 +282,21 @@ if command -v git > /dev/null 2>&1 && [ -f "$DK/scripts/doctor.sh" ]; then
   doc "$TMP/o232" "$L"; check "doctor: foundry-kit/v4/lib/v4-core not installed" 1 $? "$TMP/o232"
   expect_line "and it gives install-v4.sh" "$TMP/o232" '^missing v4-core' 'scripts/install-v4.sh foundry-kit/v4'
   mv "$DR/v4-core.away" "$DV"
+  # the static analysers (v0.5): one `static:` line, never a missing item - what scripts/static-triage.sh will run besides
+  # forge lint. No analyser on the fake machine: forge lint only, with the install lines for the owner's yes
+  expect_line "doctor: no Slither, no Aderyn - one line 'static: forge lint only', the Slither install command under it, never a missing item" "$TMP/o220" \
+    '^static: forge lint only$' 'pipx install slither-analyzer' 'question 17b'
+  if grep -qE '^(missing|optional-missing) (slither|aderyn)' "$TMP/o220"; then echo "  FAIL  doctor: Slither or Aderyn reported as a missing item"; fails=$((fails + 1)); else
+    echo "  ok    and neither is a missing or optional-missing item"; fi
+  dstub "$DR/sl" slither "echo 0.11.6"; dstub "$DR/ad" aderyn "echo 'aderyn 0.6.5'"
+  doc "$TMP/o7001" "$DR/sl:$L"; check "doctor: a Slither on the PATH" 0 $? "$TMP/o7001"
+  expect_line "and the line is 'static: slither 0.11.6'" "$TMP/o7001" '^static: slither 0\.11\.6$'
+  doc "$TMP/o7002" "$DR/sl:$DR/ad:$L"; check "doctor: Slither and Aderyn on the PATH" 0 $? "$TMP/o7002"
+  expect_line "and the line names both, Slither first" "$TMP/o7002" '^static: slither 0\.11\.6, aderyn 0\.6\.5$'
+  doc "$TMP/o7003" "$DR/ad:$L"; check "doctor: Aderyn alone" 0 $? "$TMP/o7003"
+  expect_line "and the line is 'static: aderyn 0.6.5'" "$TMP/o7003" '^static: aderyn 0\.6\.5$'
+  if doc_shape "$TMP/o7001" && doc_shape "$TMP/o7002" && doc_shape "$TMP/o7003"; then echo "  ok    and every line of those three has the documented shape"; else
+    echo "  FAIL  a line of the Slither / Aderyn runs has another shape"; fails=$((fails + 1)); fi
   if [ ! -e "$DR/installer-calls" ]; then echo "  ok    no installer and no network tool was called by any doctor run above"; else
     echo "  FAIL  the doctor called an installer or a network tool:"; sed "s/^/        | /" "$DR/installer-calls"; fails=$((fails + 1)); fi
   # the versions the doctor calls supported are the ones CI runs: a pin changed in one place only is seen here
@@ -5409,6 +5424,146 @@ for k62_f in foundry-kit/v4/src/V4Harness.sol foundry-kit/v4/test/HookPermission
   else echo "  ok    $k62_f no longer says 'asserts this/the/the harness's refusal'"; fi
 done
 # --- end K62 ---
+
+# ================================================================= v0.5: static-triage.sh - the static analysers this
+# machine has, on the project's src/ only, into .gauntlet/reports/05-static.txt; a missing tool is said, never fetched.
+# Slither and Aderyn are FAKES here (stubs on the PATH): Slither's prints a real Slither 0.11.6 checklist of the kit's own
+# sources (scripts/test/fixtures/slither-real-checklist.txt, its one `(wd: ...)` path replaced) and its real last line;
+# Aderyn's writes a report of the shape the script ASSUMES (aderyn-assumed-report.md: no Aderyn has been run here). The
+# real ones on this machine, if any, are taken off the PATH for every case. forge lint is the real one: forge needed.
+echo "== v0.5: static-triage.sh - what is installed runs, on src/; a missing tool is said, never fetched; counts read, not guessed =="
+if command -v forge > /dev/null 2>&1; then
+  ST="$TMP/st"; STP="$ST/proj"; mkdir -p "$STP/src" "$STP/.gauntlet" "$ST/forge"
+  ln -s "$(command -v forge)" "$ST/forge/forge"
+  printf '[profile.default]\nsrc = "src"\nout = "out"\nlibs = ["lib"]\n' > "$STP/foundry.toml"
+  printf '// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\ncontract T {\n    address public immutable owner;\n\n    constructor() {\n        owner = msg.sender;\n    }\n\n    function isOwner() external view returns (bool) {\n        if (msg.sender == tx.origin) {\n            return msg.sender == owner;\n        }\n        return false;\n    }\n}\n' > "$STP/src/T.sol"
+  # the PATH with no slither and no aderyn in it: every directory of this one that holds either is left out
+  st_path="$ST/forge"; IFS=: read -r -a st_dirs <<< "$PATH"
+  for d in "${st_dirs[@]}"; do [ -n "$d" ] || continue; { [ -x "$d/slither" ] || [ -x "$d/aderyn" ]; } && continue; st_path="$st_path:$d"; done
+  st_run() { # st_run <out> <dirs before the clean PATH, or ""> [<proj>]: the script on the fixture project
+    local o="$1" pre="$2" p="${3:-$STP}"
+    rm -rf "$p/.gauntlet/reports"
+    env PATH="${pre:+$pre:}$st_path" "$HERE/static-triage.sh" "$p" > "$o" 2>&1
+  }
+  st_report() { printf '%s' "$STP/.gauntlet/reports/05-static.txt"; }
+  # st_slither <dir> <the total its last line says> <its exit code>: a fake Slither that logs its arguments, deletes
+  # cache/invariant/ and cache/fuzz/ as the real one's `forge build --force` does (measured: forge's two persisted-failure
+  # directories), prints the real checklist and its last line
+  st_slither() {
+    mkdir -p "$1"
+    printf '#!/usr/bin/env bash\n[ "${1:-}" = --version ] && { echo 0.11.6; exit 0; }\nprintf "%%s\\n" "$*" >> "%s/slither-args"\nrm -rf cache/invariant cache/fuzz\ncat "%s"\necho "INFO:Slither:. analyzed (29 contracts with 102 detectors), %s result(s) found" >&2\nexit %s\n' \
+      "$ST" "$FIX/slither-real-checklist.txt" "$2" "$3" > "$1/slither"
+    chmod +x "$1/slither"
+  }
+  st_slither "$ST/sl" 43 0; st_slither "$ST/sl-nm" 44 0; st_slither "$ST/sl-fail" 43 1
+  mkdir -p "$ST/ad"
+  printf '#!/usr/bin/env bash\n[ "${1:-}" = --version ] && { echo "aderyn 0.6.5"; exit 0; }\nprintf "%%s\\n" "$*" >> "%s/aderyn-args"\nwhile [ $# -gt 0 ]; do [ "$1" = --output ] && { cp "%s" "$2"; exit 0; }; shift; done\nexit 3\n' \
+    "$ST" "$FIX/aderyn-assumed-report.md" > "$ST/ad/aderyn"; chmod +x "$ST/ad/aderyn"
+  st_files() { (cd "$STP" && find . -path ./.gauntlet/reports -prune -o -type f -print | LC_ALL=C sort); }
+  st_before="$(st_files)"
+
+  # 1. no analyser installed: forge lint only, the report written, the STATE line printed
+  st_run "$TMP/o7010" ""; check "static-triage: no Slither, no Aderyn - forge lint only" 0 $? "$TMP/o7010"
+  if [ -f "$(st_report)" ] && grep -qx '# slither:    not installed' "$(st_report)" && grep -qx '# aderyn:     not installed' "$(st_report)" \
+    && grep -qE '^# forge lint: forge [0-9.]+ - ran$' "$(st_report)" && grep -qE '^forge lint: [1-9][0-9]* lints - ' "$(st_report)" \
+    && grep -qF 'warning[tx-origin]' "$(st_report)" && grep -qF 'note[screaming-snake-case-immutable]' "$(st_report)" && grep -qE '^forge lint by severity: high [0-9]+, med [0-9]+, low [0-9]+, info [0-9]+, gas [0-9]+, code-size [0-9]+$' "$(st_report)"; then
+    echo "  ok    and .gauntlet/reports/05-static.txt has the header (both analysers 'not installed', forge lint ran), the lint findings (a warning and a note) and their counts by level and by severity"
+  else echo "  FAIL  the report is missing, or its header, findings or counts are not as documented:"; sed -n '1,8p;/^== counts ==/,$p' "$(st_report)" 2> /dev/null | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  st_last="$(tail -n 1 "$TMP/o7010")"
+  if grep -qx 'static triage: forge lint only, Slither not installed' "$TMP/o7010" \
+    && [[ $st_last == *"the findings are yours to triage, not verdicts - each one goes to pending/"* ]] \
+    && [[ $st_last == *"or DECISIONS.md (by design, accepted, a false positive) like any finding"* ]]; then
+    echo "  ok    and it prints the STATE line 'static triage: forge lint only, Slither not installed', and its last line says the findings go to pending/ or DECISIONS.md"
+  else echo "  FAIL  the STATE line or the last line is not as documented:"; tail -n 4 "$TMP/o7010" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  if [ "$(st_files)" = "$st_before" ] && ! grep -qiE 'install(ing|ed) (slither|aderyn)|pipx|cargo|curl ' "$TMP/o7010"; then
+    echo "  ok    and nothing else was written in the project (forge lint does not build), and nothing was fetched"
+  else echo "  FAIL  the project changed outside .gauntlet/reports, or an install was attempted"; diff <(printf '%s\n' "$st_before") <(st_files) | sed "s/^/        | /"; fails=$((fails + 1)); fi
+
+  # 2. the STATE line's other form: the owner's last answer to question 17b in DECISIONS.md is "no"
+  printf '# DECISIONS\n\n## D-01 · 2026-10-06 · Q17b static analyzers: no\n\n**Decision:** the kit may not install Slither or Aderyn here.\nsource: owner\n' > "$STP/.gauntlet/DECISIONS.md"
+  st_run "$TMP/o7011" ""; check "static-triage: no analyser, and the owner declined the install (DECISIONS.md, Q17b: no)" 0 $? "$TMP/o7011"
+  if grep -qx 'static triage: forge lint only - the owner declined the install' "$TMP/o7011" && grep -qx 'static triage: forge lint only - the owner declined the install' "$(st_report)"; then
+    echo "  ok    and the STATE line is 'static triage: forge lint only - the owner declined the install', in the report too"
+  else echo "  FAIL  the declined form of the STATE line was not printed:"; grep '^static triage' "$TMP/o7011" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  printf '\n## D-02 · 2026-10-07 · Q17b static analyzers: yes\n\nsource: owner\n' >> "$STP/.gauntlet/DECISIONS.md"
+  st_run "$TMP/o7012" ""; check "static-triage: a later answer, yes, replaces the no" 0 $? "$TMP/o7012"
+  grep -qx 'static triage: forge lint only, Slither not installed' "$TMP/o7012" \
+    && echo "  ok    and the line is back to 'forge lint only, Slither not installed' (the last answer counts; nothing installed either way)" \
+    || { echo "  FAIL  the last answer to Q17b was not the one read:"; grep '^static triage' "$TMP/o7012" | sed "s/^/        | /"; fails=$((fails + 1)); }
+  rm -f "$STP/.gauntlet/DECISIONS.md"
+
+  # 3. a (fake) Slither on the PATH: run on src/ only, its checklist read and counted against its own total
+  mkdir -p "$STP/cache/invariant/failures/S" "$STP/cache/fuzz"; echo kept > "$STP/cache/invariant/failures/S/t"; rm -f "$ST/slither-args"
+  printf 'a persisted fuzz failure\n' > "$STP/cache/fuzz/failures"; touch -d @1700000000 "$STP/cache/fuzz/failures" "$STP/cache/invariant/failures/S/t"
+  st_persist() { (cd "$STP" && find cache/invariant cache/fuzz 2> /dev/null | LC_ALL=C sort | while IFS= read -r f; do echo "$f"; [ ! -f "$f" ] || cat "$f"; done) | cksum; }
+  st_persist_before="$(st_persist)"
+  st_run "$TMP/o7013" "$ST/sl"; check "static-triage: a Slither on the PATH (fake: a real 0.11.6 checklist)" 0 $? "$TMP/o7013"
+  st_inc="^$(cd "$STP" && pwd -P | sed 's/[][\.^$*+?(){}|]/\\&/g')/src/[^/]"
+  if grep -qxF "slither 0.11.6: 43 findings - High 2, Medium 0, Low 8, Informational 29, Optimization 4" "$(st_report)" \
+    && grep -qx '# slither:    slither 0.11.6 - ran' "$(st_report)" && grep -qx 'static triage: slither 0.11.6, forge lint' "$TMP/o7013"; then
+    echo "  ok    and the report counts 43 findings by impact (High 2, Low 8, Informational 29, Optimization 4), equal to Slither's own total; the STATE line names it"
+  else echo "  FAIL  Slither's checklist was not counted as documented:"; grep -E '^(# slither|slither|static triage)' "$(st_report)" "$TMP/o7013" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  if [ "$(cat "$ST/slither-args" 2> /dev/null)" = ". --include-paths $st_inc --checklist --fail-none --skip-clean" ]; then
+    echo "  ok    and Slither was given the project's own src/, resolved, as an include regex - not --filter-paths lib (which drops a result when ANY element's absolute path matches)"
+  else echo "  FAIL  Slither's arguments: '$(cat "$ST/slither-args" 2> /dev/null)', expected '. --include-paths $st_inc --checklist --fail-none --skip-clean'"; fails=$((fails + 1)); fi
+  if [ "$(st_persist)" = "$st_persist_before" ] && [ -f "$STP/cache/fuzz/failures" ] && [ "$(cat "$STP/cache/invariant/failures/S/t" 2> /dev/null)" = kept ] \
+    && grep -qF 'cache/invariant/ was changed or deleted by Slither' "$TMP/o7013" && grep -qF 'cache/fuzz/ was changed or deleted by Slither' "$TMP/o7013" \
+    && grep -qF 'note: cache/fuzz/ was changed or deleted by Slither' "$(st_report)"; then
+    echo "  ok    and cache/invariant/ and cache/fuzz/ (forge's persisted failures), both deleted by Slither's build, are put back byte for byte, and said - on stdout and in the report's note"
+  else echo "  FAIL  forge's persisted failures were not both put back after Slither deleted them:"; (cd "$STP" && find cache 2> /dev/null) | sed "s/^/        | /"; grep -E 'cache/(invariant|fuzz)' "$TMP/o7013" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  rm -rf "$STP/cache"
+  # the project's own fuzz.failure_persist_dir (forge config --json): that directory is the one kept, and named
+  cp "$STP/foundry.toml" "$ST/foundry.toml.kept"; printf '[fuzz]\nfailure_persist_dir = "persist/fuzz"\n' >> "$STP/foundry.toml"
+  mkdir -p "$STP/persist/fuzz"; printf 'a persisted fuzz failure\n' > "$STP/persist/fuzz/failures"
+  st_run "$TMP/o7013b" "$ST/sl"; check "static-triage: a project whose fuzz.failure_persist_dir is persist/fuzz" 0 $? "$TMP/o7013b"
+  if grep -qxF 'static-triage: persist/fuzz/ as it was' "$TMP/o7013b" && [ "$(cat "$STP/persist/fuzz/failures" 2> /dev/null)" = "a persisted fuzz failure" ]; then
+    echo "  ok    and the directory kept is the one forge config gives (persist/fuzz/), not the default, and it is named"
+  else echo "  FAIL  the project's own failure_persist_dir was not the one kept:"; grep -E 'persist|cache/' "$TMP/o7013b" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  cp "$ST/foundry.toml.kept" "$STP/foundry.toml"; rm -rf "$STP/persist" "$STP/cache"
+
+  # 4. its Summary does not add up to its own total: kept, said "not read", not counted - and forge lint still ran (exit 0)
+  st_run "$TMP/o7014" "$ST/sl-nm"; check "static-triage: a Slither whose Summary (43) is not its own total (44)" 0 $? "$TMP/o7014"
+  if grep -q '^NOT COUNTED: its checklist.s Summary adds up to 43 (11 rows) and its own last line says 44' "$(st_report)" \
+    && grep -qx 'slither 0.11.6: not read - not counted' "$(st_report)" && grep -qx 'static triage: forge lint only - slither 0.11.6 not read: see 05-static.txt' "$TMP/o7014"; then
+    echo "  ok    and it is said 'not read', its output kept, nothing counted; the STATE line says so"
+  else echo "  FAIL  a Summary that does not add up was counted, or not said:"; grep -E '^(NOT COUNTED|slither|static triage)' "$(st_report)" "$TMP/o7014" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  st_run "$TMP/o7015" "$ST/sl-fail"; check "static-triage: a Slither that exits 1 (a failed build)" 0 $? "$TMP/o7015"
+  grep -qx 'static triage: forge lint only - slither 0.11.6 failed: see 05-static.txt' "$TMP/o7015" && grep -q '^NOT COUNTED: slither exited 1' "$(st_report)" \
+    && echo "  ok    and it is said 'failed', with its exit code, not counted" \
+    || { echo "  FAIL  a failed Slither was not said as failed:"; grep -E '^(NOT COUNTED|static triage)' "$(st_report)" "$TMP/o7015" | sed "s/^/        | /"; fails=$((fails + 1)); }
+
+  # 5. a (fake) Aderyn beside it: its report copied in and counted; nothing left in the project
+  rm -f "$ST/aderyn-args"
+  st_run "$TMP/o7016" "$ST/sl:$ST/ad"; check "static-triage: Slither and Aderyn (fakes) on the PATH" 0 $? "$TMP/o7016"
+  if grep -qxF 'aderyn 0.6.5: 3 issues - High 1, Medium 0, Low 2' "$(st_report)" && grep -qx 'static triage: slither 0.11.6, aderyn 0.6.5, forge lint' "$TMP/o7016" \
+    && grep -q -- '--skip-update-check' "$ST/aderyn-args" && [ "$(st_files)" = "$st_before" ]; then
+    echo "  ok    and Aderyn's report is counted (High 1, Low 2, against its headings), it was told not to check for updates, and no report.md is left in the project"
+  else echo "  FAIL  Aderyn was not run or counted as documented:"; grep -E '^(aderyn|static triage)' "$(st_report)" "$TMP/o7016" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+
+  # 6. the project's own slither.config.json: its filters are the project's, no include regex of ours
+  printf '{ "filter_paths": "lib" }\n' > "$STP/slither.config.json"; rm -f "$ST/slither-args"
+  st_run "$TMP/o7017" "$ST/sl"; check "static-triage: a project with its own slither.config.json" 0 $? "$TMP/o7017"
+  [ "$(cat "$ST/slither-args" 2> /dev/null)" = ". --checklist --fail-none --skip-clean" ] && grep -qF "(the project's slither.config.json: its own filters)" "$(st_report)" \
+    && echo "  ok    and Slither runs with the project's config (no path flag of ours), and the report says whose filters they are" \
+    || { echo "  FAIL  the project's config was not left to Slither: '$(cat "$ST/slither-args" 2> /dev/null)'"; fails=$((fails + 1)); }
+  rm -f "$STP/slither.config.json"
+
+  # 7. refusals: nothing run, nothing written
+  mkdir -p "$ST/nosrc/.gauntlet"; rm -f "$ST/slither-args"
+  st_run "$TMP/o7018" "$ST/sl" "$ST/nosrc"; check "static-triage: a project with no src/ is refused" 2 $? "$TMP/o7018"
+  if grep -q '^static-triage: REFUSED - .* has no src/' "$TMP/o7018" && grep -qx 'static-triage: nothing run, nothing written.' "$TMP/o7018" \
+    && [ ! -e "$ST/nosrc/.gauntlet/reports" ] && [ ! -e "$ST/slither-args" ]; then
+    echo "  ok    and it says why, runs nothing (no Slither call) and writes nothing"
+  else echo "  FAIL  the no-src/ refusal ran or wrote something"; fails=$((fails + 1)); fi
+  mkdir -p "$ST/nosol/src" "$ST/nosol/.gauntlet"; echo x > "$ST/nosol/src/README.md"
+  st_run "$TMP/o7019" "" "$ST/nosol"; check "static-triage: a src/ with no .sol file is refused" 2 $? "$TMP/o7019"
+  mkdir -p "$ST/noconv/src"; cp "$STP/src/T.sol" "$ST/noconv/src/"
+  st_run "$TMP/o7020" "" "$ST/noconv"; check "static-triage: a tree with no .gauntlet/ (someone else's) is refused before anything runs" 2 $? "$TMP/o7020"
+  [ ! -e "$ST/noconv/.gauntlet" ] && echo "  ok    and no .gauntlet/ was made in it" || { echo "  FAIL  .gauntlet/ was made in a tree without the convention"; fails=$((fails + 1)); }
+  "$HERE/static-triage.sh" > "$TMP/o7021" 2>&1; check "static-triage: no argument is refused" 2 $? "$TMP/o7021"
+else
+  echo "  SKIPPED - no forge here: static-triage.sh (forge lint) is NOT proven on this machine"; skipped=1
+fi
 
 
 echo

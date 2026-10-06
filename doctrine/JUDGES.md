@@ -152,6 +152,10 @@ the locations on the line. A real hook gives a hundred findings and twenty group
 document nobody reads. Start the file with the tool version, the exact command, and the count per verdict. The
 linter's output (`forge lint`, which also runs inside `forge build`) gets the same treatment, grouped by rule -
 `unsafe-typecast` on a hook that packs storage is a real triage, and the static analyser does not report it.
+Its input is one command, `scripts/static-triage.sh <proj>`: Slither and Aderyn when they are installed, `forge lint`
+always, on `src/` only, into `.gauntlet/reports/05-static.txt` - each tool's version (or `not installed`), its findings
+as it printed them, and the counts by impact or severity (a Slither or Aderyn count that does not add up to the tool's
+own total is said "not read", never guessed). Take the versions, the commands and the counts from that report, not from memory.
 
 ```
 | detector | where | verdict | why | proved by |

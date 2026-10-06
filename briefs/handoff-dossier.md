@@ -136,7 +136,7 @@ not done; neither does an optional judge the owner did not ask for (the sandbox:
 A black-box round the ceiling left unrun (`doctrine/NEXT.md` row 2) is a round, not a judge: it is not a row of section 6 and does not count in `N`. It goes on the status line (`ceiling_reached: yes, black-box: not run - ceiling reached`) and in section 8, and section 9 says what it would have added. So does a black-box round the environment stopped twice (`doctrine/NEXT.md` row 11b, `blackbox: stopped (<round id>)`): the status line and section 8 say `black-box: stopped at <step>`, section 9 what it would have added; it counted against the ceiling, and it is not in `N` either.
 What DOES count as not done: `N` counts the rows of section 6 only (the judges of `doctrine/JUDGES.md`): a judge not
 run because light mode skips it (the fork battery, symbolic, the second engine, the reference model) and a tool the owner
-did not allow (Slither never installed: `not done: static triage by forge lint only`). Promotion and rehearsal are
+did not allow (Slither never installed, or the install declined: `not done: static triage by forge lint only`). Promotion and rehearsal are
 phases, not judges: skipping them - light mode's default, or the owner's decision in writing in full mode (`doctrine/NEXT.md` row 18b) - goes in the status line's `skipped` count and in section 8, not in `N`.
 Phase-3 `pending` findings are listed in section 4 as open. It is a status report for the owner, not a handoff; nothing below it moves to promotion.
 An auditor judges new findings against this list; leaving something out of it is how a known issue becomes a "critical".
@@ -163,7 +163,7 @@ is what tells them apart.
 | judge | command, tool version | result, read from the output | where the output is (inside the project, `.gauntlet/reports/...`: a bench or scratch path is not a place an auditor can read) |
 |---|---|---|---|
 | build + lints | | warnings: | |
-| static analysis | | N findings: fixed / by design / accepted / false positive -> `STATIC-TRIAGE.md` | |
+| static analysis | `scripts/static-triage.sh`: what ran, each with its version (the report's header), and what did not - `not installed`, or `the owner declined the install` | N findings per tool, from the report's counts; what was triaged: fixed / by design / accepted / false positive -> `STATIC-TRIAGE.md` (each finding above informational, or its group) | `.gauntlet/reports/05-static.txt` |
 | unit tests | | passed / failed / skipped | |
 | invariant fuzzing | | runs x depth, calls; corpus on? the CAMPAIGN census from `scripts/census.sh` - for each core action, in how many runs it succeeded at least once; for each boundary, in how many runs it was reached; runs with an unexplained revert (not the smoke test's numbers, and not the one block of logs forge prints: that is a single run). `reverts: 0` is not a result: in a green campaign with `fail_on_revert = true` it cannot be anything else | |
 | coverage | | lines / **branches** per file in scope; every uncovered branch named | |

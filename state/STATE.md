@@ -18,7 +18,7 @@ waiting_on_owner:          F-24, accept or fix (does not block round 6)
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
-notes:                     static triage: Slither 0.10 (owner allowed the install 2026-09-11)
+notes:                     static triage: slither 0.11.6, forge lint
 ```
 
 *These lines are what `doctrine/NEXT.md` reads. With them as they stand: row 1 is false (no high is open: `high=0`, so no ids in parentheses after it - a high open would be `high=1 (<its id>)`); row 2 is false (5 of 8 used); row 3 is true (F-24 is with the owner) but nothing below depends on that answer; the next true row is the black-box round (row

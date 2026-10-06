@@ -1,0 +1,372 @@
+'forge config --json' running
+'forge build --build-info --deny never --skip ./test/** ./script/** --force' running (wd: /home/user/proj)
+**THIS CHECKLIST IS NOT COMPLETE**. Use `--show-ignored-findings` to show all the results.
+Summary
+ - [incorrect-return](#incorrect-return) (2 results) (High)
+ - [missing-zero-check](#missing-zero-check) (1 results) (Low)
+ - [calls-loop](#calls-loop) (4 results) (Low)
+ - [reentrancy-benign](#reentrancy-benign) (2 results) (Low)
+ - [reentrancy-events](#reentrancy-events) (1 results) (Low)
+ - [assembly](#assembly) (1 results) (Informational)
+ - [pragma](#pragma) (1 results) (Informational)
+ - [dead-code](#dead-code) (24 results) (Informational)
+ - [low-level-calls](#low-level-calls) (2 results) (Informational)
+ - [missing-inheritance](#missing-inheritance) (1 results) (Informational)
+ - [cache-array-length](#cache-array-length) (4 results) (Optimization)
+## incorrect-return
+Impact: High
+Confidence: Medium
+ - [ ] ID-0
+[HostileERC20.transferFrom(address,address,uint256)](src/HostileERC20.sol#L414-L422) calls [HostileERC20._maybeOmitReturn()](src/HostileERC20.sol#L511-L516) which halt the execution [return(uint256,uint256)(0,0)](src/HostileERC20.sol#L514)
+
+src/HostileERC20.sol#L414-L422
+
+
+ - [ ] ID-1
+[HostileERC20.transfer(address,uint256)](src/HostileERC20.sol#L407-L412) calls [HostileERC20._maybeOmitReturn()](src/HostileERC20.sol#L511-L516) which halt the execution [return(uint256,uint256)(0,0)](src/HostileERC20.sol#L514)
+
+src/HostileERC20.sol#L407-L412
+
+
+## missing-zero-check
+Impact: Low
+Confidence: Medium
+ - [ ] ID-2
+[ToyVault.constructor(address).token_](src/examples/ToyVault.sol#L92) lacks a zero-check on :
+		- [token = token_](src/examples/ToyVault.sol#L93)
+
+src/examples/ToyVault.sol#L92
+
+
+## calls-loop
+Impact: Low
+Confidence: Medium
+ - [ ] ID-3
+[HandlerBase.censusLine(string)](src/InvariantBase.sol#L299-L317) has external calls inside a loop: [line = string.concat(line,	B:,reachNames[i_scope_0],=,vm.toString(reachCount[keccak256(bytes)(bytes(reachNames[i_scope_0]))]))](src/InvariantBase.sol#L308-L310)
+	Calls stack containing the loop:
+		HandlerBase.writeCensus(string)
+
+src/InvariantBase.sol#L299-L317
+
+
+ - [ ] ID-4
+[HandlerBase.censusLine(string)](src/InvariantBase.sol#L299-L317) has external calls inside a loop: [line = string.concat(line,	B:,reachNames[i_scope_0],=,vm.toString(reachCount[keccak256(bytes)(bytes(reachNames[i_scope_0]))]))](src/InvariantBase.sol#L308-L310)
+
+src/InvariantBase.sol#L299-L317
+
+
+ - [ ] ID-5
+[HandlerBase.censusLine(string)](src/InvariantBase.sol#L299-L317) has external calls inside a loop: [line = string.concat(line,	A:,actionNames[i],=,vm.toString(actionCalls[k]),/,vm.toString(actionSuccesses[k]))](src/InvariantBase.sol#L303-L305)
+
+src/InvariantBase.sol#L299-L317
+
+
+ - [ ] ID-6
+[HandlerBase.censusLine(string)](src/InvariantBase.sol#L299-L317) has external calls inside a loop: [line = string.concat(line,	A:,actionNames[i],=,vm.toString(actionCalls[k]),/,vm.toString(actionSuccesses[k]))](src/InvariantBase.sol#L303-L305)
+	Calls stack containing the loop:
+		HandlerBase.writeCensus(string)
+
+src/InvariantBase.sol#L299-L317
+
+
+## reentrancy-benign
+Impact: Low
+Confidence: Medium
+ - [ ] ID-7
+Reentrancy in [HostileERC20._move(address,address,uint256)](src/HostileERC20.sol#L425-L468):
+	External calls:
+	- [_fire(sendCallback[from],from,to,value,true)](src/HostileERC20.sol#L436)
+		- [IHostileTokenCallback(cb.target).tokensToSend(from,to,value)](src/HostileERC20.sol#L483)
+		- [IHostileTokenCallback(cb.target).tokensReceived(from,to,value)](src/HostileERC20.sol#L484)
+	State variables written after the call(s):
+	- [_bal[from] -= debit + extra](src/HostileERC20.sol#L447)
+	- [_bal[to] += delivered](src/HostileERC20.sol#L448)
+	- [_bal[FEE_SINK] += fee](src/HostileERC20.sol#L452)
+	- [_bal[FEE_SINK] += extra](src/HostileERC20.sol#L456)
+	- [_payFromReserve(to,bonus)](src/HostileERC20.sol#L463)
+		- [_bal[RESERVE] -= paid](src/HostileERC20.sol#L475)
+		- [_bal[to] += paid](src/HostileERC20.sol#L476)
+	- [_payFromReserve(from,rebate)](src/HostileERC20.sol#L465)
+		- [_bal[RESERVE] -= paid](src/HostileERC20.sol#L475)
+		- [_bal[to] += paid](src/HostileERC20.sol#L476)
+	- [hasMoved[from] = true](src/HostileERC20.sol#L460)
+
+src/HostileERC20.sol#L425-L468
+
+
+ - [ ] ID-8
+Reentrancy in [ToyVault.deposit(uint256)](src/examples/ToyVault.sol#L104-L115):
+	External calls:
+	- [_call(abi.encodeWithSignature(transferFrom(address,address,uint256),msg.sender,address(this),amount))](src/examples/ToyVault.sol#L106)
+		- [(ok,data) = token.call(payload)](src/examples/ToyVault.sol#L145)
+	State variables written after the call(s):
+	- [credit[msg.sender] += credited](src/examples/ToyVault.sol#L112)
+	- [totalCredit += credited](src/examples/ToyVault.sol#L113)
+
+src/examples/ToyVault.sol#L104-L115
+
+
+## reentrancy-events
+Impact: Low
+Confidence: Medium
+ - [ ] ID-9
+Reentrancy in [HostileERC20._move(address,address,uint256)](src/HostileERC20.sol#L425-L468):
+	External calls:
+	- [_fire(sendCallback[from],from,to,value,true)](src/HostileERC20.sol#L436)
+		- [IHostileTokenCallback(cb.target).tokensToSend(from,to,value)](src/HostileERC20.sol#L483)
+		- [IHostileTokenCallback(cb.target).tokensReceived(from,to,value)](src/HostileERC20.sol#L484)
+	Event emitted after the call(s):
+	- [Transfer(RESERVE,to,paid)](src/HostileERC20.sol#L477)
+		- [_payFromReserve(from,rebate)](src/HostileERC20.sol#L465)
+	- [Transfer(RESERVE,to,paid)](src/HostileERC20.sol#L477)
+		- [_payFromReserve(to,bonus)](src/HostileERC20.sol#L463)
+	- [Transfer(from,to,delivered)](src/HostileERC20.sol#L449)
+	- [Transfer(from,FEE_SINK,fee)](src/HostileERC20.sol#L453)
+	- [Transfer(from,FEE_SINK,extra)](src/HostileERC20.sol#L457)
+
+src/HostileERC20.sol#L425-L468
+
+
+## assembly
+Impact: Informational
+Confidence: High
+ - [ ] ID-10
+[HostileERC20._maybeOmitReturn()](src/HostileERC20.sol#L511-L516) uses assembly
+	- [INLINE ASM](src/HostileERC20.sol#L513-L515)
+
+src/HostileERC20.sol#L511-L516
+
+
+## pragma
+Impact: Informational
+Confidence: High
+ - [ ] ID-11
+2 different versions of Solidity are used:
+	- Version constraint >=0.8.13<0.9.0 is used by:
+		-[>=0.8.13<0.9.0](lib/forge-std/src/Base.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdAssertions.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdChains.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdCheats.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdConstants.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdError.sol#L3)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdInvariant.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdJson.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdMath.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdStorage.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdStyle.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdToml.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/StdUtils.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/Test.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/Vm.sol#L4)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/console.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/console2.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/interfaces/IMulticall3.sol#L2)
+		-[>=0.8.13<0.9.0](lib/forge-std/src/safeconsole.sol#L2)
+	- Version constraint ^0.8.26 is used by:
+		-[^0.8.26](src/HostileERC20.sol#L2)
+		-[^0.8.26](src/InvariantBase.sol#L2)
+		-[^0.8.26](src/examples/ToyVault.sol#L2)
+
+lib/forge-std/src/Base.sol#L2
+
+
+## dead-code
+Impact: Informational
+Confidence: Medium
+ - [ ] ID-12
+[InvariantAsserts.assertHoldsNoMoreThan(IBalanceReader,address,uint256,string)](src/InvariantBase.sol#L497-L502) is never used and should be removed
+
+src/InvariantBase.sol#L497-L502
+
+
+ - [ ] ID-13
+[InvariantAsserts.assertSolvent(IBalanceReader,address,uint256,string)](src/InvariantBase.sol#L505-L507) is never used and should be removed
+
+src/InvariantBase.sol#L505-L507
+
+
+ - [ ] ID-14
+[HandlerBase._noteDelta(address,uint256,uint256)](src/InvariantBase.sol#L393-L396) is never used and should be removed
+
+src/InvariantBase.sol#L393-L396
+
+
+ - [ ] ID-15
+[HandlerBase._bitOneIn(uint256,uint256)](src/InvariantBase.sol#L130-L132) is never used and should be removed
+
+src/InvariantBase.sol#L130-L132
+
+
+ - [ ] ID-16
+[InvariantAsserts.assertHoldsOnlyDonations(IBalanceReader,address,uint256,string)](src/InvariantBase.sol#L488-L493) is never used and should be removed
+
+src/InvariantBase.sol#L488-L493
+
+
+ - [ ] ID-17
+[HandlerBase._bit(uint256)](src/InvariantBase.sol#L107-L109) is never used and should be removed
+
+src/InvariantBase.sol#L107-L109
+
+
+ - [ ] ID-18
+[HandlerBase._noteReached(string)](src/InvariantBase.sol#L216-L220) is never used and should be removed
+
+src/InvariantBase.sol#L216-L220
+
+
+ - [ ] ID-19
+[HandlerBase._noteMint(uint256)](src/InvariantBase.sol#L355-L357) is never used and should be removed
+
+src/InvariantBase.sol#L355-L357
+
+
+ - [ ] ID-20
+[HandlerBase._actor(uint256)](src/InvariantBase.sol#L87-L90) is never used and should be removed
+
+src/InvariantBase.sol#L87-L90
+
+
+ - [ ] ID-21
+[HandlerBase._enter(string)](src/InvariantBase.sol#L160-L167) is never used and should be removed
+
+src/InvariantBase.sol#L160-L167
+
+
+ - [ ] ID-22
+[HandlerBase._noteLoss(address,uint256)](src/InvariantBase.sol#L388-L390) is never used and should be removed
+
+src/InvariantBase.sol#L388-L390
+
+
+ - [ ] ID-23
+[InvariantAsserts.assertGainBackedByLoss(IBalanceReader,address[],uint256[],address,uint256,string)](src/InvariantBase.sol#L465-L483) is never used and should be removed
+
+src/InvariantBase.sol#L465-L483
+
+
+ - [ ] ID-24
+[HandlerBase._noteDonation(address,address,uint256)](src/InvariantBase.sol#L361-L364) is never used and should be removed
+
+src/InvariantBase.sol#L361-L364
+
+
+ - [ ] ID-25
+[InvariantAsserts.assertConserved(IBalanceReader,address[],uint256,string)](src/InvariantBase.sol#L426-L433) is never used and should be removed
+
+src/InvariantBase.sol#L426-L433
+
+
+ - [ ] ID-26
+[InvariantAsserts.snapshotBalances(IBalanceReader,address[])](src/InvariantBase.sol#L410-L417) is never used and should be removed
+
+src/InvariantBase.sol#L410-L417
+
+
+ - [ ] ID-27
+[HandlerBase._noteInternalDonation(address,address,uint256)](src/InvariantBase.sol#L380-L382) is never used and should be removed
+
+src/InvariantBase.sol#L380-L382
+
+
+ - [ ] ID-28
+[HandlerBase._noteGain(address,uint256)](src/InvariantBase.sol#L384-L386) is never used and should be removed
+
+src/InvariantBase.sol#L384-L386
+
+
+ - [ ] ID-29
+[InvariantAsserts.assertPaidForLoss(IBalanceReader,IBalanceReader,address[],uint256[],uint256[],address,string)](src/InvariantBase.sol#L441-L460) is never used and should be removed
+
+src/InvariantBase.sol#L441-L460
+
+
+ - [ ] ID-30
+[HandlerBase._addActor(address)](src/InvariantBase.sol#L83-L85) is never used and should be removed
+
+src/InvariantBase.sol#L83-L85
+
+
+ - [ ] ID-31
+[HandlerBase._unexpectedRevert(string)](src/InvariantBase.sol#L348-L352) is never used and should be removed
+
+src/InvariantBase.sol#L348-L352
+
+
+ - [ ] ID-32
+[HandlerBase._expectedRevert()](src/InvariantBase.sol#L321-L323) is never used and should be removed
+
+src/InvariantBase.sol#L321-L323
+
+
+ - [ ] ID-33
+[InvariantAsserts.sumBalances(IBalanceReader,address[])](src/InvariantBase.sol#L419-L421) is never used and should be removed
+
+src/InvariantBase.sol#L419-L421
+
+
+ - [ ] ID-34
+[HandlerBase._countAction(string)](src/InvariantBase.sol#L169-L173) is never used and should be removed
+
+src/InvariantBase.sol#L169-L173
+
+
+ - [ ] ID-35
+[HandlerBase._noteSuccess(string)](src/InvariantBase.sol#L196-L198) is never used and should be removed
+
+src/InvariantBase.sol#L196-L198
+
+
+## low-level-calls
+Impact: Informational
+Confidence: High
+ - [ ] ID-36
+Low level call in [ToyVault._call(bytes)](src/examples/ToyVault.sol#L144-L148):
+	- [(ok,data) = token.call(payload)](src/examples/ToyVault.sol#L145)
+
+src/examples/ToyVault.sol#L144-L148
+
+
+ - [ ] ID-37
+Low level call in [ToyVault._selfBalance()](src/examples/ToyVault.sol#L136-L141):
+	- [(ok,data) = token.staticcall(abi.encodeWithSignature(balanceOf(address),address(this)))](src/examples/ToyVault.sol#L137-L138)
+
+src/examples/ToyVault.sol#L136-L141
+
+
+## missing-inheritance
+Impact: Informational
+Confidence: High
+ - [ ] ID-38
+[HostileERC20](src/HostileERC20.sol#L30-L517) should inherit from [IBalanceReader](src/InvariantBase.sol#L11-L13)
+
+src/HostileERC20.sol#L30-L517
+
+
+## cache-array-length
+Impact: Optimization
+Confidence: High
+ - [ ] ID-39
+Loop condition [i_scope_0 < reachNames.length](src/InvariantBase.sol#L307) should use cached array length instead of referencing `length` member of the storage array.
+ 
+src/InvariantBase.sol#L307
+
+
+ - [ ] ID-40
+Loop condition [i < actionNames.length](src/InvariantBase.sol#L254) should use cached array length instead of referencing `length` member of the storage array.
+ 
+src/InvariantBase.sol#L254
+
+
+ - [ ] ID-41
+Loop condition [i < reachNames.length](src/InvariantBase.sol#L264) should use cached array length instead of referencing `length` member of the storage array.
+ 
+src/InvariantBase.sol#L264
+
+
+ - [ ] ID-42
+Loop condition [i < actionNames.length](src/InvariantBase.sol#L301) should use cached array length instead of referencing `length` member of the storage array.
+ 
+src/InvariantBase.sol#L301
+
+

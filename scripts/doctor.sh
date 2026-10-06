@@ -10,6 +10,9 @@
 # Output:  one line per requirement - `ok <name> <version>`, `missing <name> - <why>` or `optional-missing <name> - <why>` -
 #          each missing item followed by indented lines with the command for THIS system: Linux (apt), macOS (brew), or
 #          Windows outside WSL (Git Bash / MSYS / Cygwin): the WSL steps first, then the Linux commands, run inside WSL.
+#          The static analysers are one line, never a missing item: `static: slither <v>`, `static: aderyn <v>`,
+#          `static: slither <v>, aderyn <v>`, or `static: forge lint only` (then the install lines, for the owner's yes) -
+#          what scripts/static-triage.sh will run besides forge lint, which it always runs.
 #          Then the kit's own files against its MANIFEST (scripts/gen-manifest.sh, the same exclusions - deps, builds,
 #          .git, and what the kit's own runs write: corpus/, census/, broadcast/, .gauntlet/): `kit: N files
 #          not in MANIFEST: <first three>` when a file under the kit is not listed (a file written into the kit - it is
@@ -214,9 +217,16 @@ if have shellcheck; then echo "ok shellcheck $(ver_of "$(shellcheck --version 2>
   want shellcheck "optional locally: the selftest runs it when it is there and says when it is not; CI always runs it"
   cmd "sudo apt-get install -y shellcheck" "brew install shellcheck"
 fi
-if have slither; then echo "ok slither $(ver_of "$(slither --version 2> /dev/null)")"; else
-  want slither "only for the static-analysis judge in full mode - an install your agent must ask you for"
+# the static analysers scripts/static-triage.sh will run (it always runs forge lint too): one line, never a missing item -
+# without them the static triage is forge lint only, and that is a line in STATE.md, not a failure
+static_found=""
+if have slither; then static_found="slither $(ver_of "$(slither --version 2> /dev/null | head -n 1)")"; fi
+if have aderyn; then static_found="${static_found:+$static_found, }aderyn $(ver_of "$(aderyn --version 2> /dev/null | head -n 1)")"; fi
+if [ -n "$static_found" ]; then echo "static: $static_found"; else
+  echo "static: forge lint only"
+  echo "  an install your agent must ask you for (briefs/owner-interview.md, question 17b):"
   cmd "sudo apt-get install -y pipx && pipx install slither-analyzer" "brew install pipx && pipx install slither-analyzer"
+  echo "  aderyn: its own installer (https://github.com/Cyfrin/aderyn) - not checked by this kit"
 fi
 # RPC_URL: whether it is set, never what it holds - not its value, not its length, not its host
 if [ -n "${RPC_URL:-}" ]; then echo "ok RPC_URL set (its value is never printed)"; else

@@ -65,6 +65,14 @@ spec as the sources the answers are read from. Write it in `DECISIONS.md` as one
     *(Once the chain is known, the tests should run against the pool manager that actually exists there, not only
     the one compiled from source: `foundry-kit/v4/README.md`. That needs an RPC endpoint. **Never take a key in
     this conversation**: the owner sets `RPC_URL` in their own terminal. `AGENTS.md` section 5.)*
+17b. May the kit install Slither and Aderyn on this machine (static analyzers; without them the static triage is
+    `forge lint` only)? **yes / no / already installed.** *(Record it like every answer, `source: owner`, as an entry whose
+    heading ends in exactly `Q17b static analyzers: yes`, `Q17b static analyzers: no` or `Q17b static analyzers: already
+    installed` - e.g. `## D-07 · 2026-10-06 · Q17b static analyzers: no`; a later entry of that form replaces it.
+    `scripts/static-triage.sh` installs nothing and runs only what is installed; from that heading it reads one thing:
+    when nothing is installed and the last answer is `no`, its line for `STATE.md` is `static triage: forge lint only -
+    the owner declined the install`. A `yes` is the owner's permission for the install, which the agent then asks to
+    run, command by command (`scripts/doctor.sh` prints Slither's; Aderyn has its own installer).)*
 18. Are there off-chain components that the contract's guarantees depend on? An indexer, a keeper, a front end?
     If so, what happens when they are down or lying?
 19. Any size, gas or cost ceiling you have to fit inside? *(Contract size is a first-class constraint in v4 hooks.

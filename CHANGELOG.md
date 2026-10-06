@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased (v0.5)
+
+- **Static triage is a script:** `scripts/static-triage.sh <proj>` runs what this machine has, in this order, on the
+  project's `src/` only - Slither (`--include-paths` on the project's resolved `src/`, `--checklist --fail-none
+  --skip-clean`; with the project's own `slither.config.json`, its filters), Aderyn, and always `forge lint src` - and
+  writes `.gauntlet/reports/05-static.txt`: each tool and its version (or `not installed`), its findings as it printed
+  them, and the counts (Slither by impact, checked against its own `<n> result(s) found`; Aderyn by its Issue Summary,
+  checked against its headings; forge lint by level, rule and `--severity`). A count that does not add up is "not read",
+  never guessed. It installs and fetches nothing, prints the `static triage: <tools>` line for `STATE.md` `notes:`
+  (`forge lint only, Slither not installed`, or `forge lint only - the owner declined the install` when the last
+  `Q17b static analyzers: no` in `DECISIONS.md` says so) and, last, that the findings go to `pending/` or
+  `DECISIONS.md` like any finding. Exit 0 once forge lint ran; 2, nothing written, with no `src/`. Not
+  `--filter-paths lib`: Slither matches it against each result's absolute path and drops a result when any element
+  matches - measured, 0 of 43 results for a project under a directory named `library`. Slither's own build deletes
+  forge's persisted failures, `cache/invariant/` and `cache/fuzz/` (measured, and a configured directory too): the
+  script reads both from the project's `forge config --json` (`invariant.failure_persist_dir`,
+  `fuzz.failure_persist_dir`; `cache/invariant` and `cache/fuzz` by default), keeps each aside, puts it back byte for
+  byte and says so in the report's note (one outside the project is not kept, and said). Measured with Slither
+  0.11.6 and forge 1.8.1 (the root kit: 43 findings, 49 lints; the v4 module: 317 findings, 523 lints, 41 s).
+  **Aderyn was not on any machine this was written on**: its report's shape is assumed, and only a fake has run it
+  (the selftest).
+- **`scripts/doctor.sh`** reports the analysers as one line, never a missing item: `static: slither <v>`, `static:
+  aderyn <v>`, both, or `static: forge lint only` with the install lines for the owner's yes.
+- **The owner interview asks it** (`briefs/owner-interview.md`, question 17b): may the kit install Slither and Aderyn -
+  yes / no / already installed - recorded in `DECISIONS.md` as `Q17b static analyzers: <answer>`.
+- `doctrine/NEXT.md` row 7, `QUICKSTART.md` step 8, `doctrine/JUDGES.md` (the triage's input) and
+  `briefs/handoff-dossier.md` section 6 (what ran and what was triaged, from `05-static.txt`) name the script; the
+  battery skill carries row 7 as before, regenerated.
+- `README.md` *Honest costs*: what one walk cost, measured once (about 52 minutes, 39.4M tokens of cache reads).
+
 ## v0.4 - 2026-10-06 - discipline moved from text into scripts that refuse
 
 Written for a small model on a local machine to follow: one run of the route by a 27B model in Hermes

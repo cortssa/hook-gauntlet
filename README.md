@@ -155,7 +155,7 @@ foundry-kit/     hostile ERC-20, handler base with a campaign census, reusable a
 foundry-kit/v4/  harness for two pool managers (source, or your chain's real bytecode), address mining, a hostile
                  hook, a worked dynamic-fee hook
 scripts/         battery - fuzz-long - census - mutate - size - bench - release-guard - assert-fresh-build -
-                 install-v4 - fetch-bytecode - selftest - setup-deps - gen-manifest
+                 install-v4 - fetch-bytecode - selftest - setup-deps - gen-manifest - static-triage
 MANIFEST         the SHA-256 of every file the kit ships (scripts/gen-manifest.sh); scripts/doctor.sh names a file
                  in the kit that it does not list (the kit is not to be changed by a project that vendors it)
 adapters/        claude-code/ (the supported adapter, the path this was run on); experimental/codex/ (untested)
@@ -253,7 +253,16 @@ Compute is the real cost. Two modes:
 an hour per round on a 440-line hook, so a light-mode run (a ceiling of 4) is on the order of a million tokens of round
 traffic, once, n = 1, before the orchestrator's own reading. We did not meter the project this was distilled from, and a kit whose first rule is
 "measure, do not infer" is not going to dress that up as a price list. The ROUND line of each `LOG.md` entry records the real cost of each of
-your rounds. The one number we have measured is in *Status* below.
+your rounds. One whole walk was measured too, in the next paragraph.
+
+**What a walk costs**, measured once (2026-10-06, n = 1): one fresh agent (Opus 5.5) with one subagent, on the v0.4.2
+kit, took a small hook with four planted defects from phase 0 through one adversarial round to the dossier skeleton in
+about 52 minutes of wall clock. Tokens: 34.2M of cache reads in the main session and 5.2M in the subagent (39.4M together),
+135k of output in the main session (the subagent's own output was not metered apart), 144 model calls in the main
+session and 37 in the subagent. The same walk on the v0.3 kit took about 52 minutes and 28.5M of cache reads: the v0.4
+walk cost 1.38 times the tokens of the v0.3 walk, in the same wall time (n = 1 each; the causes do not separate). That
+is one walk and one round, not light mode: light mode (`doctrine/COST.md` section 1) is three adversarial rounds and a
+black-box, and it skips promotion and rehearsal unless a release is being frozen.
 
 The long fuzz campaign is the other cost, and it is CPU time, not model spend: expect tens of minutes per run.
 
