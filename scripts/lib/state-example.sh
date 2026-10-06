@@ -18,7 +18,8 @@
 # whatever the spacing of the copy. A flag line written `key:value`, no space after its first colon, is read as
 # `key: value` on both sides (v0.4.1, D7: `ceiling:8 model rounds ...` and the like walked as a state - K49's gap).
 # The generic flags (phase, battery, blackbox, dossier, rehearsal, real_manager_battery, location) are left out: a new
-# project's can match the example's by chance.
+# project's can match the example's by chance. threat_model (v0.5) counts: a new project's is `not yet`, the example's
+# a diffed line with its own counts.
 #
 # Source it:  . "$HERE/lib/state-example.sh"   (needs awk and grep; bash 4)
 #   flag_block <STATE.md>                 the flag block's lines (the first fenced block with a phase: line); exit 1
@@ -29,7 +30,7 @@
 #                                         <kit>/state/STATE.md's, and then prints those lines as the example has them
 
 EXAMPLE_MARKER='*Example file. The project is fictional. Delete this and start yours.*'
-EXAMPLE_NONGENERIC='^(last_audit_round|last_other_round|open_findings|ceiling|waiting_on_owner|notes|bytecode_changed_since):'
+EXAMPLE_NONGENERIC='^(last_audit_round|last_other_round|open_findings|ceiling|waiting_on_owner|notes|bytecode_changed_since|threat_model):'
 
 flag_block() { # flag_block <STATE.md>: the flag block's lines (the first fenced block with a phase: line); exit 1 when none
   LC_ALL=C awk '

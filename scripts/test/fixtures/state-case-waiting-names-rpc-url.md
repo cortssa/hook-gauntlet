@@ -17,5 +17,6 @@ waiting_on_owner:          owner to set RPC_URL in their own terminal for the re
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     fork: the invariant suite ran on a fork of the target chain
 ```

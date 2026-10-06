@@ -15,6 +15,7 @@ ceiling:                   1 model rounds (session instruction, owner absent: DE
 real_manager_battery:      n/a (chain not chosen)
 waiting_on_owner:          high F-P2, F-P3, F-P4, r01-A1 - to tell · triage of F-P1 F-P2 F-P3 F-P4 r01-A1 r01-A2 r01-A3 r01-A4 · read-back of scope · Q0 still moving? · chain · the undecided interview items D-01, D-04..D-10 · raise the ceiling?
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 location:                  .gauntlet/
 dossier:                   skeleton (6 open, 5 judges not done)
 notes:                     static triage: forge lint only, Slither not installed · pending: F-P1 - promise 2, owner undecided · pending: F-P2 - handover, owner undecided · pending: F-P3 - promises 5/6, owner undecided · pending: F-P4 - promise 3, owner undecided · not fuzzable: constructor/flags - deployment · fork: n/a - no chain chosen, no endpoint · real manager: n/a, chain not chosen

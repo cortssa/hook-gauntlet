@@ -106,7 +106,8 @@
 #     LOG.md beside it. And STATE.md by its values (K48): a flag block that shares three or more lines with the kit's
 #     own state/STATE.md's, whatever the spacing (K49: each line trimmed and its runs of spaces and tabs made one, on
 #     both sides) - counting only the non-generic flags (last_audit_round, last_other_round, open_findings, ceiling,
-#     waiting_on_owner, notes, bytecode_changed_since) - is the example with its marker deleted and its title changed:
+#     waiting_on_owner, notes, bytecode_changed_since, threat_model) - is the example with its marker deleted and its
+#     title changed:
 #     `next: FIRST - fill STATE.md: its values are still the kit's example's (<the first shared line, as the example
 #     has it>)`. (the local-model walk: STATE.md stayed the example for 2 h 20 min, and next.sh answered "row 13 - a
 #     REGRESSION round" on it, twice);
@@ -164,6 +165,16 @@
 #     census report (.gauntlet/reports/06-census.txt or 06-census-gate.txt, one that is not a FAILED campaign's) or with
 #     no `fork:` note (read at the start of a note item, as `real manager:` is) is refused, each naming its command:
 #     the suite (QUICKSTART.md 7b, then scripts/battery.sh), scripts/census.sh, the note itself. No escape;
+#   - v0.5, the independent threat model (NEXT.md row 4b, briefs/threat-model.md): `threat_model:` is `not yet` or
+#     `diffed (<n> matched, <m> new, <k> refused)`, the line scripts/threat-diff.sh prints. `phase:` 4 or higher with
+#     `not yet` is refused, naming the brief and the script; a `diffed (...)` at any phase is read against the files the
+#     way that script reads them (scripts/lib/threats.sh: .gauntlet/THREATS-independent.md, .gauntlet/THREATS.md, the
+#     refusals in the DECISIONS.md beside STATE.md, the /// @custom:threat tags under test/ and pending/) - a list
+#     missing or not of its form, an independent threat neither matched, an invariant nor refused (each named), or other
+#     counts than the line's, is refused; and so is a `diffed` line with no report of the diff
+#     (.gauntlet/reports/06-threats.txt), a report that does not give that line, or two lists that are no longer the
+#     files the report hashed (the lists are frozen after the diff: threat-diff.sh is run again). A STATE.md with no
+#     `threat_model:` line (written before v0.5) is refused naming the line to add, `threat_model: not yet`. No escape;
 #   - after the answer, whatever it is, `next: note - the kit has N files not in its MANIFEST (<first three>): ...` on
 #     stdout when the kit's root has a MANIFEST and files under the kit are not in it - deps, builds, .git and what the
 #     kit's own runs write (corpus/, census/, broadcast/, .gauntlet/) aside, by the rule scripts/gen-manifest.sh and
@@ -254,7 +265,7 @@ ROWS='
 2   | 64c00456 | gate | 11,11b,12,13,13b,15 | ceiling=reached | -
 3   | 8949c656 | act  | -                   | waiting_on_owner!=none | -
 4   | 46e1bfdb | act  | -                   | phase=0,1 | -
-4b  | 2473e53b | act  | -                   | phase=2,3 | -
+4b  | 34842eea | act  | -                   | phase=2,3 | -
 5   | 2a2d739a | act  | -                   | - | has the fuzzer reported a violation of a promise that is not yet a deterministic test?
 6   | e0949a62 | act  | -                   | bytecode_changed_since.last_battery=yes ; battery=never | -
 6b  | 021321a6 | act  | -                   | battery=red | -
@@ -353,7 +364,7 @@ load_table() { # load_table <NEXT.md>: fills ACTION, and refuses when its rows a
 }
 
 # ------------------------------------------------------------------------------------------------ STATE.md's flags
-FLAGS="phase bytecode_changed_since battery blackbox open_findings last_audit_round last_other_round ceiling real_manager_battery waiting_on_owner location dossier rehearsal notes"
+FLAGS="phase bytecode_changed_since battery blackbox open_findings last_audit_round last_other_round ceiling real_manager_battery waiting_on_owner location dossier rehearsal threat_model notes"
 declare -A RAW=() V=() RECORDED=() SHOW_NOTE=() OPEN_HIGH=()
 declare -a RECORDED_ORDER=() OPEN_HIGH_ORDER=()
 ROW1_QUIET="" HIGHS_NOT_RECORDED=""
@@ -424,6 +435,9 @@ parse_state() {
     fi
   done <<< "$block"
   for name in $FLAGS; do
+    # a STATE.md written before v0.5 has no threat_model: line - the refusal names the line to add (its starting value)
+    [ "$name" != threat_model ] || [ -n "${RAW[$name]+x}" ] \
+      || refuse "flag 'threat_model' is missing from the flag block (a STATE.md written before v0.5): add the line \"threat_model: not yet\" to the flag block (doctrine/NEXT.md lists the flags)."
     [ -n "${RAW[$name]+x}" ] || refuse "flag '$name' is missing from the flag block (doctrine/NEXT.md lists the flags)."
     [ "$name" = "notes" ] || [ -n "${RAW[$name]}" ] || refuse "flag '$name' has no value."
   done
@@ -594,6 +608,15 @@ parse_state() {
   elif [[ $val =~ $re_ny ]]; then V[rehearsal]=not_yet
   elif [[ $val =~ $re_done ]] && real_date "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"; then V[rehearsal]="done"
   else refuse "rehearsal: '$val' is not one of: n/a (no runbook) | not yet | done (YYYY-MM-DD), a real date."; fi
+  # the independent threat model (v0.5, NEXT.md row 4b): `not yet`, or the line scripts/threat-diff.sh prints, as it
+  # prints it - read against the files themselves below, after the phase's records
+  local re_tm='^diffed[[:space:]]+[(]([0-9]+) matched,[[:space:]]+([0-9]+) new,[[:space:]]+([0-9]+) refused[)]$'
+  local re_tny='^not yet([[:space:]]+[(][^()]*[)])?$'
+  val="${RAW[threat_model]}"
+  if [[ $val =~ $re_tny ]]; then V[threat_model]=not_yet
+  elif [[ $val =~ $re_tm ]]; then
+    V[threat_model]=diffed; V[threat_model.counts]="$((10#${BASH_REMATCH[1]})) matched, $((10#${BASH_REMATCH[2]})) new, $((10#${BASH_REMATCH[3]})) refused"
+  else refuse "threat_model: '$val' is not one of: not yet | diffed (<n> matched, <m> new, <k> refused) - the line scripts/threat-diff.sh prints."; fi
   # a note is read by its name only at the START of a note item: a note line (the value of notes:, or an indented line
   # under it), or a part of one after the middle dot or ";" - never where the words merely appear
   V[notes.real_manager]=no
@@ -906,6 +929,39 @@ if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 4 ]; then
   done
   [ -n "$c_fork" ] \
     || refuse "phase ${V[phase]} claims phase 3 closed and the fork question is unanswered: write the note 'fork: <what ran against what exists, or n/a - no chain, no manager yet>' in STATE.md notes (NEXT.md row 4b) - or write the phase that is open"
+  [ "${V[threat_model]}" != not_yet ] \
+    || refuse "phase ${V[phase]} claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes $PROJ/.gauntlet/THREATS-independent.md from $KIT/briefs/threat-model.md, then $KIT/scripts/threat-diff.sh $PROJ - or write the phase that is open"
+fi
+# v0.5 (NEXT.md row 4b): `threat_model: diffed (...)` read against the files, the way scripts/threat-diff.sh reads them
+# (scripts/lib/threats.sh) - the two lists, the refusals in the DECISIONS.md beside STATE.md, the /// @custom:threat
+# tags in test/ and pending/. A list missing or not of its form, an independent threat neither matched, an invariant
+# nor refused, or other counts than the line's: refused, naming it. Then the diff's report: it must be there, give the
+# same line, and hash the two lists as they are now - the lists are frozen after the diff (a walker's threat written
+# after reading the other list would count a threat the walker missed as one it had). No escape: the files are the record.
+# shellcheck source=lib/threats.sh
+. "$HERE/lib/threats.sh" || refuse "$HERE/lib/threats.sh is missing (the independent threat model against the walker's list)."
+if [ "${V[threat_model]}" = diffed ]; then
+  c_tmw="threat_model is diffed (${V[threat_model.counts]})"
+  if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 4 ]; then c_tmw="phase ${V[phase]} claims phase 3 closed, $c_tmw"; fi
+  threats_diff "$PROJ" "$ST_DIR/DECISIONS.md"
+  case "$TD_STATE" in
+    diffed) [ "$TD_LINE" = "threat_model: diffed (${V[threat_model.counts]})" ] \
+        || refuse "$c_tmw and the files give ${TD_LINE#threat_model: }: $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints" ;;
+    unmatched) refuse "$c_tmw and $TD_WHY - $KIT/scripts/threat-diff.sh $PROJ names them; until each is answered, write threat_model: not yet and the phase that is open" ;;
+    *) refuse "$c_tmw and $TD_WHY: $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints" ;;
+  esac
+  c_rep="$PROJ/.gauntlet/reports/06-threats.txt"
+  [ -f "$c_rep" ] \
+    || refuse "$c_tmw and there is no .gauntlet/reports/06-threats.txt (the report threat-diff.sh writes, with the sha256 of the two lists it diffed): re-run $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints"
+  for c_f in THREATS-independent.md THREATS.md; do
+    c_h="$(LC_ALL=C awk -v p="sha256 .gauntlet/$c_f: " '{ sub(/\r$/, "") } index($0, p) == 1 { print substr($0, length(p) + 1); exit }' "$c_rep")"
+    c_now="$(td_sha256 "$PROJ/.gauntlet/$c_f")"; c_hs="${c_h:0:8}"
+    [ "$c_h" = "$c_now" ] \
+      || refuse "$c_tmw and .gauntlet/$c_f is not the file threat-diff.sh diffed (sha256 ${c_now:0:8} now, ${c_hs:-none} in .gauntlet/reports/06-threats.txt); the lists are frozen after the diff: re-run $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints"
+  done
+  c_h="$(LC_ALL=C awk '{ sub(/\r$/, "") } /^the line for STATE\.md[^:]*: / { sub(/^the line for STATE\.md[^:]*: /, ""); print; exit }' "$c_rep")"
+  [ "$c_h" = "threat_model: diffed (${V[threat_model.counts]})" ] \
+    || refuse "$c_tmw and .gauntlet/reports/06-threats.txt does not give it (the line it gives: ${c_h:-none}): re-run $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints"
 fi
 
 # ------------------------------------------------------------------------------------------------ pending/ and the notes

@@ -18,6 +18,9 @@ A class with no decision is a hole - and "not supported" is not a decision until
 shows the refusal. If you find an undecided class on code that is already promoted, that is an owner decision
 (`NEXT.md` row 3): pin the current behaviour with a test, both ways, and ask.
 Your hook will also have classes of its own that are not here; `INVARIANTS.md` is how you find those.
+In phase 2 each class that applies also becomes one or more lines of the walker's threat list, `.gauntlet/THREATS.md`
+(`W-<n>: <who acts> / <what is lost> / <the call sequence>`, `from: doctrine/HOOK-ATTACKS.md class <#>`), which a fresh
+agent's list, written without this one, is diffed against before phase 3 closes (`briefs/threat-model.md`).
 
 Two public incidents are worth knowing before you read the table, because both were hooks and both were ordinary bugs:
 

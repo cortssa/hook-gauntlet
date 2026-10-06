@@ -17,5 +17,6 @@ waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   skeleton (0 open, 1 judge not done)
 rehearsal:                 done (2026-03-22)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block
 ```

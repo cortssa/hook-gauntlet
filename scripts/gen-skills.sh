@@ -71,7 +71,7 @@ SKILLS='
 hook-gauntlet           | -   | 1 3                      | -  | The entry to hook-gauntlet, the route that takes a Uniswap v4 hook from an idea to audit-ready (or tests an existing one hard) with its owner, on a local bench
 hook-gauntlet-interview | 0   | 0 4@0                    | -  | -
 hook-gauntlet-spec      | 1   | 4@1                      | -  | -
-hook-gauntlet-battery   | 2 3 | 4b 5 6 6b 7 7b           | 4b:215 5:120 | -
+hook-gauntlet-battery   | 2 3 | 4b 5 6 6b 7 7b           | 4b:70 5:40 | -
 hook-gauntlet-round     | 4   | 2 8 9 10 11b 11 13 13b 14 | -  | -
 hook-gauntlet-blackbox  | 5   | 12 15                    | -  | -
 hook-gauntlet-release   | 6 7 | 16 17                    | -  | -
@@ -110,6 +110,7 @@ hook-gauntlet-spec      | when  | doctrine/INVARIANTS.md        | writing the in
 hook-gauntlet-spec      | when  | doctrine/EVIDENCE.md          | a class you want to call "does not apply"
 hook-gauntlet-spec      | when  | doctrine/FUZZ-ACTIONS.md      | the fuzz actions in words (the five questions)
 hook-gauntlet-spec      | when  | doctrine/UPSTREAM.md          | a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory
+hook-gauntlet-spec      | when  | briefs/threat-model.md        | the spec is written: the walker'"'"'s threat list comes next (section 1)
 hook-gauntlet-battery   | entry | doctrine/JUDGES.md            | the question each judge answers, and how each one lies
 hook-gauntlet-battery   | entry | QUICKSTART.md                 | steps 7b (the harness) and 8 (one command per judge)
 hook-gauntlet-battery   | when  | doctrine/UPSTREAM.md          | a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory

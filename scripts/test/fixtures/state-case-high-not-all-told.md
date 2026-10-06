@@ -17,5 +17,6 @@ waiting_on_owner:          high F-1 - to tell
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block
 ```

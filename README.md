@@ -128,17 +128,25 @@ The grey box is the rule that keeps this from being a checklist: **the questions
 The handoff dossier ([`briefs/handoff-dossier.md`](briefs/handoff-dossier.md)), assembled from files the route already
 produced. Its sections, because they say more about this kit than any description of it:
 
-1. **Scope sheet** - the exact commit, files in and out of scope, compiler and its known bugs, sizes, bytecode hashes,
-   deployment parameters, trusted periphery, tokens supported, who holds which key.
-2. **What it is and what it promises** - the hostile-actor table: what an attacker can do, what the contract answers,
-   the test that proves it, the fuzz action that reaches it, the mutant that test was seen to kill. Empty cells stay empty.
-3. **Access control** - every entry point, who may call it, what happens to everyone else.
-4. **Known issues and accepted trade-offs** - each with a number, and who accepted it.
-5. **What the judges said** - one row per tool, with the result read from its output, not from its exit code.
-6. **The adversarial history** - every round, what it found, what was done about it.
-7. **Where we diverged from the usual process**, and why.
-8. **What was NOT checked** - the section an auditor reads first. It may not be empty.
-9. **Reproduce it** - the commands that regenerate the numbers above.
+- **Start here** - the one page an auditor reads first: commit and scope, what the hook does and holds, the accepted
+  issues, the main fixed findings, the top of what was not checked, and how to set it up and run it.
+- **0. Executive summary** - two to four sentences, written last.
+- **1. Scope sheet** - the exact commit, files in and out of scope, compiler and its known bugs, sizes, bytecode hashes,
+  deployment parameters, trusted periphery, tokens supported, who holds which key.
+- **2. What it is and what it promises** - the hostile-actor table: what an attacker can do, what the contract answers,
+  the test that proves it, the fuzz action that reaches it, the mutant that test was seen to kill. Empty cells stay empty.
+- **3. Access control** - every entry point, who may call it, what happens to everyone else.
+- **4. Known issues and accepted trade-offs** - each with a number, and who accepted it.
+- **5. Candidates raised and refuted** - every idea that was chased and closed, with the test or argument that closed it.
+- **5b. The independent threat model** - what a reader who never saw the route's work thought could go wrong, and what
+  became of each threat.
+- **6. What the judges said** - one row per tool, with the result read from its output, not from its exit code.
+- **7. The adversarial history** - every round, what it found, what was done about it, and the model families used.
+- **8. Where we diverged from the usual process**, and why.
+- **9. What was NOT checked** - the section an auditor reads first in the body. It may not be empty.
+- **10. Reproduce it** - the commands that regenerate the numbers above. **10b. What comes after the handoff** - the
+  fix review the owner should be ready for.
+- **11. If applicable** - the runbook and its rehearsal, upgrade and pause, off-chain components, the incident plan.
 
 ## The repository, at a glance
 
@@ -238,7 +246,8 @@ You need a Foundry toolchain, an agent runner with a strong orchestrating model,
   25 adversarial rounds, and its own authors do not consider it ready without human eyes on it. That is the whole
   point of the route: it is a route *to* an audit.
 - **Not an autonomous auditor.** It is a discipline for an agent working with an owner who makes the decisions.
-- **Barely benchmarked.** One blind run, one audit round, one small target. See *Status* below.
+- **Measured, not validated.** Judged walks on one small hook with planted defects, one run per arm, one model
+  family. See *Status* below.
 
 ## Honest costs
 
@@ -310,23 +319,25 @@ from all of these:
 
 ## Status
 
-**v0.2, 2026-09-28. Two blind runs on one small target; thirteen fresh-reader walks of the route, the last eight with a
-real discovery round each (the thirteenth on the v0.2 kit: all four planted defects found before the round, the route
-ended where it says it ends with the owner absent, five guesses on the way - each now a line in the kit); the v4
-module on a mainnet fork at a pinned block, through Uniswap's real periphery, with a JIT-recipient actor and an
-invariant on WHO was paid; the gate scripts made to refuse what forge reads behind their back (environment, `.env`,
-a global config, artefacts from another path, a source forge's incremental build misses). One model family, one agent
-harness; every piece verified by an agent that did not write it.**
+**v0.4, 2026-10-06 (v0.3: 2026-09-29). Measured, not validated; one hook, N = 1 per arm.** Fresh Opus 5.5 walks of
+the route, each with nothing but the kit and a neutral prompt, on one small hook with four planted defects and a sealed
+answer key, each judged afterwards by a separate agent that re-ran the gates on a copy: 4 of 4 planted defects found in
+rounds 3, 4 and 5 (the v0.3 kit, a v0.4 candidate, the v0.4.2 kit), and no false green in the judges' re-runs. Rounds 3
+and 5 took about 52 minutes each, 28.5M and 39.4M cache-read tokens (main session and subagent together); round 4 took
+56.7M in 65 minutes, in a session that clashed with another for its first minutes, so its cost does not compare. The hook
+is saturated - every strong run finds all four - so these walks tell runs apart on evidence, discipline and cost, not on
+findings. Every strong run was a Claude model in one agent harness, judged by the same family; no human has reviewed
+this kit.
 
 | part | state |
 |---|---|
-| doctrine, briefs, state convention | distilled from a real project, then walked twelve times by strangers on twelve new hooks (below); every stall they hit is fixed, and each fix was re-walked |
+| doctrine, briefs, state convention | distilled from a real project, then walked twelve times by strangers on twelve new hooks (below) - every stall they hit fixed, and each fix re-walked; since then walked and judged on one hook with planted defects (the paragraph above), the kit lessons those judges ranked tracked as kit work, not as results |
 | Foundry kit and scripts | written with their own tests (hostile token: one test per switch; guards: a self-test that makes each one go red on purpose). Scripts exercised on bash 5 / Linux only |
 | v4 module | harness with both managers, address mining, four worked hooks with unit, invariant, mutant and edge tests; proven once against the Ethereum mainnet manager's bytecode. **Covered:** delta-returning hooks, native currency with a hostile native counterparty, ERC-6909 claims with conservation per party, settlement re-entrancy through a token's transfer hook, a second pool sharing a currency, tick/price/fee edges (all 2026-09-24, each area verified by a second agent - below). **Fork:** Ethereum mainnet at a pinned block, the deployed manager with its storage, real USDC / WETH / ETH, the three example hooks' unit suites and USDC's blocklist and pause (`FOUNDRY_PROFILE=fork`, needs your own endpoint; 2026-09-25, verified and fixed 2026-09-26). **Periphery:** the three example hooks through Uniswap's PositionManager and V4Router with Permit2 allowances, on the source manager (the pinned periphery) and on the fork (the deployed PositionManager and UniversalRouter), and one campaign through it (`FOUNDRY_PROFILE=periphery` / `periphery-fork`, `V4_WITH_PERIPHERY=1`; 2026-09-27). **Who is paid:** a fourth example that pays "whoever is in range" with `donate`, a just-in-time recipient actor any campaign can reuse, and an invariant on WHO was paid per party against a reference model - red on the example's first draft while every amount invariant stays green; on the source manager, and on the fork against a real pool's liquidity (2026-09-27); the example's own rule shown exploitable and pinned as a residual, not closed (R3: dust parked beyond every honest range takes a stranger's whole fee, with the WHO invariant green - it checks conformance to the rule). **Backtests:** a real pool's swaps over a window, fetched once into a committed block-pinned fixture and replayed through a hook and a hook-less control on a fork (`scripts/backtest.sh`; the three example hooks that take fees over 200 blocks of the chain's ETH / USDC 0.05 % pool, 2026-09-28) - a sandbox report, SUPPORTED, with its substitutions named (`doctrine/SIMULATE.md` section 6). **Not covered:** the invariant campaigns, the sandbox and the other suites on the fork (one periphery campaign runs there); payouts per second or by volume (the actor has the trader variant, no example has the model); Permit2 signature paths, multi-hop and the rest of the periphery (its README, "What this module still does not do") |
 | `adapters/claude-code/` | the path the method was actually run on |
 | `adapters/experimental/codex/` | **experimental / untested** - written from the documented convention, kept out of the supported path until an end-to-end run exists |
-| local model | measured once (Bonsai 2 27B in Hermes), did not finish phase 3 - `adapters/local-models/` |
-| blind benchmark (planted bugs, sealed answer key, measured recall) | **run twice on the same target**: one round, then the full light route - see below |
+| non-Claude models | ten runs recorded - open-weight models, local and hosted, in another agent harness, on kit versions v0.3 to a v0.4 candidate: **none left a planted defect as a red test in `pending/`**, which the route asks for by the end of phase 3. One run each, different models and harnesses: not a model comparison - `adapters/local-models/` |
+| blind benchmark (planted bugs, sealed answer key, measured recall) | **two blind runs on a limit-order hook** (one round, then the full light route - below); then the judged walks on a second hook with four planted defects (the paragraph above: 4 of 4 in rounds 3-5, no false green, N = 1 per arm, that hook saturated), and one walk on a third (4 of 4) |
 | review of the kit itself | three audit passes, twelve fresh-reader walks, five verifier passes over the v4 series - see below. **Same model family as the authors, one agent harness; no human has reviewed this kit** |
 
 ### The kit, put through its own loop

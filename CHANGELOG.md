@@ -2,6 +2,39 @@
 
 ## Unreleased (v0.5)
 
+- **An independent threat model, as a gate before phase 3 closes** (`briefs/threat-model.md`, `scripts/threat-diff.sh
+  <proj>`). The walker writes its own list in phase 2, `.gauntlet/THREATS.md`, from `doctrine/HOOK-ATTACKS.md` and the
+  spec: `W-<n>: <who acts> / <what is lost> / <the call sequence>`, a `from:` line, and - once the other list is in - one
+  matching line, `matches: T-<n>[, T-<n>...]` or `new`. A FRESH agent (a subagent, or a second session of the owner's),
+  given only the owner's spec, the hook's public interface and the economic model in the owner's words - never the
+  route's spec, threat list, invariants, tests or findings - writes `.gauntlet/THREATS-independent.md`: a `model:` line,
+  a `received:` line and `T-<n>: <who acts> / <what is lost> / <the call sequence>`. The script reads each independent
+  threat as matched (a walker's block names it), new (the walker's list lacks it and a test names it, `/// @custom:threat
+  T-<n>` on its own line right above the test function: an invariant now - solc builds no other tag there), refused
+  (one heading of `DECISIONS.md`, in this form only: `## <id> · <YYYY-MM-DD> · threat T-<n> refused: <why>` - a
+  heading with no id or date, a date that is not one, or hyphens for the dots is not a refusal, and the diff names its
+  line) or unmatched; writes `.gauntlet/reports/06-threats.txt` (the model, what it received, both files' sha256, one
+  line per threat, the walker's own); and prints the line for `STATE.md`, `threat_model: diffed (<n> matched, <m> new, <k>
+  refused)` - or refuses, naming each unmatched threat with its three fields. No free text is parsed: a line that starts
+  like a threat and is not of its form, a placeholder field, an id twice or unknown, a matching line in another shape,
+  `@custom:threat` in another shape, `/// @threat` (which does not build), or a tag in a file with no test, is refused
+  with its file and line. A selftest case builds a test carrying the brief's tag with forge.
+- **`STATE.md` gains a flag, `threat_model: not yet | diffed (...)`** (`doctrine/NEXT.md`'s flag block, the starting
+  values in `state/README.md`, which `scripts/init-state.sh` writes). A `STATE.md` without it is refused, naming the
+  line to add: `threat_model: not yet` (a state written before v0.5). `scripts/next.sh` refuses `phase:` 4 or higher
+  with `threat_model: not yet`, naming the brief and the script, and reads a `diffed (...)` line against the files
+  themselves, at any phase (`scripts/lib/threats.sh`, the reading `threat-diff.sh` makes): a list missing or not of its
+  form, an independent threat unanswered, or other counts, is refused. The lists are frozen after the diff: a `diffed`
+  line with no report, a report that does not give the line, or a list that is no longer the file the report hashed
+  is refused until `threat-diff.sh` runs again. Row 4b names the step (its hash in `next.sh`
+  re-pasted); `AGENTS.md` section 3 puts the walker's list in phase 2 and the diff in phase 3's gate; the dossier gets
+  section 5b, from the report; the battery and spec skills name the brief, regenerated.
+- The kit's example `STATE.md` carries `threat_model: diffed (11 matched, 3 new, 1 refused)`, and its `DECISIONS.md` a
+  threat refused in the one-line form (the entries after it renumbered); `threat_model` counts among the non-generic
+  lines by which an unmarked, retitled copy of the example is still refused.
+- `scripts/round.sh` knows `--type threat-model`: the independent list's ROUND line records its model. The independent
+  threat model is not a model round and does not count toward the ceiling (`doctrine/NEXT.md`, what counts;
+  `doctrine/COST.md` section 1).
 - **Static triage is a script:** `scripts/static-triage.sh <proj>` runs what this machine has, in this order, on the
   project's `src/` only - Slither (`--include-paths` on the project's resolved `src/`, `--checklist --fail-none
   --skip-clean`; with the project's own `slither.config.json`, its filters), Aderyn, and always `forge lint src` - and

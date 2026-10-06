@@ -17,5 +17,6 @@ waiting_on_owner:          high F-1 - to tell · triage of F-1 F-2
 location:                  .gauntlet/
 dossier:                   skeleton (2 open, 3 judges not done)
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     static triage: forge lint only, Slither not installed · fork: n/a - no chain
 ```

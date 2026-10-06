@@ -17,5 +17,6 @@ waiting_on_owner:          RPC_URL for the real-manager battery
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     fork: ran on a fork
 ```

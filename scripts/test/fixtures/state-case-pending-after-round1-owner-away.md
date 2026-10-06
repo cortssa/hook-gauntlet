@@ -17,6 +17,7 @@ waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block
                            pending: P-1 - the fee never exceeds the cap under a fee-on-transfer token, owner undecided
 ```

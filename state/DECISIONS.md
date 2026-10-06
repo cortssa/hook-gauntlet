@@ -34,7 +34,16 @@ only defence is the owner noticing. Written into `SPEC.md` section 5 in those wo
 **Consequence:** the shape of every event is frozen at deployment. Section 10 of the spec has to be right
 **before** phase 6, not after. This is the reason the black-box round was moved earlier.
 
-## D-04 · 2026-03-08 · `F-14` accepted as a trade-off
+## D-04 · 2026-03-04 · threat T-9 refused: the surcharge is paid to the pool in the same swap, so the hook never holds a balance for a flash loan to take
+
+**Decision:** the independent threat model's T-9 (a flash-loan borrower drains the surcharges the hook holds between
+swaps) is refused, not turned into an invariant.
+**Reason:** the surcharge is donated to the pool inside the swap that pays it; `SPEC.md` section 3 row 4 and
+invariant 1 ("no swap can leave a token balance in the hook") already cover what T-9 assumed.
+**Consequence:** `.gauntlet/reports/06-threats.txt` lists T-9 as refused, with this line. Of the other 14 independent
+threats, 11 matched the walker's list and 3 were new to it, each now an invariant (`/// @custom:threat T-<n>`).
+
+## D-05 · 2026-03-08 · `F-14` accepted as a trade-off
 
 **Decision:** an address that splits one large swap across many addresses in the same block avoids the surcharge.
 Accepted, not fixed.
@@ -45,13 +54,13 @@ LPs lose the avoided surcharge, nothing else.
 **Consequence:** row in `SPEC.md` section 6. Rounds re-measure it, they do not re-report it. If a round measures
 it as **worse** than this, that is a finding.
 
-## D-05 · 2026-03-11 · Compute: full mode
+## D-06 · 2026-03-11 · Compute: full mode
 
 **Decision:** rounds continue until a DISCOVERY round closes with zero high and zero medium findings still open (not yet fixed, refused in writing, accepted by the owner with a number, or handed to the human audit by name), and no REASONED high or medium is left open.
 **Reason:** the owner has a human audit booked for May and wants the time used.
 **Consequence:** budget reviewed after every third round, from the ROUND lines of `LOG.md`.
 
-## D-06 · 2026-03-14 · UNDECIDED: `F-24`
+## D-07 · 2026-03-14 · UNDECIDED: `F-24`
 
 Whether to fix the sub-wei surcharge rounding (118 bytes) or accept 210 gas on every ordinary swap. Asked
 2026-03-14. Deferred by the owner pending the round 6 gas numbers. Recorded here so it is not silently dropped.

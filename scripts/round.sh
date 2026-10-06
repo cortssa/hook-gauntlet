@@ -18,7 +18,8 @@
 # Args:    --id          the round's id: letters, digits, . _ - (r05, v2, bb1); refused if LOG.md already has it
 #          --phase       0 to 8 (doctrine/NEXT.md)
 #          --type        one of: interview spec battery discovery regression black-box verifier executor promotion
-#                        rehearsal handoff simulation
+#                        rehearsal handoff simulation threat-model (the independent threat model, briefs/threat-model.md:
+#                        a model's work that is not a round against the ceiling - its line records the model)
 #          --model       as specific as you can be ("Opus 5.5 (1M context)"); --bench, --report: a path
 #          --dates       YYYY-MM-DD, or YYYY-MM-DD..YYYY-MM-DD with the end not before the start. Real calendar dates only
 #          --high --medium --low --info   the findings AS THE ROUND CLASSIFIED THEM, whole numbers, all four required
@@ -41,7 +42,7 @@
 
 set -uo pipefail
 
-TYPES="interview spec battery discovery regression black-box verifier executor promotion rehearsal handoff simulation"
+TYPES="interview spec battery discovery regression black-box verifier executor promotion rehearsal handoff simulation threat-model"
 
 refuse() { echo "round: $* NOTHING WRITTEN." >&2; exit 2; }
 

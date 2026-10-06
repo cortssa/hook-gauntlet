@@ -17,5 +17,6 @@ waiting_on_owner:          off-chain keeper address for spec row 4
 location:                  root
 dossier:                   none
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     fork: n/a - a next.sh fixture, no chain
 ```

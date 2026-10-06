@@ -28,6 +28,7 @@ The flags `NEXT.md` needs, and where an existing project usually keeps them:
 | `real_manager_battery` | grep the tests for `vm.etch`, `readFile`, `createSelectFork`. A suite that etches the real manager's bytecode, or runs on a fork of the target chain, has answered this - however it is named |
 | `waiting_on_owner` | ask |
 | `rehearsal` | is there a deployment runbook? none: `n/a (no runbook)`. One, and a record of someone who did not write it following it on a fork: `done (YYYY-MM-DD)`, the day it was followed; otherwise `not yet` |
+| `threat_model` | `not yet`, almost always: a threat model the project has is the walker's list, not an independent one. An existing review's own threat list counts as independent only if its author never saw the project's tests or threat model - then it can be written as `.gauntlet/THREATS-independent.md` (`briefs/threat-model.md`) and diffed |
 
 Write the derived flags at the top of your report, each with **where you read it**. A flag you could not establish is
 `unknown`, and an `unknown` on `bytecode_changed_since` means: run the local judges again: they cost CPU time and nothing else.

@@ -36,5 +36,5 @@ ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 
 ## 2026-03-14 (scribe) - record brought up to date
 
 - `STATE.md` rewritten for r05. ROUND line for r05 written; the triage counts went to `DECISIONS.md` once the
-  executor finished. `DECISIONS.md` entry D-06 added for the undecided item.
+  executor finished. `DECISIONS.md` entry D-07 added for the undecided item.
 - Not checked yet: nothing to check, no code changed.

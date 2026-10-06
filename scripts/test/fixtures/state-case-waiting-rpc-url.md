@@ -17,5 +17,6 @@ waiting_on_owner:          RPC_URL for the real-manager battery (row 7b), asked 
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
+threat_model:              diffed (1 matched, 0 new, 0 refused)
 notes:                     fork: the invariant suite ran on a fork of the target chain
 ```

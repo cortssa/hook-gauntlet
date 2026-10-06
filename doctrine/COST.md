@@ -32,6 +32,11 @@ So the OPERATOR - the person running the kit; in a run with no human, the harnes
 `source: operator (owner absent)` and the reason for N. It is a ceiling like the owner's - row 2 fires on it - but
 it is not the owner's: the dossier's status line and section 8 say whose it was, and the owner may replace it in writing.
 
+**What the ceiling counts.** Model rounds, adversarial and black-box alike (`NEXT.md`, "What counts against the
+ceiling"). The independent threat model before phase 3 closes (`briefs/threat-model.md`, `NEXT.md` row 4b) is **not a
+model round** - a fresh agent writes a list of words, no tests and no findings - and **does not count toward the
+ceiling**. Its ROUND line (`scripts/round.sh --type threat-model`) records its model, like a verifier pass's.
+
 **On a large surface, the denominator does not shrink because you stopped early.** When depth is capped by the
 budget above - three of nine adapters read line by line, the rest scanned only for the shape of the other six -
 report the number actually reviewed against the number IN SCOPE, not against the number attempted: "3 of 9 reviewed,

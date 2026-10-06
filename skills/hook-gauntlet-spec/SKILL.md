@@ -44,6 +44,7 @@ From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to 
 - a class you want to call "does not apply": `{{KIT}}/doctrine/EVIDENCE.md`
 - the fuzz actions in words (the five questions): `{{KIT}}/doctrine/FUZZ-ACTIONS.md`
 - a fact about the protocol, the compiler or the chain: fetch it and cite it, never from memory: `{{KIT}}/doctrine/UPSTREAM.md`
+- the spec is written: the walker's threat list comes next (section 1): `{{KIT}}/briefs/threat-model.md`
 
 ## Done when
 

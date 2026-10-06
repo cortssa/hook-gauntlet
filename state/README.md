@@ -69,14 +69,16 @@ waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
+threat_model:              not yet
 notes:
 ```
 
 (`location:` is where you put the three files - `.gauntlet/` or `root`; `ceiling:` stays `not agreed (phase 0)` until
-the owner agrees one, then says it as agreed; `notes:` starts empty.) A `STATE.md` whose flag block still shares three
+the owner agrees one, then says it as agreed; `threat_model:` stays `not yet` until `scripts/threat-diff.sh` prints its
+line, below; `notes:` starts empty.) A `STATE.md` whose flag block still shares three
 or more lines with the example's - the same values, whatever the spacing (each line trimmed and its runs of spaces and
 tabs made one, on both sides; a line written `key:value`, no space after its first colon, read as `key: value`) - counting `last_audit_round`, `last_other_round`, `open_findings`, `ceiling`,
-`waiting_on_owner`, `notes` and `bytecode_changed_since`, not the flags a new project can share by chance - is the
+`waiting_on_owner`, `notes`, `bytecode_changed_since` and `threat_model`, not the flags a new project can share by chance - is the
 example with its marker deleted and its title changed, and is refused the same way: `next: FIRST - fill STATE.md: its
 values are still the kit's example's (<the first shared line, as the example has it>)`. Copy `state/.gitignore` into `<project>/.gauntlet/` too, wherever the three files go: the benches live in
 `<project>/.gauntlet/bench/` (`scripts/bench.sh`, `fuzz-long.sh`, `mutate.sh`: inside the project, never `$HOME` - and
@@ -146,7 +148,7 @@ refused, naming the battery; `phase:` 4 or higher (phase 3 closed) with no invar
 with a `function invariant...(`), no census report (`.gauntlet/reports/06-census.txt` or `06-census-gate.txt`, not a
 FAILED campaign's) or no `fork: <what ran against what exists, or n/a - no chain, no manager yet>` note is refused, each
 naming its command (the suite on `InvariantBase` - `QUICKSTART.md` 7b - then the battery; `scripts/census.sh <proj>`;
-the note). Every refusal of `next.sh` goes to stderr, its answers to stdout. And after its answer, whatever it is, when the kit
+the note); so is `threat_model: not yet` there (v0.5, below). Every refusal of `next.sh` goes to stderr, its answers to stdout. And after its answer, whatever it is, when the kit
 has a `MANIFEST` at its root (one line per file, `<sha256>  <path>`) and a file under the kit is not in it - not
 counting `MANIFEST` itself, `.git`, and any `lib/` (but `scripts/lib/`, the scripts' own), `cache/`, `out/`,
 `corpus/`, `census/`, `broadcast/` or `.gauntlet/` directory (dependencies, builds, and what the kit's own runs
@@ -247,6 +249,45 @@ line say the same, and paste the hash - never the hash alone. Inside the table e
 at column 0 and four cells: an indented row, a row without its leading `|` (Markdown shows both in the table) or a line
 of prose there is a refusal naming the line, so no row can hide from the guard.
 
+## The independent threat model: `scripts/threat-diff.sh`
+
+Before phase 3 closes, a fresh agent - a subagent, or a second session of the owner's - is given only the owner's spec,
+the hook's public interface and the economic model, and writes its own numbered list of threats,
+`.gauntlet/THREATS-independent.md` (`briefs/threat-model.md`: what it receives, what it must not see, the file's form).
+The walker's own list, `.gauntlet/THREATS.md`, was written in phase 2 from `doctrine/HOOK-ATTACKS.md` and the spec; once
+the independent list is in, the walker fills one matching line under each of its threats, `matches: T-<n>[, T-<n>...]`
+or `new`. Then `scripts/threat-diff.sh <proj>` compares the two by id and reads each independent threat as MATCHED (a
+walker's threat names it), NEW (the walker's list did not have it, and a test names it on a line of its own right
+above the test function, `/// @custom:threat T-<n>`: an invariant now - solc builds no tag of a project's own but
+`@custom:<name>`, and `/// @threat` there breaks the build), REFUSED (neither, and a heading of `DECISIONS.md` says so in
+one line, in this form and no other: `## <id> · <YYYY-MM-DD> · threat T-<n>[, T-<n>...] refused: <why>` - an id, a real
+date, a middle dot between spaces; a heading with no id or no date, a date that is not one, or hyphens for the dots is
+not a refusal, and the diff names its line) or UNMATCHED. It writes `.gauntlet/reports/06-threats.txt` - the model that
+wrote the independent list and what it received, the two files' sha256 in full (`sha256 .gauntlet/THREATS.md: <hex>`),
+one line per threat with its status, the walker's own threats (`new`) - and prints the line for `STATE.md`:
+
+```
+threat_model:              diffed (<n> matched, <m> new, <k> refused)
+```
+
+only when no independent threat is UNMATCHED (exit 0). One left, it is `threat-diff: REFUSED - <u> of <t> independent
+threats neither matched ... : T-3 (<who> / <what is lost> / <the call sequence>); ...` - each named, with a heading of
+`DECISIONS.md` that names it in another shape pointed out - and the line stays `threat_model: not yet` (exit 1). A list
+missing is `threat_model: not yet - <which, and who writes it>` (exit 1, nothing written); a file not of its form is
+refused naming the file, the line and what is wrong (exit 2, nothing written). Nothing is read as free text: a line that
+starts like a threat (`T-`, `W-`, after list markers or a heading) and is not of its form, a threat with fewer than three
+fields or a placeholder in one, an id twice, a matching line in another shape or outside its threat's block, an id named
+that the independent list does not have, `@custom:threat` in another shape, `@threat` at all, or a tag in a file with
+no test function - each is refused, never skipped. `next.sh` refuses `phase:` 4 or higher with `threat_model: not yet` - `next: REFUSED - phase <n>
+claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes
+<proj>/.gauntlet/THREATS-independent.md from <kit>/briefs/threat-model.md, then <kit>/scripts/threat-diff.sh <proj> - or
+write the phase that is open` - and reads a `threat_model: diffed (...)`, at any phase, against the files themselves, by
+the same library (`scripts/lib/threats.sh`): a list gone or not of its form, an independent threat unanswered (each
+named), or counts other than the line's, is refused (exit 2, no escape: the files are the record). **The lists are
+frozen after the diff:** a `diffed` line with no `06-threats.txt`, a report that does not give that line, or a list
+that is no longer the file the report hashed - a walker's threat added after reading the other list, an independent
+threat reworded - is refused, `re-run threat-diff.sh`, even when the counts come out the same.
+
 ## The ROUND line
 
 There used to be a fourth file, a machine-readable record of every round. Nothing ever read it, and three reviewers
@@ -258,7 +299,9 @@ ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 
 ```
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
-`executor`, `promotion`, `rehearsal`, `handoff`, `simulation`) · model, as specific as you can be · bench · dates · findings AS THE ROUND
+`executor`, `promotion`, `rehearsal`, `handoff`, `simulation`, `threat-model` - the independent list of
+`briefs/threat-model.md`: no findings of its own, `0H 0M 0L 0I`, and its gate passes when `scripts/threat-diff.sh` reads
+the file it wrote) · model, as specific as you can be · bench · dates · findings AS THE ROUND
 CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open; black-box: no divergence left; verifier: every claim held; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - a real state, not a pass with a footnote: the owner was absent, every question has an answer or an explicit "undecided" from their files, and nobody has yet read the scope and the non-goals back to them; the route continues, the pending item is in `waiting_on_owner` (`read-back of scope`), nothing in phases 6-8 closes without it (`briefs/owner-interview.md`), and the dossier says so in section 8; the same for a SPEC written with the owner absent - phase 1's gate also waits on the owner's read (`AGENTS.md` §3): `gate pass (read-back pending)`, `waiting_on_owner: read-back of the spec`. `scripts/round.sh` writes it for `--type interview` and `--type spec` only, and refuses any other wording) · cost AND effort (tokens, wall-clock,
 files read, tests written; leave out what you cannot measure, never guess - an orchestration harness does not always
 return a subagent's usage, and then the field says `cost not measured`, what `scripts/round.sh` writes when no cost

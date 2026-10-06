@@ -158,6 +158,26 @@ raised this route is not a credible claim on any hook that went through more tha
 who finds a class missing from both section 4 and this one cannot tell "looked at and refuted" from "never looked at" - this section
 is what tells them apart.
 
+## 5b. The independent threat model (must)
+
+What a reader who never saw the route's work thought could go wrong, and what became of each (`briefs/threat-model.md`),
+read from `.gauntlet/reports/06-threats.txt` - the report `scripts/threat-diff.sh` wrote - as it stands, never retyped:
+
+- who wrote the independent list (the report's `model:`, and its family), what it received (`received:`), and who wrote
+  the walker's list; one family for both is said here, as a limit: a blind spot they share is in neither list;
+- the line `threat_model: diffed (<n> matched, <m> new, <k> refused)`, and the two files' hashes;
+- one row per independent threat:
+
+| threat (T-<n>: who / what is lost / the call sequence) | matched by (W-<n>) / new - the invariant that names it (`/// @custom:threat`) / refused - the `DECISIONS.md` line | the test's evidence label (`doctrine/EVIDENCE.md`) |
+|---|---|---|
+| {{THREAT}} | {{STATUS}} | {{LABEL}} |
+
+- the walker's own threats (`new` in `.gauntlet/THREATS.md`): the ones the independent reader did not see.
+
+The `new` rows are the ones the route would have missed without this step, and the refused ones are claims: an auditor
+reads both first. Not done (the route stopped before phase 3 closed: `threat_model: not yet`): say so here and in
+section 9.
+
 ## 6. What the judges said (must; the rows of `doctrine/JUDGES.md` - its row 1 is split in two here)
 
 | judge | command, tool version | result, read from the output | where the output is (inside the project, `.gauntlet/reports/...`: a bench or scratch path is not a place an auditor can read) |
