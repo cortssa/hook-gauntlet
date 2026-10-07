@@ -59,7 +59,8 @@ for. Choose deliberately, write it down, and hold the line.
 
 The core of the document. One row per capability, not per attack. Cover **every external entry point**, and walk
 `doctrine/HOOK-ATTACKS.md`: each class there ends up here (it applies), in section 5 (prevented by an admission rule, with its
-probe), in section 6 (accepted) or in section 7 (does not apply to this hook, and why).
+probe), in section 6 (accepted) or in section 7 (does not apply to this hook, and why). Class 37, the code's own claims,
+is decided like the others, and its rows are section 3b's.
 
 | a hostile actor can ... | the contract answers | proved by (test, and its evidence label - `doctrine/EVIDENCE.md`) | reached in the campaign by (action in 4b, and the census boundary that shows it) | the mutant that test was seen to kill |
 |---|---|---|---|---|
@@ -84,6 +85,29 @@ continues" are answers. "The `_check` function handles it" is not.
 When a fix changes the contract at the level of a cause, **walk this whole table again** and write what the
 contract does now for each row. A cause-level fix always changes more rows than you expect, and the rows it
 changed by accident are where the next finding lives.
+
+## 3b. What the code says about itself
+
+Class 37 of `doctrine/HOOK-ATTACKS.md` (self-claims not kept), as a table. Filled in phase 1 from the code's own text,
+not from memory of it: one row per event (its fields, and what each is meant to carry), per NatSpec `@notice`, `@dev`
+or `@return` sentence about behaviour, per sentence of the owner's documents about behaviour, per custom error and
+revert reason, per limit (a cap, a bound, a window), and per interface function or inherited base the code says it
+implements. On a retrofit (`doctrine/RETROFIT.md`) every NatSpec sentence about behaviour is a row, none summarised.
+
+| the code says (quoted) | where (file:line, tag or document) | what the code does | how checked: its evidence label - TESTED (or stronger) with the test's name / REASONED / not checked |
+|---|---|---|---|
+| *`@notice` "the surcharge is paid to the liquidity providers of the pool"* | *`BlockCapHook.sol:41`* | *donates it to the pool in `afterSwap`* | *TESTED - `test_surcharge_reaches_the_pool`* |
+| *event `Surcharged(address swapper, uint256 amount)`: the amount charged* | *`BlockCapHook.sol:18`* | *emits the amount computed, before the cap trims it* | *not checked* |
+| {{CLAIM}} | {{WHERE}} | {{DOES}} | {{HOW_CHECKED}} |
+
+The "how checked" cell is the row's evidence label (`doctrine/EVIDENCE.md`), the same one the dossier's section 2
+carries for it: TESTED - or a stronger label, PROPERTY-TESTED, MUTATION-TESTED, MODEL-TESTED or PROVED, when the test
+earned it - with the test's name; REASONED with where the argument is written; or not checked (UNVERIFIED).
+A row whose "does" is not its "said" is a finding, at whatever severity it earns - an event that does not carry what
+was paid, a revert on an input the documentation calls valid, a field an interface promises and the implementation
+leaves out. A row "not checked" goes to section 9 and to the dossier's "what was NOT checked". Each event's row is
+also a REACH boundary of the census (`QUICKSTART.md` step 8): `"event <E> emitted with the fields it reports"`, noted by
+the handler only after it compared the event's fields with what the action moved.
 
 ## 4. Invariants, in words
 

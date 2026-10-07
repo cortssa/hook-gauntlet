@@ -2,6 +2,38 @@
 
 ## Unreleased (v0.5)
 
+- **v0.5.2 - what the code says about itself.** Measured against a human report of the same code, the first real case
+  found its critical and high findings and none of its five medium, low or note ones. Of those five, one was of this
+  kind (documentation that leaves the code's parameters out); the others were of kinds the attack catalogue
+  already names or does not yet name. The class is written because the kit asked about attackers and never asked the
+  code to keep its own word - its events, documentation, errors, limits and interfaces.
+  (1) `doctrine/HOOK-ATTACKS.md` class 37, **self-claims not kept**, with four questions - every event's fields equal
+  what the function moved or set; every NatSpec `@notice`/`@dev`/`@return` and every behaviour sentence of the owner's
+  documents is true of the code; every revert, custom error and bound fires exactly where its name and documentation
+  say and nowhere else (a valid input that reverts is a finding); what an interface or inherited base promises, the
+  implementation keeps - and a "does not apply" predicate checkable by grep (no `emit`, no NatSpec or owner document
+  about behaviour, no error, `revert`, `require` or named limit in scope). (2) The spec template has a section 3b,
+  "What the code says about itself": the claim quoted, where it is, what the code does, how it is checked (a test by
+  name / reasoned / not checked), filled in phase 1 from the code's own text; on a retrofit every NatSpec sentence about
+  behaviour is a row (`doctrine/RETROFIT.md` step 3). AGENTS.md's phase 1 gate (and the spec skill that quotes it)
+  requires the table. (3) `census.sh`, both modes, lists under the table every event the source emits (`emit` in
+  foundry.toml's `src`) that no census boundary names (`event <E>` or `event <E> ...`), each with the REACH boundary it
+  recommends, `event <E> emitted with the fields it reports` - guidance, never a floor: the exit code is untouched,
+  and an event becomes a gate when its boundary is put in REACH; `CENSUS_TABLE_ONLY=1` prints the table alone, as
+  before; QUICKSTART step 8 says so. (4) The audit-round brief's "where to press hardest" gains item 6: the code's own claims,
+  as well as the attackers. (5) The dossier's section 2 carries the spec's section 3b, each row with its evidence label;
+  its scope sheet asks for event parameters' NatSpec too, counted.
+  **Known gaps:** no script reads the spec's class decisions - none did for the 36 classes before it (`next.sh`: the kit
+  cannot measure phase 1); the gate that requires every class decided, class 37 included, is AGENTS.md's phase 1 row,
+  read by an agent and the owner, and a spec without the class is not refused by any script. The census's events are
+  read from the source as text, not parsed: an `emit` inside a string is listed too, and so is one inside a block
+  comment on a line that does not open with `/*` or `*`; a line that does open with one is dropped whole (code after a
+  comment that closes on it included), and so is the text after `//` (a `//` inside a string included). An event
+  emitted outside `src` is not listed - one in a library, or in a base contract under `lib/` that the hook inherits,
+  which is often where a hook's events are emitted: those are checked by hand, from the base's source. A boundary's
+  name says nothing about whether the handler compared the fields - the reader reads the handler. The kit's own example
+  campaigns check no event's fields: the census lists their events with no boundary.
+
 - **v0.5.1 - what the first owner-present case taught the kit.** (1) An independent threat the owner leaves undecided
   has a disposition: a line of its own in `.gauntlet/THREATS.md`, `T-<n>: handed: round` (a target the round's brief,
   `briefs/audit-round.md`, lists by id and text) or `T-<n>: handed: audit` (to the human audit by name, untested);

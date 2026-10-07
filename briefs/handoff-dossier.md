@@ -83,7 +83,7 @@ exists: it is the only section with no file to assemble from. Three honest sente
 | oracles and price sources it depends on (including a pool's own spot price) | {{PRICE_SOURCES}} |
 | prior HUMAN security reviews (firm, date, report) - or "none" | {{PRIOR_REVIEWS}} |
 | Uniswap Foundation Hook Security Framework: self-score per dimension, tier, feature triggers, date scored; and which of its recommendations for that tier are met, not met, or outside this route (`doctrine/UPSTREAM.md`) | {{UF_FRAMEWORK}} |
-| documentation coverage: is every external function and event documented (NatSpec)? | {{NATSPEC}} |
+| documentation coverage: is every external function, event and event parameter documented (NatSpec)? Counted, not assumed - and whether what it says is true is section 2's self-claims table | {{NATSPEC}} |
 | wanted start date and deadline for the review | {{DATES}} |
 | external dependencies and their pinned versions | {{DEPS}} |
 | hook permission bits declared, and the mined address they match | {{FLAGS}} |
@@ -103,6 +103,11 @@ exists: it is the only section with no file to assemble from. Three honest sente
   which fuzz action reaches it (with the census boundary that shows it did), and the mutant that test was seen to
   kill. Empty cells stay empty: a row defended only by text is something the auditor wants to know before they
   start, and it is the cheapest day of their time you can save. -> `SPEC.md` section 3
+- **What the code says about itself**, the spec's section 3b as it stands - each claim (an event and its fields, a
+  NatSpec or document sentence about behaviour, an error, a limit, an interface's promise), where it is, what the code
+  does, and how it was checked - each row with its **evidence label** (`doctrine/EVIDENCE.md`), the spec row's "how
+  checked" cell as it stands (TESTED or stronger with the test's name, REASONED, or not checked). A row whose "does" is
+  not its "said" is a finding (section 4); a row not checked is in section 9 too. -> `SPEC.md` section 3b
 - **The invariants, in words**, each with the test that checks it and its **evidence label** (PROVED / MODEL-TESTED /
   PROPERTY-TESTED / MUTATION-TESTED / SUPPORTED / REASONED / UNVERIFIED - `doctrine/EVIDENCE.md`). A test nobody has
   seen fail is not listed as evidence. MUTATION-TESTED cites the mutant and its `kill: assertion` line; a mutant whose

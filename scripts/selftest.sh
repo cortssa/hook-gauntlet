@@ -3495,6 +3495,13 @@ EOF
   if [ -s "$K/.gauntlet/reports/06-census.txt" ] && [ ! -e "$K/.gauntlet/reports/06-census-gate.txt" ] && ! grep -aq '^census gate:' "$TMP/o62"; then
     echo "  ok    and run mode keeps 06-census.txt, with no gate record and no gate verdict"; else
     echo "  FAIL  run mode's report: 06-census.txt $([ -s "$K/.gauntlet/reports/06-census.txt" ] && echo there || echo MISSING), gate record $([ -e "$K/.gauntlet/reports/06-census-gate.txt" ] && echo WRITTEN || echo absent), verdict line $(grep -ac '^census gate:' "$TMP/o62")"; fails=$((fails + 1)); fi
+  # v0.5.2: under the table, run mode lists the events the source emits that no census boundary names (the kit's vault
+  # campaign checks no event's fields: its events are listed, each with the REACH boundary it should have)
+  if grep -aqE '^events the hook emits \(every emit in src/\): [0-9]+ - [0-9]+ named by a census boundary' "$TMP/o62" \
+    && grep -aqF 'event Deposited: no boundary names it - recommended REACH boundary "event Deposited emitted with the fields it reports"' "$TMP/o62" \
+    && grep -aqF 'event Deposited: no boundary names it' "$K/.gauntlet/reports/06-census.txt"; then
+    echo "  ok    and run mode lists the vault's events no boundary names, each with its recommended REACH boundary, in 06-census.txt too"; else
+    echo "  FAIL  run mode did not list the events the vault emits with no boundary:"; grep -a -e '^event' -e '^events' "$TMP/o62" | head -6 | sed "s/^/        | /"; fails=$((fails + 1)); fi
   # ... and a SECOND draw, with a different pinned seed, over the same floor: one seed that clears the floor could be the
   # lucky one; two different draws that both clear it are the guard against that. The two tables must differ, or the
   # seed was not what chose the draw.
@@ -6102,6 +6109,83 @@ if command -v forge > /dev/null 2>&1; then
   td_has "$TMP/o7571" "fuzz-long: WARNING - this campaign's depth is 8, below the kit's default 128 for the long campaign (the everyday one here: 4)"
 fi
 rm -rf "$TD" "$S51"
+
+# ================================================================= v0.5.2: what the code says about itself. On the first
+# real case the route found none of the five lower-severity findings of the human report: one was of this kind
+# (documentation that leaves the code's parameters out), the others of kinds the catalogue already names or does
+# not yet name. The class is written because the route asked about attackers and never asked the code to keep its own
+# word (its events, documents, errors, limits, interfaces). A class of its own, decided like
+# the others in phase 1 (doctrine/HOOK-ATTACKS.md class 37, the spec's section 3b, the dossier's section 2, the round's
+# brief), and one line of the census per event the hook emits that no boundary names - guidance, never a floor.
+# No script reads the spec's class decisions (next.sh: "the kit cannot measure phase 1"): the gate that requires every
+# class decided is AGENTS.md's phase 1 row, which the spec skill quotes - checked here to carry the new table.
+echo "== v0.5.2: the code's own claims - class 37, the spec's section 3b, the census line per event =="
+S52="$TMP/v52"; rm -rf "$S52"; mkdir -p "$S52"
+v52_not() { # v52_not <file> <fixed string>: it must NOT say it
+  if grep -qF -- "$2" "$1"; then echo "  FAIL  it says '${2:0:150}':"; sed "s/^/        | /" "$1"; fails=$((fails + 1)); else echo "  ok    and it does not say: ${2:0:150}"; fi
+}
+v52_proj() { # v52_proj <dir> <src dir name> <foundry.toml src line>: a project with .gauntlet/, a source, a census
+  mkdir -p "$1/.gauntlet" "$1/census" "$1/$2/sub"; printf '[profile.default]\n%s\n' "$3" > "$1/foundry.toml"
+  printf '%s\n' 'contract H {' '    event Paid(address who, uint256 amount);' \
+    '    function f() external { emit Paid(msg.sender, 1); emit IHookEv.Swept(1); } // emit Ghost1(1);' \
+    '    // emit Ghost2(1);' '    /** emit Ghost3(1) */' '     * emit Ghost4(1);' '}' > "$1/$2/H.sol"
+  printf '%s\n' 'contract G { function g() external { emit  Paid (msg.sender, 2); } }' > "$1/$2/sub/G.sol"
+  printf 'V\tU=0\tA:deposit=3/3\tB:event Paid emitted with the fields it reports=2\n' > "$1/census/long.tsv"
+}
+P52="$S52/p"; v52_proj "$P52" src 'src = "src"'
+CORE=deposit "$HERE/census.sh" --aggregate "$P52/census/long.tsv" "$P52" > "$TMP/o7600" 2>&1
+check "the census gate on a source that emits two events, one named by a boundary: the verdict is the gate's" 0 $? "$TMP/o7600"
+td_has "$TMP/o7600" 'events the hook emits (every emit in src/): 2 - 1 named by a census boundary ("event <E> ..."), 1 not'
+td_has "$TMP/o7600" "event Swept: no boundary names it - recommended REACH boundary \"event Swept emitted with the fields it reports\", noted by the handler only after it compared the event's fields with what the action moved or set (doctrine/HOOK-ATTACKS.md class 37)"
+v52_not "$TMP/o7600" "event Paid: no boundary"
+v52_not "$TMP/o7600" "Ghost"
+td_last "$TMP/o7600" "census gate: PASSED - 1 CORE actions and 0 REACH boundaries at or above 25%"
+td_has "$P52/.gauntlet/reports/06-census-gate.txt" 'event Swept: no boundary names it - recommended REACH boundary "event Swept emitted with the fields it reports"'
+CORE="deposit nosuch" "$HERE/census.sh" --aggregate "$P52/census/long.tsv" "$P52" > "$TMP/o7601" 2>&1
+check "a gate that fails on its CORE still fails, and the events line is printed under the table" 1 $? "$TMP/o7601"
+td_has "$TMP/o7601" 'event Swept: no boundary names it'
+printf 'V\tU=0\tA:deposit=3/3\tB:event Paid=2\tB:event Swepted here=1\n' > "$P52/census/long.tsv"
+CORE=deposit "$HERE/census.sh" --aggregate "$P52/census/long.tsv" "$P52" > "$TMP/o7602" 2>&1
+check "a boundary named 'event Paid' names Paid; 'event Swepted here' does not name Swept" 0 $? "$TMP/o7602"
+td_has "$TMP/o7602" 'events the hook emits (every emit in src/): 2 - 1 named by a census boundary ("event <E> ..."), 1 not'
+td_has "$TMP/o7602" 'event Swept: no boundary names it'
+CENSUS_TABLE_ONLY=1 "$HERE/census.sh" --aggregate "$P52/census/long.tsv" "$P52" > "$TMP/o7603" 2>&1
+check "CENSUS_TABLE_ONLY=1 (fuzz-long.sh's table): the table only" 0 $? "$TMP/o7603"
+v52_not "$TMP/o7603" "events the hook emits"
+P52c="$S52/c"; v52_proj "$P52c" contracts "src = 'contracts'"
+CORE=deposit "$HERE/census.sh" --aggregate "$P52c/census/long.tsv" "$P52c" > "$TMP/o7604" 2>&1
+check "foundry.toml's src = 'contracts': the events are read there" 0 $? "$TMP/o7604"
+td_has "$TMP/o7604" 'events the hook emits (every emit in contracts/): 2 - 1 named'
+P52n="$S52/n"; v52_proj "$P52n" src 'src = "src"'; printf 'contract Q { uint256 x; function f() external { x = 1; } }\n' > "$P52n/src/H.sol"; rm -f "$P52n/src/sub/G.sol"
+CORE=deposit "$HERE/census.sh" --aggregate "$P52n/census/long.tsv" "$P52n" > "$TMP/o7605" 2>&1
+check "a source that emits nothing" 0 $? "$TMP/o7605"
+v52_not "$TMP/o7605" "events the hook emits"
+# ---- the doctrine: class 37, its predicate and its four questions; the classes run 1..37 with no gap
+HA="$HERE/../doctrine/HOOK-ATTACKS.md"
+ha_nums="$(awk -F '|' '/^\| [0-9]+ \| \*\*/ { gsub(/ /, "", $2); printf "%s ", $2 }' "$HA")"
+if [ "$ha_nums" = "$(seq 1 37 | tr '\n' ' ')" ]; then echo "  ok    doctrine/HOOK-ATTACKS.md: the classes run 1..37, no gap, no repeat"; else
+  echo "  FAIL  doctrine/HOOK-ATTACKS.md: the class numbers are '$ha_nums', not 1..37"; fails=$((fails + 1)); fi
+ha37="$(grep -E '^\| 37 \| \*\*Self-claims not kept\*\* \|' "$HA")"
+ha37_miss=""
+for q in '**(a)** every event' '**(b)** every NatSpec' '**(c)** every revert, custom error and bound fires exactly where' \
+  '**(d)** what an interface or an inherited base promises' '**Does not apply** only when the code says nothing about itself, checkable by grep' \
+  'a valid input that reverts is a finding' "the spec's section 3b"; do
+  grep -qF -- "$q" <<< "$ha37" || ha37_miss="$ha37_miss [$q]"
+done
+if [ -n "$ha37" ] && [ -z "$ha37_miss" ]; then echo "  ok    class 37, self-claims not kept: its four questions, its grep predicate, the spec's section 3b"; else
+  echo "  FAIL  doctrine/HOOK-ATTACKS.md: no class 37 'Self-claims not kept', or it lacks:${ha37_miss:- the whole row}"; fails=$((fails + 1)); fi
+td_has "$HERE/../briefs/spec-template.md" "## 3b. What the code says about itself"
+td_has "$HERE/../briefs/spec-template.md" "| the code says (quoted) | where (file:line, tag or document) | what the code does | how checked: its evidence label - TESTED (or stronger) with the test's name / REASONED / not checked |"
+td_has "$HERE/../briefs/spec-template.md" "On a retrofit (\`doctrine/RETROFIT.md\`) every NatSpec sentence about behaviour is a row, none summarised."
+td_has "$HERE/../briefs/handoff-dossier.md" "- **What the code says about itself**, the spec's section 3b as it stands"
+td_has "$HERE/../briefs/handoff-dossier.md" "each row with its **evidence label** (\`doctrine/EVIDENCE.md\`)"
+td_has "$HERE/../briefs/spec-template.md" "the same one the dossier's section 2"
+td_has "$HERE/../briefs/audit-round.md" "6. **The code's own claims, as well as the attackers.** Test what the code says about itself"
+td_has "$HERE/../QUICKSTART.md" "\`event <E> emitted with the fields it reports\`"
+# the gate that requires every class decided - AGENTS.md's phase 1 row, and the spec skill that quotes it
+td_has "$HERE/../AGENTS.md" "what the code says about itself is tabled from its own text (the spec's section 3b, class 37"
+td_has "$HERE/../skills/hook-gauntlet-spec/SKILL.md" "what the code says about itself is tabled from its own text (the spec's section 3b, class 37"
+rm -rf "$S52"
 
 echo
 echo "selftest ran in $((SECONDS - started)) s"

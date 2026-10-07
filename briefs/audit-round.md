@@ -56,6 +56,10 @@ list you will pay for rediscoveries.*
 4. **The open trade-offs.** Confirm each is still exactly as the spec describes, with your own number. One that is
    **worse** than documented is a finding.
 5. **The spec as a document.** It ships with the code. Any line of it that does not reproduce is a finding.
+6. **The code's own claims, as well as the attackers.** Test what the code says about itself - every event's fields
+   against what the call moved, every NatSpec and document sentence about behaviour, every error and limit (a valid
+   input that reverts is a finding), every promise of an interface or base it implements (the spec's section 3b lists
+   them; `doctrine/HOOK-ATTACKS.md` class 37 says how).
 
 ## Rules (non-negotiable)
 

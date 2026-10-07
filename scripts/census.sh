@@ -52,11 +52,23 @@
 #          OUT_DIR      where the report goes        (default: <project>/.gauntlet/reports; a relative one is under <project>).
 #                       Inside a project with no .gauntlet/ (someone else's tree, doctrine/RETROFIT.md) both modes refuse
 #                       before writing anything, exit 2 - unless it is a bench or the kit's own (scripts/lib/owner-tree.sh)
-#          CENSUS_TABLE_ONLY  1: --aggregate prints the table and nothing else - no gate record, no verdict line. For a
-#                       caller that judges nothing (fuzz-long.sh prints the long campaign's table with no CORE, and a
+#          CENSUS_TABLE_ONLY  1: --aggregate prints the table and nothing else - no gate record, no verdict line, no
+#                       events lines (Events, below). For a caller that judges nothing (fuzz-long.sh prints the long campaign's table with no CORE, and a
 #                       "PASSED - 0 CORE actions" under it would read as a gate that was never run).
 #          CENSUS_FORGE_LOG  --aggregate: forge's log of the campaign, when there is one (fuzz-long.sh passes it). Only the
 #                       persisted failures of suites named in it are counted in the `runs:` line below.
+# Events:  v0.5.2 - under the table, both modes list the events the hook emits (every `emit <E>(` in the project's
+#          source directory, foundry.toml's `src`, default src/; comment lines skipped) and, for each that no census
+#          boundary names (a boundary named "event <E>" or "event <E> ..."), the REACH boundary it recommends:
+#          "event <E> emitted with the fields it reports" - noted by the handler only after it compared the event's
+#          fields with what the action moved or set (doctrine/HOOK-ATTACKS.md class 37). A campaign that never checks an event's
+#          fields is then visible in the census. Guidance, not a floor: the exit code is untouched, and an event becomes a
+#          gate when its boundary is in REACH. Read from the source as text, not parsed: the text after `//` is dropped (a
+#          `//` inside a string with it), and so is every line that opens with `/*` or `*` (code after a block comment
+#          that closes on that line with it); an `emit` inside a string, or inside a block comment on a line that opens
+#          with neither, is listed too; one outside the source directory (a library, a base under lib/) is not.
+#          The gate reads the source of the directory forge ran in (the parent of the census file's census/, or the
+#          project given); run mode, the project's.
 # Counts:  a run writes one line, and forge adds lines that are not runs. A GREEN campaign of N runs has N + 1 lines plus one
 #          per persisted failure of a suite that ran (forge replays them first; foundry-kit/README.md, the census): when
 #          <failure_persist_dir>/failures holds any, a line under the table says how many - `runs: <n> (cache/invariant/failures
@@ -197,6 +209,31 @@ persisted_note() {
   echo "runs: $n ($pdir/failures holds $k persisted failures of $names: they replay first and count)"
 }
 
+# v0.5.2: the events the hook emits, each beside the census boundary that would show the campaign checked its fields
+# (doctrine/HOOK-ATTACKS.md class 37 (a): an event's fields equal what the function moved or set). Printed, never a gate.
+# event_note <root> <census file>: <root> is where the source is (foundry.toml's `src` under it, default src/)
+event_note() {
+  local root="$1" tsv="$2" src events named e n=0 m=0 miss=""
+  src="$(awk -F '=' -v sq="'" '/^[ \t]*\[/ { p = ($0 ~ /^[ \t]*\[profile\.default\]/) } p && $1 ~ /^[ \t]*src[ \t]*$/ { v = $2; gsub(/[" \t\r]/, "", v); gsub(sq, "", v); print v; exit }' "$root/foundry.toml" 2> /dev/null)"
+  src="${src:-src}"; src="${src#./}"; src="${src%/}"
+  [ -d "$root/$src" ] || return 0
+  # every `emit <E>(` (a qualified `emit I.E(` gives E), comment lines and the text after `//` dropped
+  events="$(find "$root/$src" -type f -name '*.sol' -exec cat {} + 2> /dev/null | sed -e 's#//.*##' | grep -vE '^[[:space:]]*/?\*' \
+    | grep -oE '(^|[^A-Za-z0-9_$])emit[[:space:]]+([A-Za-z_][A-Za-z0-9_]*[.])*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*[(]' \
+    | sed -E 's/^.*emit[[:space:]]+//; s/[[:space:]]*[(]$//; s/^.*[.]//' | LC_ALL=C sort -u)"
+  [ -n "$events" ] || return 0
+  # the boundaries the census holds, in any suite
+  named="$(tr -d '\r' < "$tsv" | tr '\t' '\n' | sed -n 's/^B:\(.*\)=[0-9][0-9]*$/\1/p' | LC_ALL=C sort -u)"
+  while IFS= read -r e; do
+    n=$((n + 1))
+    if grep -qE "^event $e( |\$)" <<< "$named"; then m=$((m + 1)); else miss="$miss $e"; fi
+  done <<< "$events"
+  echo "events the hook emits (every emit in $src/): $n - $m named by a census boundary (\"event <E> ...\"), $((n - m)) not"
+  for e in $miss; do
+    echo "event $e: no boundary names it - recommended REACH boundary \"event $e emitted with the fields it reports\", noted by the handler only after it compared the event's fields with what the action moved or set (doctrine/HOOK-ATTACKS.md class 37)"
+  done
+}
+
 # where forge ran, for a census file given to --aggregate: the parent of its census/ directory (census/long.tsv, where
 # fuzz-long.sh writes it), or else the project given, or else here
 census_root() { # census_root <file> [project-dir]
@@ -273,6 +310,7 @@ if [ "${1:-}" = "--aggregate" ]; then
     GATE_WHY="$(mktemp)" || { echo "census gate: FAILED - mktemp"; exit 2; }
     GATE_WHY="$GATE_WHY" aggregate "$TSV" | tee -a "$record"; rc=${PIPESTATUS[0]}
     [ "$rc" -ne 2 ] && persisted_note "$(census_root "$TSV" "${3:-}")" "$TSV" "${CENSUS_FORGE_LOG:-}" | tee -a "$record"
+    [ "$rc" -ne 2 ] && event_note "$(census_root "$TSV" "${3:-}")" "$TSV" | tee -a "$record"
     if [ "$rc" -eq 0 ]; then
       n_core="$(printf '%s\n' "${CORE:-}" | wc -w | tr -d ' ')"
       n_reach="$(printf '%s\n' "${REACH:-}" | tr ';' '\n' | grep -c .)"
@@ -399,6 +437,7 @@ fi
 aggregate "$GAUNTLET_CENSUS" | tee "$OUT_DIR/06-census.txt"
 rc=${PIPESTATUS[0]}
 [ "$rc" -ne 2 ] && persisted_note "$(pwd -P)" "$GAUNTLET_CENSUS" "$OUT_DIR/06-census-run.txt" | tee -a "$OUT_DIR/06-census.txt"
+[ "$rc" -ne 2 ] && event_note "$(pwd -P)" "$GAUNTLET_CENSUS" | tee -a "$OUT_DIR/06-census.txt"
 if [ "$rc" -eq 2 ]; then
   echo "census: no census line was written. Call handler.writeCensus(\"<name>\") from afterInvariant() and give foundry.toml"
   echo "        fs_permissions = [{ access = \"read-write\", path = \"./census\" }]. NOTHING MEASURED."

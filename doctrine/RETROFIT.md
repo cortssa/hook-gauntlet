@@ -64,7 +64,9 @@ On a finished project the cheapest useful thing is `JUDGES.md` from top to botto
    near the size limit will not compile for plain `forge coverage`; mass mutation must be aimed at one file and at the
    fast tests; a second engine may not be installed. Write every divergence as question / substitute / why.
 3. `HOOK-ATTACKS.md`, class by class, against their spec. **The classes nobody decided are the finding** - prior
-   reviews answer the questions somebody thought of; a fixed list asks the ones nobody did.
+   reviews answer the questions somebody thought of; a fixed list asks the ones nobody did. Class 37 on code that
+   exists: every NatSpec sentence about behaviour, every event, error and limit is a row of the spec's section 3b,
+   "said" beside "does" - the code's own text is the cheapest spec a finished project has.
 4. New tests are PROPOSALS: proven in your bench (they pass on the code, and they kill the mutant they exist for),
    handed over in a scratch directory. The owner's process promotes them.
 5. A draft of the dossier from what exists, "not done" where it does not.
