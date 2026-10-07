@@ -5139,7 +5139,7 @@ kx_one 6016 "next.sh refuses phase 4 with every record above and threat_model: n
   "next: REFUSED - phase 4 claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes $F6A/.gauntlet/THREATS-independent.md from $KX_KIT/briefs/threat-model.md, then $KX_KIT/scripts/threat-diff.sh $F6A - or write the phase that is open" "$F6"
 cp "$FIX/threats-independent.md" "$F6/.gauntlet/THREATS-independent.md"; cp "$FIX/threats-walker.md" "$F6/.gauntlet/THREATS.md"
 "$HERE/threat-diff.sh" "$F6" > /dev/null 2>&1   # (v0.5) the report, with the lists' sha256 next.sh reads a diffed line against
-sed -i 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused)/' "$F6/.gauntlet/STATE.md"
+sed -i 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 0 handed)/' "$F6/.gauntlet/STATE.md"
 kx_row 6014 "next.sh: phase 4 with the suite, the census and a fork: note (a list item after ;): the row" 6 "$F6" --judge 5=false
 rm -f "$F6/.gauntlet/reports/06-census.txt"; printf 'census gate: PASSED\n' > "$F6/.gauntlet/reports/06-census-gate.txt"
 kx_row 6015 "... the census gate's report (06-census-gate.txt) is a census report too" 6 "$F6" --judge 5=false
@@ -5617,12 +5617,12 @@ td_has "$TMP/o7102" "threat_model: not yet - there is no .gauntlet/THREATS.md - 
 td_norep "no walker's list"
 # ---- all matched
 td_proj; td_run "$TDP" > "$TMP/o7103" 2>&1; check "threat-diff: every independent threat matched by the walker's list" 0 $? "$TMP/o7103"
-td_last "$TMP/o7103" "threat_model: diffed (2 matched, 0 new, 0 refused)"
+td_last "$TMP/o7103" "threat_model: diffed (2 matched, 0 new, 0 refused, 0 handed)"
 TDR="$TDP/.gauntlet/reports/06-threats.txt"
-if [ -f "$TDR" ] && [ "$(head -1 "$TDR")" = "threat-diff: diffed - every independent threat is matched, an invariant, or refused in writing" ] \
+if [ -f "$TDR" ] && [ "$(head -1 "$TDR")" = "threat-diff: diffed - every independent threat is matched, an invariant, refused in writing, or handed on by name" ] \
   && grep -qF 'T-1  matched by W-1  | a stranger / the fees another pool earned / ' "$TDR" && grep -qF 'T-2  matched by W-2  | ' "$TDR" \
   && grep -qF "W-3  the walker's own (new)  | the owner's key / every LP's fees / setFee above the cap, then a swap  (from: SPEC.md section 3 row 2)" "$TDR" \
-  && grep -qF 'model: fixture/none (the selftest'"'"'s own, no model); received: ' "$TDR" && grep -qxF 'the line for STATE.md: threat_model: diffed (2 matched, 0 new, 0 refused)' "$TDR"; then
+  && grep -qF 'model: fixture/none (the selftest'"'"'s own, no model); received: ' "$TDR" && grep -qxF 'the line for STATE.md: threat_model: diffed (2 matched, 0 new, 0 refused, 0 handed)' "$TDR"; then
   echo "  ok    the report: its verdict, each independent threat with what matched it, the walker's own, the model, the STATE.md line"; else
   echo "  FAIL  the report is not what was diffed:"; sed "s/^/        | /" "$TDR" 2> /dev/null; fails=$((fails + 1)); fi
 td_sha() { if command -v sha256sum > /dev/null 2>&1; then sha256sum < "$1" | cut -d' ' -f1; else shasum -a 256 < "$1" | cut -d' ' -f1; fi; }
@@ -5633,7 +5633,7 @@ grep -qxF "sha256 .gauntlet/THREATS-independent.md: $(td_sha "$TDP/.gauntlet/THR
 # ---- one new threat the walker's list does not have: refused, naming it
 printf 'T-3: a JIT provider / the passive LPs'"'"' share of a rebate / add liquidity around the price, swap, remove it\n' >> "$TDP/.gauntlet/THREATS-independent.md"
 td_run "$TDP" > "$TMP/o7104" 2>&1; check "threat-diff: an independent threat neither matched, an invariant nor refused - refused" 1 $? "$TMP/o7104"
-td_has "$TMP/o7104" "threat-diff: REFUSED - 1 of 3 independent threats neither matched by the walker's list (matches: in .gauntlet/THREATS.md), turned into an invariant (/// @custom:threat T-<n> in a test) nor refused in DECISIONS.md (## <id> · <date> · threat T-<n> refused: <why>): T-3 (a JIT provider / the passive LPs' share of a rebate / add liquidity around the price, swap, remove it)"
+td_has "$TMP/o7104" "threat-diff: REFUSED - 1 of 3 independent threats neither matched by the walker's list (matches: in .gauntlet/THREATS.md), turned into an invariant (/// @custom:threat T-<n> in a test) nor refused in DECISIONS.md (## <id> · <date> · threat T-<n> refused: <why>) nor handed on by name (T-<n>: handed: round | audit in .gauntlet/THREATS.md): T-3 (a JIT provider / the passive LPs' share of a rebate / add liquidity around the price, swap, remove it)"
 td_last "$TMP/o7104" "threat-diff: the line for STATE.md stays 'threat_model: not yet' - phase 3 does not close (doctrine/NEXT.md row 4b)"
 grep -qF 'T-3  UNMATCHED  | a JIT provider' "$TDR" && grep -qxF 'the line for STATE.md stays: threat_model: not yet' "$TDR" \
   && echo "  ok    and the report says T-3 is UNMATCHED and the line stays not yet" || { echo "  FAIL  the report does not say so:"; sed "s/^/        | /" "$TDR"; fails=$((fails + 1)); }
@@ -5647,12 +5647,12 @@ td_has "$TMP/o7106" "DECISIONS.md: its refusal on line 3 gives no reason (\"TBD\
 # ---- refused in DECISIONS.md, in the form: passes
 printf '# DECISIONS - SomeHook\n\n## D-09 · 2026-10-06 · threat T-3 refused: the hook pays no rebate to whoever is in range (SPEC.md section 7)\n\n**Reason:** ...\n' > "$TDP/.gauntlet/DECISIONS.md"
 td_run "$TDP" > "$TMP/o7107" 2>&1; check "threat-diff: the new threat refused in DECISIONS.md in one line - diffed" 0 $? "$TMP/o7107"
-td_last "$TMP/o7107" "threat_model: diffed (2 matched, 0 new, 1 refused)"
+td_last "$TMP/o7107" "threat_model: diffed (2 matched, 0 new, 1 refused, 0 handed)"
 grep -qF 'T-3  refused - DECISIONS.md line 3: the hook pays no rebate to whoever is in range (SPEC.md section 7)  | ' "$TDR" \
   && echo "  ok    and the report gives the refusal's line and reason" || { echo "  FAIL  the report does not give the refusal:"; sed "s/^/        | /" "$TDR"; fails=$((fails + 1)); }
 cp "$TDP/.gauntlet/DECISIONS.md" "$TMP/td-dec.md"; printf '## D-10 · 2026-10-06 · threat T-1, T-3 refused: listed together\n' >> "$TDP/.gauntlet/DECISIONS.md"
 td_run "$TDP" > "$TMP/o7108" 2>&1; check "threat-diff: a refusal naming two ids, one matched already - the matched one stays matched" 0 $? "$TMP/o7108"
-td_last "$TMP/o7108" "threat_model: diffed (2 matched, 0 new, 1 refused)"
+td_last "$TMP/o7108" "threat_model: diffed (2 matched, 0 new, 1 refused, 0 handed)"
 # ---- (v0.5) a refusal heading is read only in the documented form - an id, a real date, ` · ` between them: a near miss
 # is not a refusal, and the diff names its line and what is wrong with it
 td_near() { # td_near <n> <label> <the heading> <what is wrong, as it says it>
@@ -5670,19 +5670,19 @@ td_near 7183 "a refusal heading with an id and no date" '## D-23 · threat T-3 r
   "not <id> · <YYYY-MM-DD> before 'threat'"
 # ---- turned into an invariant instead: new, not refused
 rm -f "$TDP/.gauntlet/DECISIONS.md"
-printf 'contract JitInv {\n    /// @custom:threat T-3\n    function invariant_nobody_is_paid_for_a_rebate_it_was_not_in_range_for() public {}\n}\n' > "$TDP/test/Jit.t.sol"
+printf 'contract JitInv {\n    /// @custom:threat T-3\n    function invariant_T3_nobody_is_paid_for_a_rebate_it_was_not_in_range_for() public {}\n}\n' > "$TDP/test/Jit.t.sol"
 td_run "$TDP" > "$TMP/o7109" 2>&1; check "threat-diff: the new threat turned into an invariant (/// @custom:threat T-3 in a test) - diffed" 0 $? "$TMP/o7109"
-td_last "$TMP/o7109" "threat_model: diffed (2 matched, 1 new, 0 refused)"
-grep -qF 'T-3  new - an invariant: test/Jit.t.sol:2  | ' "$TDR" && echo "  ok    and the report names the test and its line" || { echo "  FAIL  the report does not name the test:"; sed "s/^/        | /" "$TDR"; fails=$((fails + 1)); }
+td_last "$TMP/o7109" "threat_model: diffed (2 matched, 1 new, 0 refused, 0 handed)"
+grep -qF 'T-3  new - an invariant: test/Jit.t.sol:2 invariant_T3_nobody_is_paid_for_a_rebate_it_was_not_in_range_for()  | ' "$TDR" && echo "  ok    and the report names the test and its line" || { echo "  FAIL  the report does not name the test:"; sed "s/^/        | /" "$TDR"; fails=$((fails + 1)); }
 # the same, with CRLF line ends in every file read: the same line
 for f in "$TDP/.gauntlet/THREATS-independent.md" "$TDP/.gauntlet/THREATS.md" "$TDP/test/Jit.t.sol"; do sed 's/$/\r/' "$f" > "$f.crlf" && mv "$f.crlf" "$f"; done
 td_run "$TDP" > "$TMP/o7110" 2>&1; check "threat-diff: the same files with CRLF line ends" 0 $? "$TMP/o7110"
-td_last "$TMP/o7110" "threat_model: diffed (2 matched, 1 new, 0 refused)"
+td_last "$TMP/o7110" "threat_model: diffed (2 matched, 1 new, 0 refused, 0 handed)"
 # ---- the forms: each near miss refused with its file and line, nothing written
 td_bad() { # td_bad <n> <label> <the file under the project> <sed script on the fixture's own copy> <the words it must say>
   local n="$1" label="$2" f="$3" sc="$4" want="$5"
   td_proj; printf 'T-3: a JIT provider / the passive LPs'"'"' rebate / add, swap, remove\n' >> "$TDP/.gauntlet/THREATS-independent.md"
-  printf 'contract JitInv {\n    /// @custom:threat T-3\n    function invariant_jit() public {}\n}\n' > "$TDP/test/Jit.t.sol"
+  printf 'contract JitInv {\n    /// @custom:threat T-3\n    function invariant_T3_jit() public {}\n}\n' > "$TDP/test/Jit.t.sol"
   sed "$sc" "$TDP/$f" > "$TDP/$f.new" && mv "$TDP/$f.new" "$TDP/$f"
   td_run "$TDP" > "$TMP/o$n" 2>&1; check "threat-diff: $label - refused" 2 $? "$TMP/o$n"
   td_has "$TMP/o$n" "$want"; td_norep "$label"
@@ -5702,9 +5702,9 @@ td_bad 7116 "no model: line" .gauntlet/THREATS-independent.md '/^model:/d' \
 td_bad 7117 "a leading zero in an id (T-01)" .gauntlet/THREATS-independent.md 's#^T-1: #T-01: #' \
   ".gauntlet/THREATS-independent.md line 6: this line starts with a threat id and is not a threat line"
 td_bad 7118 "a walker's threat with no matching line" .gauntlet/THREATS.md '/^matches: T-1$/d' \
-  ".gauntlet/THREATS.md line 5: W-1 has no matching line: matches: T-<n>[, T-<n>...] or new, right under it"
+  ".gauntlet/THREATS.md line 5: W-1 has no matching line: matches: T-<n>[, T-<n>...] or matches: new, right under it"
 td_bad 7119 "a matching line in another shape (match: T-1)" .gauntlet/THREATS.md 's#^matches: T-1$#match: T-1#' \
-  ".gauntlet/THREATS.md line 7: \"match: T-1\" is not a matching line: matches: T-<n>[, T-<n>...] or new"
+  ".gauntlet/THREATS.md line 7: \"match: T-1\" is not a matching line: matches: T-<n>[, T-<n>...] or matches: new"
 td_bad 7120 "a matching line outside a threat's block (after a blank line)" .gauntlet/THREATS.md 's#^matches: T-1$##; s#^from: doctrine/HOOK-ATTACKS.md class 3$#from: doctrine/HOOK-ATTACKS.md class 3\nnew\n\nmatches: T-1#' \
   "matches: outside a threat's block (a W- line and the lines right under it; a blank line ends it)"
 td_bad 7121 "matches naming an id the independent list does not have" .gauntlet/THREATS.md 's#^matches: T-1$#matches: T-9#' \
@@ -5715,10 +5715,10 @@ td_bad 7123 "an independent id in the walker's list" .gauntlet/THREATS.md 's#^W-
   "an independent id (T-3) in the walker's list"
 td_bad 7124 "@custom:threat in a // comment, not ///" test/Jit.t.sol 's#/// @custom:threat#// @custom:threat#' \
   "threat-diff: REFUSED - test/Jit.t.sol:2: @custom:threat is not on a line of its own of the form /// @custom:threat T-<n>[, T-<n>...]"
-td_bad 7125 "a tag naming an id the independent list does not have" test/Jit.t.sol 's#@custom:threat T-3#@custom:threat T-9#' \
-  "threat-diff: REFUSED - test/Jit.t.sol:2 names T-9 (/// @custom:threat), and THREATS-independent.md has no T-9"
-td_bad 7126 "a tag in a file with no test or invariant function" test/Jit.t.sol 's#function invariant_jit#function helper_jit#' \
-  "threat-diff: REFUSED - test/Jit.t.sol: names a threat (/// @custom:threat) and has no test or invariant function"
+td_bad 7125 "a tag naming an id the independent list does not have" test/Jit.t.sol 's#@custom:threat T-3#@custom:threat T-9#; s#invariant_T3_jit#invariant_T9_jit#' \
+  "threat-diff: REFUSED - test/Jit.t.sol:2 names T-9 (/// @custom:threat above invariant_T9_jit()), and THREATS-independent.md has no T-9"
+td_bad 7126 "a tag in a file with no test or invariant function" test/Jit.t.sol 's#function invariant_T3_jit#function helper_jit#' \
+  "threat-diff: REFUSED - test/Jit.t.sol:2: the tag is above helper_jit(), which is not a test or invariant function"
 td_bad 7147 "the tag in the form solc does not build (/// @threat, not /// @custom:threat)" test/Jit.t.sol 's#/// @custom:threat#/// @threat#' \
   "threat-diff: REFUSED - test/Jit.t.sol:2: /// @threat does not compile (solc: \"Documentation tag @threat not valid for functions\" - a tag of your own is @custom:<name>): write /// @custom:threat T-<n>[, T-<n>...]"
 td_proj; printf '## D-09 · 2026-10-06 · threat T-7 refused: no such threat\n' > "$TDP/.gauntlet/DECISIONS.md"
@@ -5738,11 +5738,11 @@ elif command -v forge > /dev/null 2>&1; then
   printf 'T-3: a JIT provider / the passive LPs'"'"' rebate / add, swap, remove\n' >> "$TDP/.gauntlet/THREATS-independent.md"
   printf '[profile.default]\nsrc = "src"\ntest = "test"\nout = "out"\nlibs = []\n' > "$TDP/foundry.toml"
   printf '// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\ncontract A { uint256 public x; }\n' > "$TDP/src/A.sol"
-  td_sol() { printf '// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\ncontract JitInv {\n    %s\n    function invariant_nobody_is_paid_for_a_rebate_it_was_not_in_range_for() public pure {}\n}\n' "$1" > "$TDP/test/Jit.t.sol"; }
+  td_sol() { printf '// SPDX-License-Identifier: MIT\npragma solidity ^0.8.26;\ncontract JitInv {\n    %s\n    function invariant_T3_nobody_is_paid_for_a_rebate_it_was_not_in_range_for() public pure {}\n}\n' "$1" > "$TDP/test/Jit.t.sol"; }
   td_sol "${TDTAG/T-<n>/T-3}"
   (cd "$TDP" && forge build > "$TMP/o7184" 2>&1); check "forge builds a test whose invariant function carries the brief's tag right above it ($TDTAG)" 0 $? "$TMP/o7184"
   td_run "$TDP" > "$TMP/o7185" 2>&1; check "threat-diff: and reads that tag - T-3 new, an invariant" 0 $? "$TMP/o7185"
-  td_last "$TMP/o7185" "threat_model: diffed (2 matched, 1 new, 0 refused)"
+  td_last "$TMP/o7185" "threat_model: diffed (2 matched, 1 new, 0 refused, 0 handed)"
   td_sol '/// @threat T-3'; rm -rf "$TDP/out" "$TDP/cache"
   (cd "$TDP" && forge build > "$TMP/o7186" 2>&1); rc=$?
   if [ "$rc" != 0 ] && grep -qF 'Documentation tag @threat not valid for functions' "$TMP/o7186"; then
@@ -5765,30 +5765,30 @@ td_state 's/^threat_model: .*/threat_model:              not yet/'
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7130" 2>&1; check "next.sh: phase 4 with threat_model: not yet - refused (phase 3 is not closed)" 2 $? "$TMP/o7130"
 TDPA="$(cd "$TDP" && pwd)"; TDK="$(cd "$HERE/.." && pwd)"
 td_has "$TMP/o7130" "next: REFUSED - phase 4 claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes $TDPA/.gauntlet/THREATS-independent.md from $TDK/briefs/threat-model.md, then $TDK/scripts/threat-diff.sh $TDPA - or write the phase that is open"
-td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused)/'
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 0 handed)/'
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7131" 2>&1; check "next.sh: phase 4, the line these files give, and threat-diff.sh never ran (no report) - refused" 2 $? "$TMP/o7131"
-td_has "$TMP/o7131" "next: REFUSED - phase 4 claims phase 3 closed, threat_model is diffed (2 matched, 0 new, 0 refused) and there is no .gauntlet/reports/06-threats.txt"
+td_has "$TMP/o7131" "next: REFUSED - phase 4 claims phase 3 closed, threat_model is diffed (2 matched, 0 new, 0 refused, 0 handed) and there is no .gauntlet/reports/06-threats.txt"
 "$HERE/threat-diff.sh" "$TDP" > "$TMP/o7132" 2>&1
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7187" 2>&1; check "next.sh: phase 4, threat_model the line threat-diff.sh printed for these files - the row" 0 $? "$TMP/o7187"
 [ "$(nx_rows "$TMP/o7187")" = "14,18" ] && echo "  ok    rows 14,18, as the fixture's" || { echo "  FAIL  not rows 14,18: $(nx_rows "$TMP/o7187")"; fails=$((fails + 1)); }
 td_state "s/^threat_model: .*/$(tail -n 1 "$TMP/o7132")/"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7133" 2>&1; check "next.sh: the line threat-diff.sh printed, pasted as it is (one space after the colon) - the row" 0 $? "$TMP/o7133"
-td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 1 new, 0 refused)/'
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 1 new, 0 refused, 0 handed)/'
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7134" 2>&1; check "next.sh: diffed with counts the files do not give - refused" 2 $? "$TMP/o7134"
-td_has "$TMP/o7134" "next: REFUSED - phase 4 claims phase 3 closed, threat_model is diffed (2 matched, 1 new, 0 refused) and the files give diffed (2 matched, 0 new, 0 refused): $TDK/scripts/threat-diff.sh $TDPA, then write the line it prints"
+td_has "$TMP/o7134" "next: REFUSED - phase 4 claims phase 3 closed, threat_model is diffed (2 matched, 1 new, 0 refused, 0 handed) and the files give diffed (2 matched, 0 new, 0 refused, 0 handed): $TDK/scripts/threat-diff.sh $TDPA, then write the line it prints"
 printf 'T-3: a JIT provider / the passive LPs'"'"' rebate / add, swap, remove\n' >> "$TDP/.gauntlet/THREATS-independent.md"
-td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused)/'
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 0 handed)/'
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7135" 2>&1; check "next.sh: phase 4, diffed, and an independent threat added since that nothing answers - refused, naming it" 2 $? "$TMP/o7135"
-td_has "$TMP/o7135" "and 1 of 3 independent threats neither matched by the walker's list (matches: in .gauntlet/THREATS.md), turned into an invariant (/// @custom:threat T-<n> in a test) nor refused in DECISIONS.md (## <id> · <date> · threat T-<n> refused: <why>): T-3 (a JIT provider / the passive LPs' rebate / add, swap, remove)"
+td_has "$TMP/o7135" "and 1 of 3 independent threats neither matched by the walker's list (matches: in .gauntlet/THREATS.md), turned into an invariant (/// @custom:threat T-<n> in a test) nor refused in DECISIONS.md (## <id> · <date> · threat T-<n> refused: <why>) nor handed on by name (T-<n>: handed: round | audit in .gauntlet/THREATS.md): T-3 (a JIT provider / the passive LPs' rebate / add, swap, remove)"
 sed 's/^phase: .*/phase:                     3/' "$TDP/.gauntlet/STATE.md" > "$TDP/s" && mv "$TDP/s" "$TDP/.gauntlet/STATE.md"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7136" 2>&1; check "next.sh: phase 3, a diffed line the files do not bear out (T-3 unanswered) - refused too" 2 $? "$TMP/o7136"
-td_has "$TMP/o7136" "next: REFUSED - threat_model is diffed (2 matched, 0 new, 0 refused) and 1 of 3 independent threats neither matched"
+td_has "$TMP/o7136" "next: REFUSED - threat_model is diffed (2 matched, 0 new, 0 refused, 0 handed) and 1 of 3 independent threats neither matched"
 sed 's/^threat_model: .*/threat_model:              not yet/' "$TDP/.gauntlet/STATE.md" > "$TDP/s" && mv "$TDP/s" "$TDP/.gauntlet/STATE.md"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7137" 2>&1; check "next.sh: phase 3 with threat_model: not yet - row 4b, not a refusal" 0 $? "$TMP/o7137"
 grep -q '^next: row 4b - ' "$TMP/o7137" && grep -qF 'scripts/threat-diff.sh <proj>' "$TMP/o7137" \
   && echo "  ok    row 4b, and its action names threat-diff.sh" || { echo "  FAIL  not row 4b naming threat-diff.sh:"; sed "s/^/        | /" "$TMP/o7137"; fails=$((fails + 1)); }
 printf '## D-09 · 2026-10-06 · threat T-3 refused: the hook pays no rebate to whoever is in range\n' > "$TDP/.gauntlet/DECISIONS.md"
-td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 1 refused)/'
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 1 refused, 0 handed)/'
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7188" 2>&1; check "next.sh: phase 4, T-3 refused, diffed (2, 0, 1), the report of the diff before T-3 was added - refused: re-run" 2 $? "$TMP/o7188"
 td_has "$TMP/o7188" "and .gauntlet/THREATS-independent.md is not the file threat-diff.sh diffed"
 "$HERE/threat-diff.sh" "$TDP" > "$TMP/o7189" 2>&1; check "threat-diff.sh run again: T-3 refused in DECISIONS.md" 0 $? "$TMP/o7189"
@@ -5798,7 +5798,7 @@ nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7138" 2>&1; check "ne
 cp "$TDP/.gauntlet/THREATS.md" "$TMP/td-w.md"; cp "$TDP/.gauntlet/THREATS-independent.md" "$TMP/td-i.md"
 printf '\nW-9: a keeper / the last claimer'"'"'s fees / claim twice in one block\nfrom: SPEC.md section 3 row 4\nnew\n' >> "$TDP/.gauntlet/THREATS.md"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7190" 2>&1; check "next.sh: phase 4, diffed, a walker's threat added after the diff (the counts unchanged) - refused" 2 $? "$TMP/o7190"
-td_has "$TMP/o7190" "next: REFUSED - phase 4 claims phase 3 closed, threat_model is diffed (2 matched, 0 new, 1 refused) and .gauntlet/THREATS.md is not the file threat-diff.sh diffed (sha256 "
+td_has "$TMP/o7190" "next: REFUSED - phase 4 claims phase 3 closed, threat_model is diffed (2 matched, 0 new, 1 refused, 0 handed) and .gauntlet/THREATS.md is not the file threat-diff.sh diffed (sha256 "
 td_has "$TMP/o7190" "the lists are frozen after the diff: re-run $TDK/scripts/threat-diff.sh $TDPA, then write the line it prints"
 cp "$TMP/td-w.md" "$TDP/.gauntlet/THREATS.md"; sed 's/^T-1: a stranger /T-1: any stranger /' "$TMP/td-i.md" > "$TDP/.gauntlet/THREATS-independent.md"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7191" 2>&1; check "next.sh: phase 4, diffed, an independent threat reworded after the diff - refused" 2 $? "$TMP/o7191"
@@ -5808,9 +5808,9 @@ nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7192" 2>&1; check "ne
 mv "$TDP/.gauntlet/reports/06-threats.txt" "$TMP/td-rep.txt"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7193" 2>&1; check "next.sh: phase 4, diffed, the diff's report gone - refused" 2 $? "$TMP/o7193"
 td_has "$TMP/o7193" "and there is no .gauntlet/reports/06-threats.txt (the report threat-diff.sh writes, with the sha256 of the two lists it diffed): re-run $TDK/scripts/threat-diff.sh $TDPA"
-grep -v '^the line for STATE.md' "$TMP/td-rep.txt" > "$TDP/.gauntlet/reports/06-threats.txt"; printf 'the line for STATE.md: threat_model: diffed (2 matched, 0 new, 0 refused)\n' >> "$TDP/.gauntlet/reports/06-threats.txt"
+grep -v '^the line for STATE.md' "$TMP/td-rep.txt" > "$TDP/.gauntlet/reports/06-threats.txt"; printf 'the line for STATE.md: threat_model: diffed (2 matched, 0 new, 0 refused, 0 handed)\n' >> "$TDP/.gauntlet/reports/06-threats.txt"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7194" 2>&1; check "next.sh: phase 4, a report whose line is not the STATE.md one - refused" 2 $? "$TMP/o7194"
-td_has "$TMP/o7194" "and .gauntlet/reports/06-threats.txt does not give it (the line it gives: threat_model: diffed (2 matched, 0 new, 0 refused))"
+td_has "$TMP/o7194" "and .gauntlet/reports/06-threats.txt does not give it (the line it gives: threat_model: diffed (2 matched, 0 new, 0 refused, 0 handed))"
 mv "$TMP/td-rep.txt" "$TDP/.gauntlet/reports/06-threats.txt"
 mv "$TDP/.gauntlet/THREATS.md" "$TDP/.gauntlet/THREATS.off"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7139" 2>&1; check "next.sh: phase 4, diffed, the walker's THREATS.md gone - refused" 2 $? "$TMP/o7139"
@@ -5824,10 +5824,10 @@ td_tm() { # td_tm <n> <label> <the threat_model value> <the words of the refusal
   nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o$1" 2>&1; check "next.sh: $2 - refused" 2 $? "$TMP/o$1"
   td_has "$TMP/o$1" "$4"
 }
-td_tm 7141 "threat_model: done (not a value of the flag)" "done" "next: REFUSED - threat_model: 'done' is not one of: not yet | diffed (<n> matched, <m> new, <k> refused) - the line scripts/threat-diff.sh prints."
+td_tm 7141 "threat_model: done (not a value of the flag)" "done" "next: REFUSED - threat_model: 'done' is not one of: not yet | diffed (<n> matched, <m> new, <k> refused, <h> handed) - the line scripts/threat-diff.sh prints."
 td_tm 7142 "threat_model: diffed with no counts" "diffed" "threat_model: 'diffed' is not one of: not yet | diffed (<n> matched"
 td_tm 7143 "threat_model: diffed with the counts in another order" "diffed (0 new, 2 matched, 1 refused)" "threat_model: 'diffed (0 new, 2 matched, 1 refused)' is not one of"
-td_tm 7144 "threat_model: diffed with words after it" "diffed (2 matched, 0 new, 1 refused) by the walker" "is not one of: not yet | diffed"
+td_tm 7144 "threat_model: diffed with words after it" "diffed (2 matched, 0 new, 1 refused, 0 handed) by the walker" "is not one of: not yet | diffed"
 sed '/^threat_model:/d' "$FIX/state-row-14.md" > "$TDP/.gauntlet/STATE.md"
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7145" 2>&1; check "next.sh: no threat_model: line - refused (a flag missing)" 2 $? "$TMP/o7145"
 td_has "$TMP/o7145" "next: REFUSED - flag 'threat_model' is missing from the flag block (a STATE.md written before v0.5): add the line \"threat_model: not yet\" to the flag block"
@@ -5862,7 +5862,7 @@ grep -q "^## D-[0-9][0-9]* · [0-9-]* · threat T-[0-9][0-9]* refused: " "$HERE/
 grep -q '^threat_model:  *not yet$' "$HERE/../state/README.md" && echo "  ok    state/README.md's starting values say threat_model: not yet" || { echo "  FAIL  state/README.md's starting values have no threat_model: not yet"; fails=$((fails + 1)); }
 rm -rf "$TD/init"; mkdir -p "$TD/init"; "$HERE/init-state.sh" "$TD/init" > "$TMP/o7153" 2>&1; check "init-state.sh writes a new project's state" 0 $? "$TMP/o7153"
 grep -q '^threat_model:  *not yet$' "$TD/init/.gauntlet/STATE.md" && echo "  ok    and its STATE.md says threat_model: not yet" || { echo "  FAIL  init-state's STATE.md has no threat_model: not yet"; fails=$((fails + 1)); }
-grep -qF 'or the independent threat model not diffed (`threat_model: not yet`' "$NXT" && grep -q '^threat_model:  *not yet | diffed (<n> matched, <m> new, <k> refused)' "$NXT" \
+grep -qF 'or the independent threat model not diffed (`threat_model: not yet`' "$NXT" && grep -q '^threat_model:  *not yet | diffed (<n> matched, <m> new, <k> refused, <h> handed)' "$NXT" \
   && echo "  ok    NEXT.md: row 4b names the threat model, and the flag block lists threat_model" || { echo "  FAIL  NEXT.md does not name it in row 4b and the flag block"; fails=$((fails + 1)); }
 grep -qF 'T-<n>: <who acts> / <what is lost, and by whom> / <the call sequence>' "$HERE/../briefs/threat-model.md" && grep -qF '/// @custom:threat T-<n>' "$HERE/../briefs/threat-model.md" \
   && grep -qF 'threat T-<n>[, T-<n>...] refused: <why' "$HERE/../briefs/threat-model.md" \
@@ -5879,6 +5879,209 @@ grep -q '^ROUND tm1 | phase 3 | threat-model | vendor-b/large | ' "$TD/LOG.md" &
   && echo "  ok    and --json reads it back" || { echo "  FAIL  the ROUND line is not there or not read back:"; sed "s/^/        | /" "$TD/LOG.md" "$TMP/o7155"; fails=$((fails + 1)); }
 rm -rf "$TD"
 
+
+# ================================================================= v0.5.1: what the first owner-present case taught the
+# kit. (1) an independent threat the owner leaves undecided is handed on by name - `T-<n>: handed: round` (a target the
+# round's brief lists) or `handed: audit` (untested) - counted by the diff, and after a round each `handed: round` is the
+# finding it produced (`became:`) or `handed: audit`: next.sh refuses phase 4 while one is neither, never asking for a
+# phase write-back; (2) a `@custom:threat` tag counts only above a test or invariant whose name carries the id, and the
+# diff shows each pair; (3) mutate.sh says why a test failed - assertion, revert or setup - from real forge output (an
+# expected revert that did not come, or came with another error, is an assertion); (4) the census gate keeps its attempts
+# and says what was dropped or lowered since the first; (5) the owner's environment divergences reach the dossier rows'
+# note; (6) `told: <date> <id>` quiets row 1 with the owner present; (7) a shallow depth is said; (8) `matches: new`.
+echo "== v0.5.1: handed threats, the tag's fit shown, a kill's reason, the census gate's attempts, the owner's divergences, told: =="
+TD="$TMP/tdh"; TDP="$TD/proj"; S51="$TMP/v51"; rm -rf "$TD" "$S51"; mkdir -p "$TD" "$S51"
+TDR="$TDP/.gauntlet/reports/06-threats.txt"
+v51_not() { # v51_not <file> <fixed string>: it must NOT say it
+  if grep -qF -- "$2" "$1"; then echo "  FAIL  it says '${2:0:150}':"; sed "s/^/        | /" "$1"; fails=$((fails + 1)); else echo "  ok    and it does not say: ${2:0:150}"; fi
+}
+T3TXT="a JIT provider / the passive LPs' rebate / add, swap, remove"
+v51_proj() { td_proj; printf 'T-3: %s\n' "$T3TXT" >> "$TDP/.gauntlet/THREATS-independent.md"; }   # T-3: nobody answers it yet
+v51_after() { # v51_after <the line> <the line after it> <file>: the second line comes right after the first
+  if awk -v a="$1" -v b="$2" 'p && $0 == b { ok = 1 } { p = ($0 == a) } END { exit !ok }' "$3"; then echo "  ok    and under '${1:0:80}': ${2:0:100}"; else
+    echo "  FAIL  '${2:0:100}' is not right under '${1:0:80}':"; sed "s/^/        | /" "$3"; fails=$((fails + 1)); fi
+}
+# ---- (1) handed to the model round: diffed, counted, the target listed for the round's brief
+v51_proj; printf '\nT-3: handed: round   (the owner left it undecided, 2026-10-07)\n' >> "$TDP/.gauntlet/THREATS.md"
+td_run "$TDP" > "$TMP/o7501" 2>&1; check "threat-diff: an independent threat the owner left undecided, handed to the model round by name - diffed" 0 $? "$TMP/o7501"
+td_last "$TMP/o7501" "threat_model: diffed (2 matched, 0 new, 0 refused, 1 handed)"
+td_has "$TMP/o7501" "threat-diff: handed to the model round, its answer still to write after it (became: <finding id>, or handed: audit): T-3"
+td_has "$TDR" "T-3  handed: round - a target of the model round, by name; after the round: became: <the finding's id> under it, or handed: audit  | $T3TXT"
+v51_after "handed to the model round, by name - the round's brief lists each as a target (briefs/audit-round.md):" "  T-3: $T3TXT" "$TDR"
+td_has "$TDR" "counts: 2 matched, 0 new (not in the walker's list, now an invariant), 0 refused, 1 handed, 0 unmatched - of 3"
+# next.sh: phase 4, a round has run (the loop-over fixture), T-3 handed to it and not answered - refused, naming both answers
+mkdir -p "$TDP/.gauntlet/reports"; cp "$FIX/build-real-compiled.txt" "$TDP/.gauntlet/reports/01-build.txt"; cp "$FIX/summary-real-many-suites.txt" "$TDP/.gauntlet/reports/02-test.txt"
+printf 'the everyday campaign'"'"'s census\n' > "$TDP/.gauntlet/reports/06-census.txt"
+TDPA="$(cd "$TDP" && pwd)"; TDK="$(cd "$HERE/.." && pwd)"; TDJ="5=false,8=false,10=false,11b=false"
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 1 handed)/'
+nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7502" 2>&1; check "next.sh: phase 4, round r04 has run, T-3 handed to it with no answer - refused" 2 $? "$TMP/o7502"
+td_has "$TMP/o7502" "next: REFUSED - phase 4, round r04 has run, and the independent threat(s) handed to it have no answer: T-3 (T-<n>: handed: round in .gauntlet/THREATS.md). Under each handed line write became: <the finding's id> - the finding the round produced from it - or change it to handed: audit"
+v51_not "$TMP/o7502" "write the phase that is open"
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 1 handed)/; s/^last_audit_round: .*/last_audit_round:          none/'
+nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7503" 2>&1; rc=$?
+if [ "$rc" != 2 ] && ! grep -q 'have no answer' "$TMP/o7503"; then echo "  ok    next.sh: phase 4 with T-3 handed and no round run yet - not refused (rc=$rc): phase 3 closes with a handed threat"; else
+  echo "  FAIL  next.sh refused phase 4 with T-3 handed before any round (rc=$rc):"; sed "s/^/        | /" "$TMP/o7503"; fails=$((fails + 1)); fi
+# after the round: became: F-9 under it - the list changed, so the diff is run again; then the row
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 1 handed)/'
+printf 'became: F-9   (the round turned it into a finding)\n' >> "$TDP/.gauntlet/THREATS.md"
+nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7504" 2>&1; check "next.sh: became: F-9 written after the diff - refused until the diff runs again (the lists are frozen)" 2 $? "$TMP/o7504"
+td_has "$TMP/o7504" "and .gauntlet/THREATS.md is not the file threat-diff.sh diffed"
+td_run "$TDP" > "$TMP/o7505" 2>&1; check "threat-diff: T-3 handed to the round, became F-9 - diffed, the same counts" 0 $? "$TMP/o7505"
+td_last "$TMP/o7505" "threat_model: diffed (2 matched, 0 new, 0 refused, 1 handed)"
+td_has "$TDR" "T-3  handed: round - became F-9  | $T3TXT"
+nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7506" 2>&1; check "next.sh: phase 4, T-3 became F-9, the diff re-run - the row, with no phase written back" 0 $? "$TMP/o7506"
+[ "$(nx_rows "$TMP/o7506")" = "14,18" ] && echo "  ok    rows 14,18, as the fixture's" || { echo "  FAIL  not rows 14,18: $(nx_rows "$TMP/o7506")"; fails=$((fails + 1)); }
+# handed to the human audit: diffed, untested, listed - and no became: owed after the round
+cp "$FIX/threats-walker.md" "$TDP/.gauntlet/THREATS.md"; printf '\nT-3: handed: audit\n' >> "$TDP/.gauntlet/THREATS.md"
+td_run "$TDP" > "$TMP/o7507" 2>&1; check "threat-diff: T-3 handed to the human audit by name - diffed" 0 $? "$TMP/o7507"
+td_last "$TMP/o7507" "threat_model: diffed (2 matched, 0 new, 0 refused, 1 handed)"
+td_has "$TDR" "T-3  handed: audit - to the human audit, by name: untested  | $T3TXT"
+v51_after "handed to the human audit, by name - untested (the dossier's 5b and section 9 list each):" "  T-3: $T3TXT" "$TDR"
+nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7508" 2>&1; check "next.sh: phase 4, a round has run, T-3 handed to the audit - the row (nothing owed)" 0 $? "$TMP/o7508"
+# the forms: each near miss refused, naming it, nothing written
+v51_bad() { # v51_bad <n> <label> <appended to THREATS.md, printf %b> <the words it must say>
+  v51_proj; printf '%b' "$3" >> "$TDP/.gauntlet/THREATS.md"
+  td_run "$TDP" > "$TMP/o$1" 2>&1; check "threat-diff: $2 - refused" 2 $? "$TMP/o$1"; td_has "$TMP/o$1" "$4"; td_norep "$2"
+}
+v51_bad 7510 "a handed line in another shape (handed: later)" '\nT-3: handed: later\n' \
+  "an independent id (T-3) in the walker's list: the walker's ids are W-<n>, an independent threat is named in a matches: line - or, one the owner leaves undecided, on a line of its own: T-3: handed: round (aimed at the model round) or T-3: handed: audit (to the human audit, by name)"
+v51_bad 7511 "became: under handed: audit" '\nT-3: handed: audit\nbecame: F-9\n' "T-3 is handed: audit, and has a became: line"
+v51_bad 7512 "became: a placeholder (TBD)" '\nT-3: handed: round\nbecame: TBD\n' "T-3: became: \"TBD\" is not a finding's id"
+v51_bad 7513 "a threat handed twice" '\nT-3: handed: round\n\nT-3: handed: audit\n' "T-3 is handed twice (lines 17 and 19)"
+v51_bad 7514 "a matched threat handed too (T-1, matched by W-1)" '\nT-1: handed: round\n' "T-1 is handed (T-1: handed: round) and matched by W-1: one answer per threat"
+v51_bad 7516 "handed: written inside a walker's block" 'handed: round\n' "W-3: \"handed: round\" - a walker's threat is matched or new (matches: T-<n>, or matches: new)"
+v51_bad 7517 "a handed id the independent list does not have" '\nT-7: handed: audit\n' "T-7 is handed (T-7: handed: audit), and THREATS-independent.md has no T-7"
+v51_bad 7518 "became: outside a handed threat's block" '\nbecame: F-2\n' "became: outside a handed threat's block"
+v51_proj; printf '\nT-3: handed: round\n' >> "$TDP/.gauntlet/THREATS.md"; printf '## D-09 · 2026-10-06 · threat T-3 refused: the hook pays no rebate\n' > "$TDP/.gauntlet/DECISIONS.md"
+td_run "$TDP" > "$TMP/o7515" 2>&1; check "threat-diff: a threat handed and refused in DECISIONS.md - refused" 2 $? "$TMP/o7515"
+td_has "$TMP/o7515" "T-3 is handed (T-3: handed: round) and refused (DECISIONS.md line 1): one answer per threat"
+# ---- (8) `matches: new` reads as bare `new`, and the brief shows it
+td_proj; sed 's/^new$/matches: new/' "$FIX/threats-walker.md" > "$TDP/.gauntlet/THREATS.md"
+td_run "$TDP" > "$TMP/o7519" 2>&1; check "threat-diff: matches: new, as the walker read the brief - the walker's own threat" 0 $? "$TMP/o7519"
+td_last "$TMP/o7519" "threat_model: diffed (2 matched, 0 new, 0 refused, 0 handed)"
+td_has "$TDR" "W-3  the walker's own (new)  | the owner's key / every LP's fees / setFee above the cap, then a swap"
+td_has "$HERE/../briefs/threat-model.md" "matches: new"
+# ---- (2) the tag's fit: only above a test or invariant whose name carries the id; each pair shown
+v51_tag() { # v51_tag <n> <label> <rc> <the tag line> <the line under it> <words>
+  v51_proj; printf 'contract JitInv {\n    %s\n    %b\n}\n' "$4" "$5" > "$TDP/test/Jit.t.sol"
+  td_run "$TDP" > "$TMP/o$1" 2>&1; check "threat-diff: $2" "$3" $? "$TMP/o$1"; td_has "$TMP/o$1" "$6"
+}
+v51_tag 7520 "a tag above an invariant whose name does not carry the id - refused" 2 '/// @custom:threat T-3' 'function invariant_jit() public {}' \
+  "threat-diff: REFUSED - test/Jit.t.sol:2: invariant_jit() names T-3 in its tag and does not carry T3 in its name: a tag is accepted only on a test or invariant whose name carries the id - invariant_T3_<what it keeps>"
+v51_tag 7521 "a tag above invariant_T3_jit() - diffed, the pair shown" 0 '/// @custom:threat T-3' 'function invariant_T3_jit() public {}' \
+  "threat-diff: pair T-3: $T3TXT <- invariant_T3_jit() - test/Jit.t.sol:2"
+td_last "$TMP/o7521" "threat_model: diffed (2 matched, 1 new, 0 refused, 0 handed)"
+v51_after "the pairs - each independent threat a test names, beside that test (a script cannot judge the fit; a reader can):" "  T-3: $T3TXT <- invariant_T3_jit() - test/Jit.t.sol:2" "$TDR"
+v51_tag 7522 "a tag naming two ids above a name that carries one - refused" 2 '/// @custom:threat T-1, T-3' 'function invariant_T3_jit() public {}' \
+  "invariant_T3_jit() names T-1 in its tag and does not carry T1 in its name"
+v51_tag 7523 "a tag above a state variable, not a function - refused" 2 '/// @custom:threat T-3' 'uint256 internal jit;' \
+  "threat-diff: REFUSED - test/Jit.t.sol:2: the tag is not right above a function"
+v51_tag 7524 "a name with T30, not T3 - refused" 2 '/// @custom:threat T-3' 'function test_T30_jit() public {}' "test_T30_jit() names T-3 in its tag and does not carry T3 in its name"
+v51_tag 7525 "a tag, another NatSpec line and a blank line, then test_jit_T3() - diffed" 0 '/// @custom:threat T-3' '/// @notice the rebate goes to those in range\n\n    function test_jit_T3() public {}' \
+  "threat-diff: pair T-3: $T3TXT <- test_jit_T3() - test/Jit.t.sol:2"
+td_has "$HERE/../briefs/handoff-dossier.md" "the pairs"
+# ---- (3) a kill's reason, from real forge 1.8.1 output: assertion (the two expected-revert forms too), revert, setup
+v51_kr() { # v51_kr <n> <fixture> <the reasons, one word per failing test in forge's order>
+  local got; got="$(kill_reasons "$FIX/$2" | cut -f1 | tr '\n' ' ' | sed 's/ $//')"
+  if [ "$got" = "$3" ]; then echo "  ok    kill_reasons $2: $got"; else echo "  FAIL  kill_reasons $2: '$got', not '$3':"; kill_reasons "$FIX/$2" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+}
+v51_kr 7530 kill-real-assertion.txt "assertion assertion assertion assertion assertion assertion assertion"
+kill_reasons "$FIX/kill-real-assertion.txt" > "$TMP/o7531" 2>&1
+td_has "$TMP/o7531" "$(printf 'assertion\ttest_expectRevert_not_met()\tnext call did not revert as expected')"
+td_has "$TMP/o7531" "$(printf 'assertion\ttest_expectRevert_wrong_error()\tError != expected error: the pool is locked != CurrencyNotSettled()')"
+td_has "$TMP/o7531" "$(printf 'assertion\tinvariant_x_is_odd_or_zero()\tx is odd or zero')"
+v51_kr 7532 kill-real-revert.txt "revert revert revert revert revert revert"
+kill_reasons "$FIX/kill-real-revert.txt" > "$TMP/o7533" 2>&1
+td_has "$TMP/o7533" "$(printf 'revert\ttest_custom_error()\tCurrencyNotSettled()')"
+td_has "$TMP/o7533" "$(printf 'revert\tinvariant_no_unexplained_reverts()\tthe handler met a failure it did not predict')"
+td_has "$TMP/o7533" "$(printf 'revert\tinvariant_settles()\tCurrencyNotSettled()')"
+v51_kr 7534 kill-real-setup.txt "setup"
+kill_reasons "$FIX/summary-real-many-suites.txt" > "$TMP/o7535" 2>&1; check "kill_reasons: a log with no failing test reads nothing" 1 $? "$TMP/o7535"
+if command -v forge > /dev/null 2>&1 && [ -e "$HERE/../foundry-kit/lib" ]; then
+  MKR="$S51/mk"; mkdir -p "$MKR/src" "$MKR/test" "$MKR/.gauntlet"; ln -s "$(cd "$HERE/../foundry-kit/lib" && pwd -P)" "$MKR/lib"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n' > "$MKR/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract B { uint256 public x; function set() external { x = 1; } }\n' > "$MKR/src/B.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/B.sol";\ncontract BUnit is Test { B b; function setUp() public { b = new B(); } function test_set() public { b.set(); assertEq(b.x(), 1); } }\n' > "$MKR/test/B.t.sol"
+  LABEL=kra OUT_DIR="$S51/mut" "$HERE/mutate.sh" "$MKR" src/B.sol "x = 1;" "x = 2;" > "$TMP/o7536" 2>&1; check "mutate.sh: a mutant the test's assertEq kills - KILLED" 0 $? "$TMP/o7536"
+  td_has "$TMP/o7536" 'kill: assertion - test_set() ("assertion failed: 2 != 1")'
+  td_has "$S51/mut/kra.txt" "kill reasons: 1 assertion, 0 revert, 0 setup"
+  LABEL=krr OUT_DIR="$S51/mut" "$HERE/mutate.sh" "$MKR" src/B.sol "x = 1;" "revert();" > "$TMP/o7537" 2>&1; check "mutate.sh: a mutant that makes the code revert - KILLED (revert), exit 0 still" 0 $? "$TMP/o7537"
+  td_has "$TMP/o7537" "KILLED (revert) - 1 test(s) went red on the mutant"
+  td_has "$TMP/o7537" "This kill does not count toward MUTATION-TESTED (doctrine/EVIDENCE.md section 2)"
+  td_has "$S51/mut/krr.txt" 'kill: revert - test_set() ("EvmError: Revert")'
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/B.sol";\ncontract SetUpDep is Test { B b; function setUp() public { b = new B(); b.set(); require(b.x() == 1, "setUp depends on set"); } function test_x() public { assertEq(b.x(), 1); } }\n' > "$MKR/test/SetUpDep.t.sol"
+  LABEL=krs OUT_DIR="$S51/mut" "$HERE/mutate.sh" "$MKR" src/B.sol "x = 1;" "x = 3;" > "$TMP/o7538" 2>&1; check "mutate.sh: a mutant that breaks setUp() - NOTHING PROVEN, its reason said" 2 $? "$TMP/o7538"
+  td_has "$TMP/o7538" 'kill: setup - setUp() ("setUp depends on set")'
+else
+  echo "  SKIPPED - no forge or no kit lib/ here: mutate.sh's kill lines are NOT proven on this machine"; skipped=1
+fi
+td_has "$HERE/../doctrine/EVIDENCE.md" "KILLED (revert)"
+td_has "$HERE/../briefs/handoff-dossier.md" "KILLED (revert)"
+# ---- (4) the census gate remembers its attempts, and says what was dropped or lowered since the first
+CN="$S51/cen"; mkdir -p "$CN/.gauntlet" "$CN/census"
+for i in 1 2 3 4; do printf 'Inv\tU=0\tA:swap=3/2\tB:fee at the cap=1\tB:a later swap paid a fee=1\n'; done > "$CN/census/long.tsv"
+CA="$CN/.gauntlet/reports/03-census-attempts.txt"; CG="$CN/.gauntlet/reports/06-census-gate.txt"
+CORE="swap" REACH="fee at the cap;a later swap paid a fee" MIN_PCT=25 "$HERE/census.sh" --aggregate "$CN/census/long.tsv" "$CN" > "$TMP/o7540" 2>&1
+check "census gate: a first attempt - PASSED" 0 $? "$TMP/o7540"
+td_has "$TMP/o7540" "attempts: the first attempt of this gate"
+[ "$(grep -vc '^#' "$CA" 2> /dev/null)" = 1 ] && grep -qF "$(printf '\tMIN_PCT=25\tCORE=swap\tREACH=fee at the cap;a later swap paid a fee\tresult=PASSED\tcensus=')" "$CA" \
+  && echo "  ok    03-census-attempts.txt: one attempt, with its date, MIN_PCT, CORE, REACH and result" || { echo "  FAIL  03-census-attempts.txt is not one attempt of that form:"; sed "s/^/        | /" "$CA" 2> /dev/null; fails=$((fails + 1)); }
+CORE="swap" REACH="fee at the cap" MIN_PCT=20 "$HERE/census.sh" --aggregate "$CN/census/long.tsv" "$CN" > "$TMP/o7541" 2>&1
+check "census gate: a second attempt, a REACH boundary dropped and the floor lowered - PASSED, and said" 0 $? "$TMP/o7541"
+td_has "$CG" "attempts: this is attempt 2 of this gate (03-census-attempts.txt; the first: "
+td_has "$CG" "dropped or lowered: REACH \"a later swap paid a fee\" dropped; MIN_PCT lowered 25 -> 20"
+td_has "$TMP/o7541" "REACH \"a later swap paid a fee\" dropped"
+REACH="fee at the cap" MIN_PCT=25 "$HERE/census.sh" --aggregate "$CN/census/long.tsv" "$CN" > "$TMP/o7542" 2>&1
+check "census gate: a third attempt, the CORE action gone too" 0 $? "$TMP/o7542"
+td_has "$CG" "dropped or lowered: CORE \"swap\" dropped; REACH \"a later swap paid a fee\" dropped"
+[ "$(grep -vc '^#' "$CA")" = 3 ] && echo "  ok    and three attempts kept" || { echo "  FAIL  not three attempts kept:"; sed "s/^/        | /" "$CA"; fails=$((fails + 1)); }
+td_has "$HERE/../briefs/handoff-dossier.md" "03-census-attempts.txt"
+# ---- (5) the owner's environment divergences: asked in the interview, carried to the dossier rows' note
+td_has "$HERE/../briefs/owner-interview.md" "17c. Is anything in this project's environment not as it ships: pinned dependencies swapped, remappings, a renamed type?"
+td_has "$HERE/../briefs/owner-interview.md" "divergence: <what>"
+td_has "$HERE/../briefs/handoff-dossier.md" "environment divergences stated by the owner"
+DV="$S51/dv"; mkdir -p "$DV"; cp -r "$NXFIX/.gauntlet" "$NXFIX/test" "$DV/"; cp "$FIX/state-row-18.md" "$DV/.gauntlet/STATE.md"
+nx "$NX" "$DV/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7550" 2>&1; check "next.sh: row 18 (the dossier), no divergence in DECISIONS.md" 0 $? "$TMP/o7550"
+td_has "$TMP/o7550" 'next: note - environment divergences stated by the owner (DECISIONS.md, ## <id> · <date> · divergence: <what>): none stated - the dossier'"'"'s section 8 row "environment divergences stated by the owner" says "none stated"'
+printf '# DECISIONS - SomeHook\n\n## D-12 · 2026-10-07 · divergence: v4-core pinned at another commit than the one the project ships with\n\nsource: owner\n\n## D-13 - 2026-10-07 - divergence: a renamed type\n' > "$DV/.gauntlet/DECISIONS.md"
+nx "$NX" "$DV/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7551" 2>&1; check "next.sh: row 18, a divergence the owner stated - in the note" 0 $? "$TMP/o7551"
+td_has "$TMP/o7551" "): D-12 (2026-10-07): v4-core pinned at another commit than the one the project ships with - the dossier's section 8 row"
+td_has "$TMP/o7551" "next: note - DECISIONS.md line(s) 7 name a divergence in another shape than ## <id> · <YYYY-MM-DD> · divergence: <what>, and are not read"
+[ "$(nx_rows "$TMP/o7551")" = "14,18" ] && echo "  ok    rows 14,18, as the fixture's" || { echo "  FAIL  not rows 14,18: $(nx_rows "$TMP/o7551")"; fails=$((fails + 1)); }
+sed 's/^phase: .*/phase:                     3/' "$FIX/state-row-18.md" > "$DV/.gauntlet/STATE.md"
+nx "$NX" "$DV/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7552" 2>&1
+v51_not "$TMP/o7552" "environment divergences stated by the owner"
+# ---- (6) told: <date> <id> quiets row 1, the owner present (the variants beside the fixtures' records, in $NXFIX)
+v51_nx() { # v51_nx <n> <label> <fixture> <sed script> <judge|-> <rc> <rows>: nx_variant's case, written in $NXFIX
+  local n="$1" label="$2" fx="$3" sc="$4" j="$5" wrc="$6" want="$7"; local -a a=()
+  sed "$sc" "$NXFIX/$fx" > "$NXFIX/state-v51-$n.md"; [ "$j" = "-" ] || a=(--judge "$j")
+  nx "$NX" "$NXFIX/state-v51-$n.md" "${a[@]}" > "$TMP/o$n" 2>&1; check "next.sh: $label" "$wrc" $? "$TMP/o$n"
+  [ "$(nx_rows "$TMP/o$n")" = "$want" ] || { echo "  FAIL  and it named rows '$(nx_rows "$TMP/o$n")', not '$want'"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); }
+  rm -f "$NXFIX/state-v51-$n.md"
+}
+v51_nx 7560 "a note told: 2026-10-07 F-1 quiets row 1, the owner present: row 9" state-row-1.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet; told: 2026-10-07 F-1 - with its test, in the chat/' 5=false,8=false,9=true 0 9
+td_has "$TMP/o7560" "row 1 is quiet: the 1 high open is told to the owner (notes: told: F-1 on 2026-10-07)"
+v51_nx 7561 "a told: note on an indented line, as a list item - read the same" state-row-1.md \
+  's/^notes: .*/notes: fork: n\/a - no chain yet\n  - told: 2026-10-07 F-1/' 5=false,8=false,9=true 0 9
+v51_nx 7562 "told: with a date that is not one (2026-02-30) - refused" state-row-1.md 's/^notes: .*/notes: told: 2026-02-30 F-1/' 5=false,8=false,9=true 2 ""
+td_has "$TMP/o7562" "2026-02-30 is not a real date (told: <YYYY-MM-DD> <id>[, <id>...]"
+v51_nx 7563 "told: naming a finding that is not an open high - refused" state-row-1.md 's/^notes: .*/notes: told: 2026-10-07 F-9/' 5=false,8=false,9=true 2 ""
+td_has "$TMP/o7563" "notes: told: 2026-10-07 'F-9' - it is not an open high in open_findings"
+v51_nx 7564 "told: with a date and no id - refused" state-row-1.md 's/^notes: .*/notes: told: 2026-10-07 by mail/' 5=false,8=false,9=true 2 ""
+td_has "$TMP/o7564" "names no finding id after its date"
+td_has "$HERE/../state/README.md" "told: <YYYY-MM-DD> <id>[, <id>...]"
+# ---- (7) a shallow depth is said, with the number - never changed
+k42_kit "$S51/sd/lib/hook-gauntlet"; mkdir -p "$S51/sd/own"; printf '%s\n' '[profile.default]' 'src = "src"' '' '[invariant]' 'runs = 64' 'depth = 8' 'fail_on_revert = true' > "$S51/sd/own/foundry.toml"
+k42_run "$TMP/o7570" "$SD" --dry-run "$S51/sd/own"; check "setup-deps.sh --dry-run on an everyday depth of 8" 0 $? "$TMP/o7570"
+td_has "$TMP/o7570" "setup-deps: WARNING - your [invariant] depth is 8, below the kit's default 64 (QUICKSTART.md 7b, the everyday campaign): call sequences longer than 8 are never tried - left as it is, yours to raise; the [profile.long.invariant] written here keeps it (depth = 8, below the kit's long default 128)"
+if command -v forge > /dev/null 2>&1; then
+  FLD="$S51/fl"; mkdir -p "$FLD/src" "$FLD/.gauntlet"
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\n[invariant]\nruns = 4\ndepth = 4\n[profile.long.invariant]\nruns = 64\ndepth = 8\n' > "$FLD/foundry.toml"
+  ESTIMATE_ONLY=1 "$HERE/fuzz-long.sh" "$FLD" > "$TMP/o7571" 2>&1; check "fuzz-long.sh ESTIMATE_ONLY=1 on a long depth of 8" 0 $? "$TMP/o7571"
+  td_has "$TMP/o7571" "fuzz-long: WARNING - this campaign's depth is 8, below the kit's default 128 for the long campaign (the everyday one here: 4)"
+fi
+rm -rf "$TD" "$S51"
 
 echo
 echo "selftest ran in $((SECONDS - started)) s"

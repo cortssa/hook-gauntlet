@@ -17,6 +17,6 @@ waiting_on_owner:          triage of F-9 · chain - which one?
 location:                  .gauntlet/
 dossier:                   skeleton (1 open, 1 judge not done)
 rehearsal:                 n/a (no runbook)
-threat_model:              diffed (1 matched, 0 new, 0 refused)
+threat_model:              diffed (1 matched, 0 new, 0 refused, 0 handed)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block
 ```

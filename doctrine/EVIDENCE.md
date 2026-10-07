@@ -17,7 +17,7 @@ Every finding, every row of the spec's "proved by" column, and every claim in th
 | **PROVED** | a symbolic or formal proof, with its bounds stated next to the word | for the stated bounds only |
 | **MODEL-TESTED** | the contract agrees with an independently written reference model over generated inputs (section 5) | strongest against a shared misconception |
 | **PROPERTY-TESTED** | the claim survived generated sequences over a stated domain, with the success and reach censuses attached | |
-| **MUTATION-TESTED** | the test was SEEN RED on a deliberately broken version of the code - a plausible wrong implementation of THIS claim (a finding's test: red on the code as it is, green on a fix variant with the everyday suite green on it too, the exact failure expected, and in a test of its own the same call on the same shape accepted, only the finding's condition different, §2) | the minimum for a test to count at all |
+| **MUTATION-TESTED** | the test was SEEN RED on a deliberately broken version of the code - a plausible wrong implementation of THIS claim - by its own assertion, not by a revert of the broken code (`kill: assertion`, §2) (a finding's test: red on the code as it is, green on a fix variant with the everyday suite green on it too, the exact failure expected, and in a test of its own the same call on the same shape accepted, only the finding's condition different, §2) | the minimum for a test to count at all |
 | **TESTED** | a test passes and nobody has seen it fail | **not evidence.** A label for work in progress |
 | **SUPPORTED** | static analysis, a fork observation, a measurement that is consistent with the claim but does not isolate it | |
 | **REASONED** | an argument, written down, that someone else can attack. Economic and ordering attacks often live here | real, and the auditor should know it is not more |
@@ -48,6 +48,18 @@ A test is evidence only after it has failed on code that is wrong in the way the
   on a dirty tree went red on the incremental build exactly as on the clean one. A mutation applied to a file forge
   never compiled explains the same symptoms. Treat the forced build as a cheap precaution and the incident as a
   symptom with an unknown cause, not as a measured property of forge.
+- **A kill has a reason, and only an assertion's counts.** A mutant can turn a test red without the test's claim
+  having anything to do with it: the broken code reverts - the pool manager's `CurrencyNotSettled`, a custom error, a
+  bare `EvmError: Revert`, a handler call an invariant run counts as unexpected - and every test that touches it fails,
+  whatever it asserts. `scripts/mutate.sh` reads, for each failing test, why it failed and writes `kill: <reason> -
+  <the failing test>` in the mutant's report: `assertion` (an assert failed - `assertEq`, `assertTrue`, `panic:
+  assertion failed`; and an expected revert that did not come, or came with another error: the test's oracle WAS that
+  revert, and it broke), `revert` (the code reverted where the test expected nothing - and any message not read as an
+  assertion's: `assertTrue(x, "msg")` prints only `msg`, as a `require` does, so outside an invariant prefer the
+  assertions that print their comparison), or `setup` (`setUp()` failed: nothing was tested). **MUTATION-TESTED
+  requires every kill it cites to be `assertion`**; a mutant killed only by reverts is written `KILLED (revert)` and
+  does not count toward the label (measured on a first real case: an invariant labelled MUTATION-TESTED by a mutant the
+  manager's revert killed, not the invariant's assertion).
 - **A survivor that cannot die is a bad question, not a finding.** When a mutant survives, first ask whether the
   code can still reach the difference at all. A mutant that turns "due at or before this step" into "due at exactly
   this step" is equivalent the moment the loop visits every step, and it will sit in a brief reporting SURVIVED

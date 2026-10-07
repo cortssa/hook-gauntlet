@@ -58,6 +58,16 @@
 #          over it (`--allow-failure`), and a mutant whose summary cannot be read has not survived anything (rc=2).
 #          2 nothing was proven              (bad arguments, no unique match, the change does not compile, the UNCHANGED
 #                                             code is not green under the same TEST_FLAGS, or no test ran at all)
+# A kill has a reason (v0.5.1): for each failing test of a killed mutant, `kill: <reason> - <the failing test> ("<forge's
+#          message>")` in the output and in the mutant's report, <OUT_DIR>/<LABEL>.txt - `assertion` (an assert failed,
+#          or an expected revert did not come or came with another error), `revert` (the code reverted where the test
+#          expected nothing: a custom error such as CurrencyNotSettled(), EvmError: Revert, an unexpected-revert count in
+#          an invariant run - and any message not read as an assertion's) or `setup` (setUp() failed: NOTHING PROVEN, as
+#          above); then `kill reasons: <a> assertion, <r> revert, <s> setup`. A mutant killed by no assertion is printed
+#          `KILLED (revert)` (exit 0 still): it does not count toward MUTATION-TESTED (doctrine/EVIDENCE.md section 2).
+#          The reasons are read by scripts/lib/parse.sh kill_reasons; assertTrue(x, "msg") prints only "msg", like a
+#          require's revert, and is read as revert outside an invariant - assertEq / assertGt print the comparison and are
+#          read as assertions.
 # A limit, stated: the baseline is run ONCE. A test that is flaky without a fixed seed can be green there and red on a
 # mutant that changed nothing, and that reads as KILLED. Pin the seed in TEST_FLAGS (--fuzz-seed N) when the suite has
 # such a test, and read the failing test's message every time - it is printed for that reason.
@@ -329,9 +339,25 @@ mut_fails="$(grep -E '^\[FAIL' "$LOG.test" | cut -c1-160 | sort -u | wc -l | tr 
 setup_fails="$(grep -E '^\[FAIL: setup failed|^\[FAIL.*\] setUp\(\)' "$LOG.test" | cut -c1-160 | sort -u | wc -l | tr -d ' ')"
 rm -f "$LOG.test.keep"; mv "$LOG.test" "$LOG.test.keep"
 
+# why each failing test failed (v0.5.1, scripts/lib/parse.sh kill_reasons): `kill: <assertion|revert|setup> - <test>`, one
+# line per failing test, in the output and the mutant's report. doctrine/EVIDENCE.md section 2: only an `assertion` kill
+# counts toward MUTATION-TESTED; a `revert` kill - the mutant made the code revert where the test expected no revert (a
+# custom error, EvmError: Revert, an unexpected-revert count in an invariant run) - is KILLED (revert), and a `setup` one
+# tested nothing. An expected revert that did not come, or came with another error, is an assertion: the test's oracle.
+kill_lines() { # kill_lines <forge log>: the kill: lines, and KILL_N (failing tests) KILL_A (assertion) KILL_R (revert) KILL_S (setup)
+  local r t m
+  KILL_N=0 KILL_A=0 KILL_R=0 KILL_S=0
+  while IFS=$'\t' read -r r t m; do
+    [ -n "$r" ] || continue
+    KILL_N=$((KILL_N + 1))
+    case "$r" in assertion) KILL_A=$((KILL_A + 1)) ;; revert) KILL_R=$((KILL_R + 1)) ;; setup) KILL_S=$((KILL_S + 1)) ;; esac
+    echo "kill: $r - $t (\"${m:0:140}\")"
+  done < <(kill_reasons "$1")
+}
 if [ "$setup_fails" -gt 0 ]; then
   echo "mutate: the mutant broke setUp(), so no test ran and no claim was tested. NOTHING PROVEN (see $LOG):" | tee -a "$LOG"
   grep -E '^\[FAIL: setup failed|^\[FAIL.*\] setUp\(\)' "$LOG.test.keep" | cut -c1-160 | sort -u | head -5
+  kill_lines "$LOG.test.keep" > "$LOG.kills"; grep '^kill: setup ' "$LOG.kills" | tee -a "$LOG"; rm -f "$LOG.kills"
   rm -f "$LOG.test.keep"; exit 2
 fi
 
@@ -341,8 +367,20 @@ if [ "$rc_test" -ne 0 ] || { [ -n "$mut_failed" ] && [ "$mut_failed" != "0" ]; }
 
 if [ "$EXPECT" = "red" ]; then
   if [ "$mut_red" -eq 1 ] && [ "$mut_fails" -gt 0 ]; then
-    echo "KILLED - $mut_fails test(s) went red on the mutant, and the same tests were green without it. Failing tests:" | tee -a "$LOG"
+    kill_lines "$LOG.test.keep" > "$LOG.kills"
+    if [ "$KILL_N" -gt 0 ] && [ "$KILL_A" -eq 0 ]; then
+      echo "KILLED (revert) - $mut_fails test(s) went red on the mutant, and the same tests were green without it - none on an assertion: the code reverted where no test expected it. This kill does not count toward MUTATION-TESTED (doctrine/EVIDENCE.md section 2). Failing tests:" | tee -a "$LOG"
+    else
+      echo "KILLED - $mut_fails test(s) went red on the mutant, and the same tests were green without it. Failing tests:" | tee -a "$LOG"
+    fi
     grep -E '^\[FAIL' "$LOG.test.keep" | cut -c1-160 | sort -u | head -20
+    if [ "$KILL_N" -gt 0 ]; then
+      tee -a "$LOG" < "$LOG.kills"
+      echo "kill reasons: $KILL_A assertion, $KILL_R revert, $KILL_S setup - only an assertion kill counts toward MUTATION-TESTED: cite the test whose line says assertion (doctrine/EVIDENCE.md section 2)" | tee -a "$LOG"
+    else
+      echo "kill: not read - forge's failing tests are of a shape scripts/lib/parse.sh kill_reasons does not read: no kill of this run counts toward MUTATION-TESTED until its reason is read in the log" | tee -a "$LOG"
+    fi
+    rm -f "$LOG.kills"
     echo "READ the message: a test that fails for a reason unrelated to the claim has not killed anything."
     rm -f "$LOG.test.keep"; exit 0
   fi

@@ -1,0 +1,48 @@
+No files changed, compilation skipped
+{"timestamp":1791374587,"event":"failure","invariant":"invariant_x_is_odd_or_zero","target":"test/Assertion.t.sol:AssertionInvariant","reason":"x is odd or zero"}
+
+Ran 6 tests for test/Assertion.t.sol:AssertionKills
+[FAIL: assertion failed: 2 != 1] test_assertEq_plain() (gas: 55077)
+[FAIL: one call adds one: 2 != 1] test_assertEq_with_message() (gas: 55397)
+[FAIL: assertion failed: 0 <= 1] test_assertGt() (gas: 10999)
+[FAIL: next call did not revert as expected] test_expectRevert_not_met() (gas: 51637)
+[FAIL: Error != expected error: the pool is locked != CurrencyNotSettled()] test_expectRevert_wrong_error() (gas: 8750)
+[FAIL: panic: assertion failed (0x01)] test_solidity_assert() (gas: 7840)
+Suite result: FAILED. 0 passed; 6 failed; 0 skipped; finished in 1.74ms (1.68ms CPU time)
+
+Ran 1 test for test/Assertion.t.sol:AssertionInvariant
+[FAIL: x is odd or zero]
+	[Sequence] (original: 1, shrunk: 1)
+		sender=0x000000000000000000000000000000000000012e addr=[src/A.sol:A]0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f calldata=inc() args=[]
+ invariant_x_is_odd_or_zero() (runs: 1, calls: 1, reverts: 0)
+
+╭----------+----------+-------+---------+----------╮
+| Contract | Selector | Calls | Reverts | Discards |
++==================================================+
+| A        | inc      | 1     | 0       | 0        |
+╰----------+----------+-------+---------+----------╯
+
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; finished in 31.42ms (30.89ms CPU time)
+
+Ran 2 test suites in 34.48ms (33.17ms CPU time): 0 tests passed, 7 failed, 0 skipped (7 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/Assertion.t.sol:AssertionInvariant
+[FAIL: x is odd or zero]
+	[Sequence] (original: 1, shrunk: 1)
+		sender=0x000000000000000000000000000000000000012e addr=[src/A.sol:A]0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f calldata=inc() args=[]
+ invariant_x_is_odd_or_zero() (runs: 1, calls: 1, reverts: 0)
+
+Encountered 6 failing tests in test/Assertion.t.sol:AssertionKills
+[FAIL: assertion failed: 2 != 1] test_assertEq_plain() (gas: 55077)
+[FAIL: one call adds one: 2 != 1] test_assertEq_with_message() (gas: 55397)
+[FAIL: assertion failed: 0 <= 1] test_assertGt() (gas: 10999)
+[FAIL: next call did not revert as expected] test_expectRevert_not_met() (gas: 51637)
+[FAIL: Error != expected error: the pool is locked != CurrencyNotSettled()] test_expectRevert_wrong_error() (gas: 8750)
+[FAIL: panic: assertion failed (0x01)] test_solidity_assert() (gas: 7840)
+
+Encountered a total of 7 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 7 failed tests
+
+Fuzz seed: 0x1 (use `--fuzz-seed` to reproduce)

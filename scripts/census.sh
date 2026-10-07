@@ -20,7 +20,13 @@
 #                                                   prints the verdict as its LAST line: "census gate: PASSED - ..." or
 #                                                   "census gate: FAILED - <what>". OUT_DIR is resolved as in run mode, against
 #                                                   the project given - or, with none, the directory it runs from (which is not
-#                                                   the bench the file is in: the line that says where it wrote says so too)
+#                                                   the bench the file is in: the line that says where it wrote says so too).
+#                                                   Every attempt is appended to <OUT_DIR>/03-census-attempts.txt (v0.5.1:
+#                                                   date, MIN_PCT, CORE, REACH, result, the census file), and the record says
+#                                                   which attempt this is and what was dropped or lowered since the first -
+#                                                   a CORE action or REACH boundary an earlier attempt named and this one
+#                                                   does not, a floor below an earlier one (`attempts: ...`, one line, also
+#                                                   printed); the dossier cites the attempts file
 # Env:     MATCH        forge filter                 (default: --match-contract Invariant), the ONLY filter in run
 #                       mode: nothing else of forge's is taken from the environment (scripts/lib/forge-env.sh) - every
 #                       variable whose name, upper-cased, starts with FOUNDRY_, FORGE_ or DAPP_ is removed, a line names
@@ -205,6 +211,31 @@ census_root() { # census_root <file> [project-dir]
 failed_census() { case "$(basename "$1")" in *.FAILED.tsv | *.FAILED) return 0 ;; *) return 1 ;; esac; }
 FAILED_WHY="is the census of a FAILED campaign: forge wrote a line per shrink replay, not per run. NOTHING MEASURED - fix the failure, and gate a green campaign's census"
 
+# census_attempts_note <attempts file> <CORE> <REACH> <MIN_PCT>: one line - which attempt this is, and every CORE action
+# and REACH boundary an EARLIER attempt named that this one does not, and the floor when it is below an earlier one
+# (v0.5.1: a walker dropped a REACH boundary and lowered MIN_PCT 25 -> 20 until the gate passed, and the record showed
+# only the last attempt)
+census_attempts_note() {
+  [ -s "$1" ] || { echo "attempts: the first attempt of this gate (each is appended to 03-census-attempts.txt; the next record lists what is dropped or lowered since this one)"; return 0; }
+  CORE_NOW="$2" REACH_NOW="$3" PCT_NOW="$4" awk -F '\t' '
+    function val(s) { sub(/^[A-Z_]+=/, "", s); return s }
+    /^#/ || NF < 5 { next }
+    { n++; if (n == 1) { first = $1; firstpct = val($2) }
+      p = val($2) + 0; if (p > maxpct) { maxpct = p; maxat = $1 }
+      k = split(val($3), c, " "); for (i = 1; i <= k; i++) if (c[i] != "" && !(c[i] in core)) { core[c[i]] = 1; corder[++nc] = c[i] }
+      k = split(val($4), r, ";"); for (i = 1; i <= k; i++) if (r[i] != "" && !(r[i] in reach)) { reach[r[i]] = 1; rorder[++nr] = r[i] } }
+    END {
+      if (!n) { print "attempts: the first attempt of this gate (each is appended to 03-census-attempts.txt; the next record lists what is dropped or lowered since this one)"; exit }
+      k = split(ENVIRON["CORE_NOW"], c, " "); for (i = 1; i <= k; i++) now_c[c[i]] = 1
+      k = split(ENVIRON["REACH_NOW"], r, ";"); for (i = 1; i <= k; i++) now_r[r[i]] = 1
+      out = ""
+      for (i = 1; i <= nc; i++) if (!(corder[i] in now_c)) out = out (out == "" ? "" : "; ") "CORE \"" corder[i] "\" dropped"
+      for (i = 1; i <= nr; i++) if (!(rorder[i] in now_r)) out = out (out == "" ? "" : "; ") "REACH \"" rorder[i] "\" dropped"
+      if (ENVIRON["PCT_NOW"] ~ /^[0-9]+$/ && ENVIRON["PCT_NOW"] + 0 < maxpct) out = out (out == "" ? "" : "; ") "MIN_PCT lowered " maxpct " -> " ENVIRON["PCT_NOW"] " (" maxpct " at " maxat ")"
+      printf "attempts: this is attempt %d of this gate (03-census-attempts.txt; the first: %s, MIN_PCT=%s) - since the first, %s\n", n + 1, first, firstpct, (out == "" ? "nothing dropped or lowered" : "dropped or lowered: " out)
+    }' "$1"
+}
+
 if [ "${1:-}" = "--aggregate" ] && [ "${CENSUS_TABLE_ONLY:-0}" = "1" ]; then
   [ -n "${2:-}" ] || { echo "usage: census.sh --aggregate <file> [project-dir]"; exit 2; }
   [ -z "$floor_error" ] || { echo "census: $floor_error NOTHING MEASURED."; exit 2; }
@@ -261,6 +292,18 @@ if [ "${1:-}" = "--aggregate" ]; then
     fi
     rm -f "$GATE_WHY"
   fi
+  # v0.5.1: the gate remembers its attempts. Every one is appended to <OUT_DIR>/03-census-attempts.txt (date, MIN_PCT,
+  # CORE, REACH, result, the census file), and the record says what was dropped or lowered since the first attempt:
+  # a CORE action or REACH boundary named in an earlier attempt and not in this one, a floor below an earlier one. A
+  # gate that passed after its boundaries were cut is a different claim from one that passed as first set.
+  attempts="$gate_out/03-census-attempts.txt"
+  att_core="${CORE:-}" att_reach="${REACH:-}" att_pct="$MIN_PCT"
+  att_core="${att_core//$'\t'/ }"; att_reach="${att_reach//$'\t'/ }"; att_pct="${att_pct//$'\t'/ }"
+  att_note="$(census_attempts_note "$attempts" "$att_core" "$att_reach" "$att_pct")"
+  echo "$att_note" | tee -a "$record"
+  [ -s "$attempts" ] || printf '# census gate attempts (scripts/census.sh --aggregate), one per line: date, MIN_PCT, CORE, REACH, result, census file - tab-separated, never edited (the gate'"'"'s record, .gauntlet/reports/06-census-gate.txt, lists what was dropped or lowered since the first)\n' > "$attempts"
+  printf '%s\tMIN_PCT=%s\tCORE=%s\tREACH=%s\tresult=%s\tcensus=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$att_pct" "$att_core" "$att_reach" \
+    "${verdict%% - *}" "$tsv_abs" >> "$attempts" || echo "census gate: could not append the attempt to $attempts"
   echo "census gate: $verdict" >> "$record"
   if [ -z "${3:-}" ] && [ -n "$tsv_dir" ] && case "$tsv_dir/" in "$proj_abs"/*) false ;; *) true ;; esac; then
     echo "census gate: record written to $record (the census is in $tsv_dir; give the project as the third argument to write it there)"

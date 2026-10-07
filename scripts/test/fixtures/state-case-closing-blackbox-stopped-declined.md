@@ -17,6 +17,6 @@ waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   skeleton (0 open, 1 judge not done)
 rehearsal:                 n/a (no runbook)
-threat_model:              diffed (1 matched, 0 new, 0 refused)
+threat_model:              diffed (1 matched, 0 new, 0 refused, 0 handed)
 notes:                     fork: the battery ran against the chain's pool manager at a pinned block; round b1 stopped (retried once, stopped again at step 2; counts as spent)
 ```

@@ -7,24 +7,31 @@
 # and no test: no judge of the route can see what nobody wrote down. So before phase 3 closes, a fresh agent that sees
 # only the owner's spec, the hook's public interface and the economic model writes its own numbered list
 # (briefs/threat-model.md), and this script compares it with the walker's, by the ids the walker's matching lines name.
-# An independent threat the walker's list does not match must become an invariant or be refused in writing; while one
-# is neither, phase 3 does not close (scripts/next.sh refuses `phase:` 4 or higher, doctrine/NEXT.md row 4b).
+# An independent threat the walker's list does not match must become an invariant or be refused in writing - or, one the
+# owner leaves undecided, be handed on by name (v0.5.1): to the model round (`handed: round`, a target its brief lists by
+# id and text) or to the human audit (`handed: audit`, untested, and the dossier says so); while one is none of these,
+# phase 3 does not close (scripts/next.sh refuses `phase:` 4 or higher, doctrine/NEXT.md row 4b).
 #
 # Usage:   scripts/threat-diff.sh <proj>
 # Reads:   <proj>/.gauntlet/THREATS-independent.md   the fresh agent's list (model:, received:, T-<n>: lines)
-#          <proj>/.gauntlet/THREATS.md               the walker's (W-<n>: lines, each with from: and matches: T-<n> | new)
+#          <proj>/.gauntlet/THREATS.md               the walker's (W-<n>: lines, each with from: and matches: T-<n> | matches:
+#                                                    new), and the handed ones (T-<n>: handed: round | audit; became: F-<n>)
 #          the DECISIONS.md beside STATE.md (.gauntlet/'s, or the root's with location: root)   refusals, one heading each:
 #                                                    ## <id> · <date> · threat T-<n> refused: <why>
 #          the .sol files under <proj>/test/ and <proj>/pending/        invariants: /// @custom:threat T-<n>, on a line
-#                                                    of its own right above the test function (solc builds no other tag)
-#          The forms, and the order each independent threat is read in (matched, new - an invariant -, refused,
+#                                                    of its own right above the test function (solc builds no other tag),
+#                                                    whose name carries the id (test_T7_..., invariant_T7_...)
+#          The forms, and the order each independent threat is read in (matched, new - an invariant -, refused, handed,
 #          unmatched): scripts/lib/threats.sh, briefs/threat-model.md. Nothing else is read, and no free text is parsed.
 # Output:  <proj>/.gauntlet/reports/06-threats.txt, when both lists read: the verdict, the two files' sha256 in full
 #          (`sha256 .gauntlet/THREATS-independent.md: <hex>`, `sha256 .gauntlet/THREATS.md: <hex>` - the lists are frozen
 #          after the diff: scripts/next.sh refuses a `diffed` line whose lists are no longer these files), the model
 #          that wrote the independent list and what it received, one line per independent threat with its status, one
-#          per walker's own threat (`new` in THREATS.md), and the line for STATE.md. On stdout, the counts and then:
-#            threat_model: diffed (<n> matched, <m> new, <k> refused)      every independent threat answered (exit 0)
+#          per walker's own threat (`new` in THREATS.md), the pairs - each tagged threat's text beside the test that
+#          names it, its name and file: a script cannot judge the fit, so it shows it -, the handed threats (to the
+#          round: the targets its brief lists; to the audit: untested), and the line for STATE.md. On stdout, the
+#          counts, one `threat-diff: pair ...` line per tag, and then:
+#            threat_model: diffed (<n> matched, <m> new, <k> refused, <h> handed)   every independent threat answered (exit 0)
 #            threat-diff: REFUSED - <u> of <t> independent threats neither matched ... : T-3 (...); T-7 (...)  (exit 1),
 #              and that the line for STATE.md stays `threat_model: not yet`
 #            threat_model: not yet - <the file missing, and who writes it>   (exit 1, nothing written)
@@ -58,7 +65,7 @@ esac
 
 REP_DIR="$PROJ/.gauntlet/reports"; REP="$REP_DIR/06-threats.txt"
 mkdir -p "$REP_DIR" || refuse "cannot create $REP_DIR."
-if [ "$TD_STATE" = diffed ]; then VERDICT="threat-diff: diffed - every independent threat is matched, an invariant, or refused in writing"
+if [ "$TD_STATE" = diffed ]; then VERDICT="threat-diff: diffed - every independent threat is matched, an invariant, refused in writing, or handed on by name"
 else VERDICT="threat-diff: REFUSED - $TD_WHY"; fi
 {
   echo "$VERDICT"
@@ -68,16 +75,27 @@ else VERDICT="threat-diff: REFUSED - $TD_WHY"; fi
   echo "sha256 .gauntlet/THREATS-independent.md: $TD_IND_SHA256"
   echo "sha256 .gauntlet/THREATS.md: $TD_WAL_SHA256"
   if [ -n "$DEC" ]; then echo "refusals read from: ${DEC#"$PROJ/"}"; else echo "refusals read from: no DECISIONS.md"; fi
-  echo "counts: $TD_N matched, $TD_M new (not in the walker's list, now an invariant), $TD_K refused, $TD_U unmatched - of $TD_T"
+  echo "counts: $TD_N matched, $TD_M new (not in the walker's list, now an invariant), $TD_K refused, $TD_H handed, $TD_U unmatched - of $TD_T"
   echo
   printf '%s' "$TD_REPORT"
+  echo
+  # v0.5.1: the fit of a test to a threat is shown, never judged here - the dossier's 5b carries these pairs
+  echo "the pairs - each independent threat a test names, beside that test (a script cannot judge the fit; a reader can):"
+  if [ -n "$TD_PAIRS" ]; then printf '%s' "$TD_PAIRS" | sed 's/^/  /'; else echo "  none (no test names an independent threat)"; fi
+  echo
+  echo "handed to the model round, by name - the round's brief lists each as a target (briefs/audit-round.md):"
+  if [ -n "$TD_HROUND" ]; then printf '%s' "$TD_HROUND" | sed 's/^/  /'; else echo "  none"; fi
+  echo "handed to the human audit, by name - untested (the dossier's 5b and section 9 list each):"
+  if [ -n "$TD_HAUDIT" ]; then printf '%s' "$TD_HAUDIT" | sed 's/^/  /'; else echo "  none"; fi
   echo
   if [ "$TD_STATE" = diffed ]; then echo "the line for STATE.md: $TD_LINE"
   else echo "the line for STATE.md stays: threat_model: not yet"; fi
 } > "$REP" || refuse "cannot write $REP."
 
 echo "threat-diff: $TD_T independent threats ($TD_IND_SHA, model: $TD_MODEL), $TD_W of the walker's ($TD_WAL_SHA; $TD_WOWN its own)"
-echo "threat-diff: $TD_N matched, $TD_M new (now an invariant), $TD_K refused, $TD_U unmatched - report: .gauntlet/reports/06-threats.txt"
+echo "threat-diff: $TD_N matched, $TD_M new (now an invariant), $TD_K refused, $TD_H handed, $TD_U unmatched - report: .gauntlet/reports/06-threats.txt"
+[ -z "$TD_PAIRS" ] || printf '%s' "$TD_PAIRS" | sed 's/^/threat-diff: pair /'
+[ -z "$TD_HOPEN" ] || echo "threat-diff: handed to the model round, its answer still to write after it (became: <finding id>, or handed: audit): $TD_HOPEN"
 if [ "$TD_STATE" = diffed ]; then
   echo "$TD_LINE"
   exit 0

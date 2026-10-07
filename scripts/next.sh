@@ -56,8 +56,11 @@
 #     that is not an open high is refused (a recorded high is no longer open: remove it - V26b: `high all`, `high 1`, a
 #     medium's id, one high spelled twice quieted the row by their number alone). Then the row is false, and the
 #     because: line of whatever is given names those ids - a quiet row 1 always leaves a trace. Otherwise, with a high
-#     open, it is a question naming the highs not recorded (the owner present: answered 1=false once told); a `told:`
-#     note is not read. A provisional high from phase 3 counts in open_findings high like any other (NEXT.md row 6b);
+#     open, it is a question naming the highs not recorded (the owner present: answered 1=false once told). v0.5.1: the
+#     owner present, a note `told: <YYYY-MM-DD> <id>[, <id>...]` (a real date first, then the ids) records the highs told,
+#     by id, and quiets the row for them like the to-tell items do for the owner absent - an id there that is not an
+#     open high is refused, a told: note with no date first is not read. A provisional high from phase 3 counts in
+#     open_findings high like any other (NEXT.md row 6b);
 #   - row 9b is quiet once the dossier names the open findings: `dossier: skeleton (<K> open, ...)` with K the number
 #     open (high + medium + low; informational findings are not counted) decides it false by the flags, unasked; `none`,
 #     or a skeleton naming another number (stale), keeps it standing, and the owner's presence is what is asked.
@@ -166,7 +169,7 @@
 #     no `fork:` note (read at the start of a note item, as `real manager:` is) is refused, each naming its command:
 #     the suite (QUICKSTART.md 7b, then scripts/battery.sh), scripts/census.sh, the note itself. No escape;
 #   - v0.5, the independent threat model (NEXT.md row 4b, briefs/threat-model.md): `threat_model:` is `not yet` or
-#     `diffed (<n> matched, <m> new, <k> refused)`, the line scripts/threat-diff.sh prints. `phase:` 4 or higher with
+#     `diffed (<n> matched, <m> new, <k> refused, <h> handed)`, the line scripts/threat-diff.sh prints. `phase:` 4 or higher with
 #     `not yet` is refused, naming the brief and the script; a `diffed (...)` at any phase is read against the files the
 #     way that script reads them (scripts/lib/threats.sh: .gauntlet/THREATS-independent.md, .gauntlet/THREATS.md, the
 #     refusals in the DECISIONS.md beside STATE.md, the /// @custom:threat tags under test/ and pending/) - a list
@@ -175,6 +178,13 @@
 #     (.gauntlet/reports/06-threats.txt), a report that does not give that line, or two lists that are no longer the
 #     files the report hashed (the lists are frozen after the diff: threat-diff.sh is run again). A STATE.md with no
 #     `threat_model:` line (written before v0.5) is refused naming the line to add, `threat_model: not yet`. No escape;
+#   - v0.5.1: the line is `diffed (<n> matched, <m> new, <k> refused, <h> handed)` - an independent threat the owner
+#     leaves undecided is handed on by name in THREATS.md (`T-<n>: handed: round | audit`), and phase 3 closes with it.
+#     Once a round has run (last_audit_round not none), `phase:` 4 or higher with a `handed: round` that has no
+#     `became: <finding id>` under it is refused, naming each and its two answers - the finding, or `handed: audit` -
+#     never the phase. And the rows that write the dossier (9b, 18, 18b) add one note after the answer: the environment
+#     divergences the owner stated in the DECISIONS.md beside STATE.md (`## <id> · <YYYY-MM-DD> · divergence: <what>`),
+#     or `none stated` - the dossier's section 8 row - and one more naming a heading that says divergence in another shape;
 #   - after the answer, whatever it is, `next: note - the kit has N files not in its MANIFEST (<first three>): ...` on
 #     stdout when the kit's root has a MANIFEST and files under the kit are not in it - deps, builds, .git and what the
 #     kit's own runs write (corpus/, census/, broadcast/, .gauntlet/) aside, by the rule scripts/gen-manifest.sh and
@@ -261,11 +271,11 @@ esac
 #   (always). Names: the flags of STATE.md, and the parts parse_state below derives from them.
 ROWS='
 0   | 4373c98d | act  | -                   | phase=sketch | -
-1   | 7b9700dd | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high: {highs_not_recorded} not recorded to tell) that the owner has not been told of? The owner present: false once they have been told (a told: note is not read); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
+1   | 89ce9899 | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high: {highs_not_recorded} not recorded to tell) that the owner has not been told of? The owner present: tell them, then write the note told: <YYYY-MM-DD> <id>[, <id>...] in notes: and the flags quiet this row (a told: note in another shape is not read; answered false once told, it stays on the record only here); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
 2   | 64c00456 | gate | 11,11b,12,13,13b,15 | ceiling=reached | -
 3   | 8949c656 | act  | -                   | waiting_on_owner!=none | -
 4   | 46e1bfdb | act  | -                   | phase=0,1 | -
-4b  | 34842eea | act  | -                   | phase=2,3 | -
+4b  | 11eb8fb8 | act  | -                   | phase=2,3 | -
 5   | 2a2d739a | act  | -                   | - | has the fuzzer reported a violation of a promise that is not yet a deterministic test?
 6   | e0949a62 | act  | -                   | bytecode_changed_since.last_battery=yes ; battery=never | -
 6b  | 021321a6 | act  | -                   | battery=red | -
@@ -366,7 +376,8 @@ load_table() { # load_table <NEXT.md>: fills ACTION, and refuses when its rows a
 # ------------------------------------------------------------------------------------------------ STATE.md's flags
 FLAGS="phase bytecode_changed_since battery blackbox open_findings last_audit_round last_other_round ceiling real_manager_battery waiting_on_owner location dossier rehearsal threat_model notes"
 declare -A RAW=() V=() RECORDED=() SHOW_NOTE=() OPEN_HIGH=()
-declare -a RECORDED_ORDER=() OPEN_HIGH_ORDER=()
+declare -a RECORDED_ORDER=() OPEN_HIGH_ORDER=() TOLD_ORDER=()
+declare -A TOLD=() TOLD_DATE=()
 ROW1_QUIET="" HIGHS_NOT_RECORDED=""
 declare -a NOTE_LINES=()
 
@@ -610,13 +621,13 @@ parse_state() {
   else refuse "rehearsal: '$val' is not one of: n/a (no runbook) | not yet | done (YYYY-MM-DD), a real date."; fi
   # the independent threat model (v0.5, NEXT.md row 4b): `not yet`, or the line scripts/threat-diff.sh prints, as it
   # prints it - read against the files themselves below, after the phase's records
-  local re_tm='^diffed[[:space:]]+[(]([0-9]+) matched,[[:space:]]+([0-9]+) new,[[:space:]]+([0-9]+) refused[)]$'
+  local re_tm='^diffed[[:space:]]+[(]([0-9]+) matched,[[:space:]]+([0-9]+) new,[[:space:]]+([0-9]+) refused,[[:space:]]+([0-9]+) handed[)]$'
   local re_tny='^not yet([[:space:]]+[(][^()]*[)])?$'
   val="${RAW[threat_model]}"
   if [[ $val =~ $re_tny ]]; then V[threat_model]=not_yet
   elif [[ $val =~ $re_tm ]]; then
-    V[threat_model]=diffed; V[threat_model.counts]="$((10#${BASH_REMATCH[1]})) matched, $((10#${BASH_REMATCH[2]})) new, $((10#${BASH_REMATCH[3]})) refused"
-  else refuse "threat_model: '$val' is not one of: not yet | diffed (<n> matched, <m> new, <k> refused) - the line scripts/threat-diff.sh prints."; fi
+    V[threat_model]=diffed; V[threat_model.counts]="$((10#${BASH_REMATCH[1]})) matched, $((10#${BASH_REMATCH[2]})) new, $((10#${BASH_REMATCH[3]})) refused, $((10#${BASH_REMATCH[4]})) handed"
+  else refuse "threat_model: '$val' is not one of: not yet | diffed (<n> matched, <m> new, <k> refused, <h> handed) - the line scripts/threat-diff.sh prints."; fi
   # a note is read by its name only at the START of a note item: a note line (the value of notes:, or an indented line
   # under it), or a part of one after the middle dot or ";" - never where the words merely appear
   V[notes.real_manager]=no
@@ -627,27 +638,54 @@ parse_state() {
       # a note written as a Markdown list item (`- real manager: ...`) is read like a plain one
       if [[ $item =~ ^[-*+][[:space:]]+(.*)$ ]]; then item="${BASH_REMATCH[1]}"; fi
       [[ $item =~ ^real\ manager: ]] && V[notes.real_manager]=yes                                            # row 7b
+      # row 1 with the owner present (v0.5.1): `told: <YYYY-MM-DD> <id>[, <id>...]` - the highs told to the owner, by
+      # id, on that day. Read only when a date opens it; a told: note in any other shape is not read (row 1 is asked)
+      if [[ $item =~ ^told:[[:space:]]*([0-9]{4})-([0-9]{2})-([0-9]{2})([^0-9].*)?$ ]]; then
+        local t_date="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}" t_rest="${BASH_REMATCH[4]}" t_tok t_n=0 re_ttail='^(.+)[.;:]$'
+        local -a t_words=()
+        real_date "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" \
+          || refuse "notes: '$item' - $t_date is not a real date (told: <YYYY-MM-DD> <id>[, <id>...]: the highs told to the owner, by id, on that day)."
+        read -ra t_words <<< "${t_rest//,/ }"
+        for t_tok in ${t_words[@]+"${t_words[@]}"}; do
+          case "${t_tok,,}" in and | '&') continue ;; esac
+          while [[ $t_tok =~ $re_ttail ]]; do t_tok="${BASH_REMATCH[1]}"; done
+          [[ $t_tok =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && $t_tok =~ [A-Za-z] && $t_tok =~ [0-9] ]] || break
+          t_n=$((t_n + 1))
+          [ -n "${TOLD[${t_tok,,}]+x}" ] || { TOLD[${t_tok,,}]="$t_tok"; TOLD_ORDER+=("$t_tok"); TOLD_DATE[${t_tok,,}]="$t_date"; }
+        done
+        [ "$t_n" -gt 0 ] || refuse "notes: '$item' names no finding id after its date (told: <YYYY-MM-DD> <id>[, <id>...]: the highs told to the owner, by id - F-1, r01-A1)."
+      fi
     done
   done
-  # row 1, by id (K28): quiet by the flags only when EVERY open high named in open_findings is recorded to tell. An id
-  # recorded to tell that is not an open high is a stale entry (a high fixed or re-triaged since) or not a high at all
-  # (V26b: `high all`, `high 1`, a medium's id, one high spelled twice quieted the row by their number): refused, so that
-  # it is read and removed - never counted. One open high not recorded: the row is a question naming it. A told: note
-  # is not read (V26: a told: of a closed high, or told: none, quieted it with nothing on the record).
+  # row 1, by id (K28): quiet by the flags only when EVERY open high named in open_findings is recorded to tell, or
+  # (v0.5.1) told: the owner present, a note `told: <YYYY-MM-DD> <id>[, <id>...]` names it. An id recorded to tell, or
+  # told, that is not an open high is a stale entry (a high fixed or re-triaged since) or not a high at all (V26b:
+  # `high all`, `high 1`, a medium's id, one high spelled twice quieted the row by their number): refused, so that it is
+  # read and removed - never counted. One open high neither: the row is a question naming it. A told: note in any other
+  # shape - no date first - is not read (V26: a told: of a closed high, or told: none, quieted it with nothing on the
+  # record): the row is asked.
   for id in ${RECORDED_ORDER[@]+"${RECORDED_ORDER[@]}"}; do
     [ -n "${OPEN_HIGH[${id,,}]+x}" ] \
       || refuse "waiting_on_owner: '$id' is recorded to tell (high <id>[, <id>...] - to tell), and it is not an open high in open_findings ($hid_show): a recorded high is no longer open: remove it."
   done
-  local rec_n=0 rec_ids="" nrec_n=0
+  for id in ${TOLD_ORDER[@]+"${TOLD_ORDER[@]}"}; do
+    [ -n "${OPEN_HIGH[${id,,}]+x}" ] \
+      || refuse "notes: told: ${TOLD_DATE[${id,,}]} '$id' - it is not an open high in open_findings ($hid_show): a high told and since closed or re-triaged is no longer open: take its id out of the told: note (LOG.md keeps when it was told)."
+  done
+  local rec_n=0 rec_ids="" nrec_n=0 told_n=0 told_ids=""
   for id in ${OPEN_HIGH_ORDER[@]+"${OPEN_HIGH_ORDER[@]}"}; do
     if [ -n "${RECORDED[${id,,}]+x}" ]; then rec_n=$((rec_n + 1)); rec_ids="${rec_ids:+$rec_ids, }$id"
+    elif [ -n "${TOLD[${id,,}]+x}" ]; then told_n=$((told_n + 1)); told_ids="${told_ids:+$told_ids, }$id on ${TOLD_DATE[${id,,}]}"
     else nrec_n=$((nrec_n + 1)); HIGHS_NOT_RECORDED="${HIGHS_NOT_RECORDED:+$HIGHS_NOT_RECORDED, }$id"; fi
   done
   V[open_findings.high_not_recorded]=$nrec_n
-  SHOW_NOTE[open_findings.high_not_recorded]="$hid_show, recorded to tell in waiting_on_owner: ${rec_ids:-none}; not recorded: ${HIGHS_NOT_RECORDED:-none}"
+  SHOW_NOTE[open_findings.high_not_recorded]="$hid_show, recorded to tell in waiting_on_owner: ${rec_ids:-none};${told_ids:+ told (notes: told:): $told_ids;} not recorded: ${HIGHS_NOT_RECORDED:-none}"
   if [ $((10#$h)) -gt 0 ] && [ "$nrec_n" -eq 0 ]; then
-    if [ "$rec_n" -eq 1 ]; then ROW1_QUIET="row 1 is quiet: the 1 high open is recorded to tell in waiting_on_owner ($rec_ids)"
-    else ROW1_QUIET="row 1 is quiet: the $rec_n highs open are recorded to tell in waiting_on_owner ($rec_ids)"; fi
+    local q_why=""
+    [ "$rec_n" -eq 0 ] || q_why="recorded to tell in waiting_on_owner ($rec_ids)"
+    [ "$told_n" -eq 0 ] || q_why="${q_why:+$q_why; }told to the owner (notes: told: $told_ids)"
+    if [ $((rec_n + told_n)) -eq 1 ]; then ROW1_QUIET="row 1 is quiet: the 1 high open is $q_why"
+    else ROW1_QUIET="row 1 is quiet: the $((rec_n + told_n)) highs open are $q_why"; fi
   fi
   # row 7b is owed (and rows 12 and 16 wait on it): the chain is known, the real-manager battery never ran or is stale,
   # and no real manager: note says what replaced it
@@ -962,6 +1000,12 @@ if [ "${V[threat_model]}" = diffed ]; then
   c_h="$(LC_ALL=C awk '{ sub(/\r$/, "") } /^the line for STATE\.md[^:]*: / { sub(/^the line for STATE\.md[^:]*: /, ""); print; exit }' "$c_rep")"
   [ "$c_h" = "threat_model: diffed (${V[threat_model.counts]})" ] \
     || refuse "$c_tmw and .gauntlet/reports/06-threats.txt does not give it (the line it gives: ${c_h:-none}): re-run $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints"
+  # v0.5.1: a threat handed to the model round is answered after it - the finding it produced (`became: <id>` under its
+  # handed line) or `handed: audit`. Once a round has run, phase 4 or higher with one unanswered is refused, naming the
+  # threats and the two answers - never the phase: no phase is written back to reach the dossier
+  if [ -n "$TD_HOPEN" ] && [ "${V[last_audit_round]}" != none ] && [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 4 ]; then
+    refuse "phase ${V[phase]}, round ${V[last_audit_round]} has run, and the independent threat(s) handed to it have no answer: $TD_HOPEN (T-<n>: handed: round in .gauntlet/THREATS.md). Under each handed line write became: <the finding's id> - the finding the round produced from it - or change it to handed: audit (to the human audit, by name: the dossier's 5b lists it as untested); then $KIT/scripts/threat-diff.sh $PROJ, and write the line it prints (its counts stay the same)"
+  fi
 fi
 
 # ------------------------------------------------------------------------------------------------ pending/ and the notes
@@ -1145,6 +1189,24 @@ declare -a SAID=()
 pending=""
 said() { local x; for x in ${SAID[@]+"${SAID[@]}"}; do printf '%s\n' "$x"; done; }   # the lines kept so far, in order
 # because <why>: the because: line of what is given - with the trace of a row 1 the flags quieted (the ids that did)
+# divergence_note (v0.5.1): on the rows that write the dossier (9b, 18, 18b), the environment divergences the owner
+# stated - the DECISIONS.md headings `## <id> · <YYYY-MM-DD> · divergence: <what>` (briefs/owner-interview.md 17c) - for
+# the dossier's section 8 row "environment divergences stated by the owner"; none: "none stated". A heading that names a
+# divergence in another shape is named, not read.
+divergence_note() {
+  local dec="$ST_DIR/DECISIONS.md" got="" odd=""
+  if [ -f "$dec" ]; then
+    got="$(LC_ALL=C awk '{ sub(/\r$/, "") } /^##[ \t]+[A-Za-z0-9][A-Za-z0-9._-]*[ \t]+·[ \t]+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][ \t]+·[ \t]+divergence:[ \t]*[^ \t]/ {
+        s = $0; sub(/^##[ \t]+/, "", s); id = s; sub(/[ \t].*$/, "", id); d = s; sub(/^[^·]*·[ \t]+/, "", d); dt = substr(d, 1, 10)
+        w = s; sub(/^.*divergence:[ \t]*/, "", w); out = out (out == "" ? "" : "; ") id " (" dt "): " w }
+      END { printf "%s", out }' "$dec")"
+    odd="$(LC_ALL=C awk '{ sub(/\r$/, "") } /^#/ && tolower($0) ~ /divergence/ && $0 !~ /^##[ \t]+[A-Za-z0-9][A-Za-z0-9._-]*[ \t]+·[ \t]+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][ \t]+·[ \t]+divergence:[ \t]*[^ \t]/ { out = out (out == "" ? "" : ", ") NR }
+      END { printf "%s", out }' "$dec")"
+  fi
+  if [ -n "$got" ]; then echo "next: note - environment divergences stated by the owner (DECISIONS.md, ## <id> · <date> · divergence: <what>): $got - the dossier's section 8 row \"environment divergences stated by the owner\" carries each"
+  else echo "next: note - environment divergences stated by the owner (DECISIONS.md, ## <id> · <date> · divergence: <what>): none stated - the dossier's section 8 row \"environment divergences stated by the owner\" says \"none stated\""; fi
+  [ -z "$odd" ] || echo "next: note - DECISIONS.md line(s) $odd name a divergence in another shape than ## <id> · <YYYY-MM-DD> · divergence: <what>, and are not read"
+}
 because() { local w="$1"; [ -z "$ROW1_QUIET" ] || w="${w:+$w; }$ROW1_QUIET"; echo "because: ${w:-the row holds whatever the flags say}"; }
 # paused <why>: NEXT.md row 3, "if none, stop and say what is waiting" - the end of the route with the owner absent (after
 # row 9b's skeleton, typically). A distinct first word, STOP, so that a caller walking the rows can tell it from one.
@@ -1184,6 +1246,7 @@ for id in "${IDS[@]}"; do
   echo "next: row $id - ${ACTION[$id]}"
   because "$why"
   [ -z "$JUDGED" ] || echo "judged: $JUDGED"
+  case "$id" in 9b | 18 | 18b) divergence_note ;; esac   # the rows that write the dossier (v0.5.1)
   if [ -n "$pending" ]; then
     echo "only if every row that needs judgement above is false (rows $pending): answer them with --judge <row>=true|false."
     exit 3

@@ -73,6 +73,13 @@ spec as the sources the answers are read from. Write it in `DECISIONS.md` as one
     when nothing is installed and the last answer is `no`, its line for `STATE.md` is `static triage: forge lint only -
     the owner declined the install`. A `yes` is the owner's permission for the install, which the agent then asks to
     run, command by command (`scripts/doctor.sh` prints Slither's; Aderyn has its own installer).)*
+17c. Is anything in this project's environment not as it ships: pinned dependencies swapped, remappings, a renamed type?
+    *(Record each one the owner names as its own entry, `source: owner`, whose heading is exactly `## <id> · <YYYY-MM-DD>
+    · divergence: <what>`, in one line - e.g. `## D-08 · 2026-10-07 · divergence: v4-core pinned at another commit than
+    the one it ships with`; none: the answer as an ordinary entry. The rows of `scripts/next.sh` that write the dossier
+    (9b, 18, 18b) list those headings in a note, and the dossier's section 8 row "environment divergences stated by the
+    owner" carries them - `none stated` when there is none. What the route tested ran on this environment, not on the
+    one that ships: a divergence nobody wrote down is a claim about code that was never run.)*
 18. Are there off-chain components that the contract's guarantees depend on? An indexer, a keeper, a front end?
     If so, what happens when they are down or lying?
 19. Any size, gas or cost ceiling you have to fit inside? *(Contract size is a first-class constraint in v4 hooks.

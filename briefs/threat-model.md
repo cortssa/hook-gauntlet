@@ -20,7 +20,7 @@ breaking it). One block per threat:
 ```
 W-<n>: <who acts> / <what is lost, and by whom> / <the call sequence>
 from: doctrine/HOOK-ATTACKS.md class <#>      (or: SPEC.md section <s> row <r>, SPEC.md section 5b assumption <a>)
-matches: T-<n>[, T-<n>...]                    (or, alone on the line: new)
+matches: T-<n>[, T-<n>...]                    (or: matches: new)
 ```
 
 - `W-<n>` at column 0, `<n>` from 1 with no leading zero, each id once. The three fields are separated by ` / `, none
@@ -29,12 +29,13 @@ matches: T-<n>[, T-<n>...]                    (or, alone on the line: new)
   calls, in order, in words (`initialize a pool naming the hook, swap on it, claim`).
 - `from:` says where the threat came from, in one line.
 - The matching line is filled AFTER the independent list is in, and only then: `matches: T-3` when the independent
-  agent's T-3 is this threat (several ids when it is several of theirs), `new` when none of theirs is. An optional
-  comment in parentheses may follow either.
+  agent's T-3 is this threat (several ids when it is several of theirs), `matches: new` when none of theirs is (a bare
+  `new` reads the same). An optional comment in parentheses may follow either.
 - A block is its `W-` line and the lines right under it; a blank line or a heading ends it. Prose may stand between
   blocks.
 - **The walker's threats are frozen once the independent list is read.** After that, the walker writes matching lines
-  only. An independent threat its list does not have is answered with an invariant or a refusal (section 3) - never by a
+  and handed lines only. An independent threat its list does not have is answered with an invariant, a refusal or - the
+  owner leaving it undecided - a handed line (section 3) - never by a
   `W-` block written after the fact with `matches:`, which would count a threat the walker missed as one it had. The
   LOG entry that fills the matching lines says when they were filled. **After the diff, both lists are frozen:** the
   report keeps both files' sha256, and `scripts/next.sh` refuses a `threat_model: diffed (...)` line once either list
@@ -90,7 +91,10 @@ It reads each independent threat, in this order, as:
   ```
 
   the invariant (or test) that turns the threat into something the battery checks - seen red first, like every test
-  (`AGENTS.md` 6.3). The tag is `@custom:threat` because solc reads every `///` line as NatSpec and builds no tag of a
+  (`AGENTS.md` 6.3). **The tag counts only above a test or invariant whose NAME carries the id**: `test_T7_...`,
+  `invariant_T7_...` (a part of the name between underscores, `T` and the number; a tag naming two ids needs both in the
+  name). A script cannot judge whether a test fits a threat; it shows the fit instead - each pair, the threat's text
+  beside the test's name and file, in the diff's output and report and in the dossier's 5b, where a reader judges it. The tag is `@custom:threat` because solc reads every `///` line as NatSpec and builds no tag of a
   project's own but `@custom:<name>`: a `@threat` tag there breaks the build ("Documentation tag @threat not valid for
   functions"), and the script refuses it;
 - **refused** - neither, and `DECISIONS.md` (the one beside `STATE.md`) refuses it in one heading, in this form and no
@@ -106,18 +110,32 @@ It reads each independent threat, in this order, as:
   the reason a predicate someone can check (the hook holds no balance; the entry point does not exist), the entry's
   body saying more and its `source:` (`assumed, owner absent` when the owner is not there to read it) - a refusal is a
   claim, like "does not apply" (`doctrine/EVIDENCE.md` 6);
-- **unmatched** - none of the three.
+- **handed** - none of those, and the owner leaves it undecided (or, absent, cannot decide it): it is handed on by name,
+  on a line of its own in `.gauntlet/THREATS.md` - an answer, not a walker's threat:
+
+  ```
+  T-<n>: handed: round       aimed at the model round: the round's brief lists it, by id and text, as a target
+  T-<n>: handed: audit       handed to the human audit, by name: untested, and the dossier's 5b and section 9 say so
+  ```
+
+  Phase 3 closes with handed threats. After the round, each `handed: round` is either the finding it produced - the
+  walker writes `became: <the finding's id>` on the line right under it - or `handed: audit`; once a round has run,
+  `scripts/next.sh` refuses `phase:` 4 or higher while a `handed: round` has neither, naming it (the list changed:
+  run the diff again; its counts stay the same). No phase is ever written back to reach the dossier. A threat handed
+  twice, handed and matched, or handed and refused is refused: one answer per threat;
+- **unmatched** - none of the four.
 
 While one is unmatched it refuses, naming each with its three fields (and a `DECISIONS.md` heading that names it in
 another shape, when there is one), and the `STATE.md` line stays `threat_model: not yet`. When none is, it prints
 
 ```
-threat_model: diffed (<n> matched, <m> new, <k> refused)
+threat_model: diffed (<n> matched, <m> new, <k> refused, <h> handed)
 ```
 
 for `STATE.md`, and writes `.gauntlet/reports/06-threats.txt`: the model that wrote the independent list and what it
-received, both files' sha256, one line per independent threat with its status, and the walker's own threats (`new` in
-`THREATS.md`: the ones the independent agent did not see). `scripts/next.sh` refuses `phase:` 4 or higher with
+received, both files' sha256, one line per independent threat with its status, the walker's own threats (`new` in
+`THREATS.md`: the ones the independent agent did not see), the pairs (each tagged threat beside its test), and the
+handed threats - to the round (the brief's targets) and to the audit (untested). `scripts/next.sh` refuses `phase:` 4 or higher with
 `threat_model: not yet`, and reads a `diffed` line against the files themselves and against the report's hashes. The dossier carries the report
 (`briefs/handoff-dossier.md`, section 5b). The forms, read the same way by both scripts: `scripts/lib/threats.sh`.
 

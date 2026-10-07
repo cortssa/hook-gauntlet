@@ -2,6 +2,36 @@
 
 ## Unreleased (v0.5)
 
+- **v0.5.1 - what the first owner-present case taught the kit.** (1) An independent threat the owner leaves undecided
+  has a disposition: a line of its own in `.gauntlet/THREATS.md`, `T-<n>: handed: round` (a target the round's brief,
+  `briefs/audit-round.md`, lists by id and text) or `T-<n>: handed: audit` (to the human audit by name, untested);
+  `threat-diff.sh` counts them - the line is now `threat_model: diffed (<n> matched, <m> new, <k> refused, <h> handed)`,
+  every fixture and the kit's example re-written with `, 0 handed` - and phase 3 closes with them; after the round each
+  `handed: round` gets `became: <finding id>` under it or becomes `handed: audit`, and `next.sh` refuses phase 4 or
+  higher while one has neither once a round has run, naming the two answers, never a phase to write back. A threat
+  handed twice, handed and matched, or handed and refused is refused. (2) `/// @custom:threat T-<n>` counts only right
+  above a test or invariant whose name carries the id (`test_T7_...`, `invariant_T7_...`); the diff prints each pair -
+  the threat's text, the test's name and file - on stdout and in `06-threats.txt`, and the dossier's 5b shows them: the
+  fit is shown, not judged. (3) `mutate.sh` writes why each failing test of a killed mutant failed, `kill: assertion |
+  revert | setup - <test>` (`scripts/lib/parse.sh` `kill_reasons`, from real forge 1.8.1 output in three fixtures); an
+  expected revert that did not come, or came with another error, is an assertion; a mutant killed by no assertion is
+  `KILLED (revert)`, and `doctrine/EVIDENCE.md` and the dossier template require `kill: assertion` for MUTATION-TESTED.
+  (4) `census.sh --aggregate` appends every attempt to `.gauntlet/reports/03-census-attempts.txt` and its record says
+  which CORE actions, REACH boundaries and floors were dropped or lowered since the first; the dossier cites the file.
+  (5) The owner interview asks question 17c (an environment not as it ships), recorded as `## <id> · <date> ·
+  divergence: <what>`; `next.sh` lists those headings in a note on the dossier's rows (9b, 18, 18b), or `none stated`,
+  and section 8 has the row. (6) `told: <YYYY-MM-DD> <id>[, <id>...]` in `notes:` quiets row 1 with the owner present
+  (row 1's condition and its hash, row 4b's, re-pasted). (7) `setup-deps.sh` and `fuzz-long.sh` warn, with the number,
+  when the depth is below the kit's (64 everyday, 128 long); nothing is changed. (8) `matches: new` reads as bare `new`;
+  the round brief names what the auditor may write in the bench (`.gauntlet/reports/`).
+  **Known gaps:** a kill's reason is read from forge's message - `assertTrue(x, "msg")` prints only `msg`, as a `require`
+  does, and outside an invariant is read as a revert (conservative, never the other way); a shape forge prints that the
+  parser does not know leaves the kill unread. A name carrying the id does not make a test fit its threat: the reader
+  judges the pair. `became:` must name an id, not a finding that exists; "a round has run" is `last_audit_round` not
+  `none`. The attempts file is plain text that nothing hashes, and only the gate (`--aggregate`) writes it, not the run
+  mode's smoke check. Nothing checks that the dossier's section 8 carries the divergences the note lists. A `told:` note
+  with no date first is not read (row 1 is asked). The kit's depths, 64 and 128, are written into the two scripts.
+
 - **An independent threat model, as a gate before phase 3 closes** (`briefs/threat-model.md`, `scripts/threat-diff.sh
   <proj>`). The walker writes its own list in phase 2, `.gauntlet/THREATS.md`, from `doctrine/HOOK-ATTACKS.md` and the
   spec: `W-<n>: <who acts> / <what is lost> / <the call sequence>`, a `from:` line, and - once the other list is in - one

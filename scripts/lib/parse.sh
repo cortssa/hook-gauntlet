@@ -328,3 +328,55 @@ parse_backtest_totals() {
     }
     END { if (bad || on == 1 || n == 0) exit 2; printf "%s", rows }'
 }
+
+# kill_reasons <forge test log>
+#   why each failing test failed, for scripts/mutate.sh's `kill:` lines (doctrine/EVIDENCE.md section 2: MUTATION-TESTED
+#   counts a kill only when the test failed on an ASSERTION - a mutant that makes the code revert where nothing expected
+#   a revert fails every test that touches it, whatever the test claims). One line per distinct failing test,
+#   "<reason> TAB <test>() TAB <forge's message>", in forge's order (forge prints each failure twice: once each). Reasons:
+#     setup      the test is setUp() (or forge says `setup failed`): no test ran - the mutant broke the fixture
+#     revert     an UNEXPECTED revert: an unexpected-revert count (the kit's invariant_no_unexplained_reverts, a message
+#                that says a failure was not predicted), a handler call that reverted in an invariant run (`reverts: N`
+#                above 0 on its line, fail_on_revert), `EvmError: ...`, a panic that is not an assertion's (arithmetic,
+#                division), a custom error (`CurrencyNotSettled()`), `custom error 0x...`; and any message this does not
+#                recognise as an assertion's, in a test that is not an invariant - a require's string and an
+#                assertTrue's own message print the same, and an unknown is never counted as an assertion
+#     assertion  an assert failed: `assertion failed` (forge-std's, and `panic: assertion failed (0x01)`), a comparison
+#                (`<a> != <b>`, `<=`, `!~=` ... - assertEq with a message of its own prints `msg: <a> != <b>`), an
+#                expected revert that did not come (`next call did not revert as expected`) or came with another error
+#                (`Error != expected error: ...`) - the test's oracle WAS the revert, and it broke -, and an invariant
+#                whose run met no revert (its own check failed)
+#   Fixtures: scripts/test/fixtures/kill-real-{assertion,revert,setup}.txt (forge 1.8.1). exit 1: no failing test read.
+kill_reasons() {
+  [ -r "$1" ] || return 1
+  _parse_clean "$1" | LC_ALL=C awk '
+    function classify(name, msg, inv, reverts,   m) {
+      m = msg; sub(/; counterexample:.*$/, "", m)
+      if (name == "setUp()" || m ~ /^setup failed/) return "setup"
+      if (tolower(m) ~ /did not predict|nothing predicted|unexpected revert|unexplained revert/ || name ~ /unexplained_revert|unexpected_revert/) return "revert"
+      if (inv && reverts > 0) return "revert"
+      if (m ~ /assertion failed/) return "assertion"
+      if (m ~ /did not revert as expected/ || m ~ /^Error != expected error/ || m ~ /expected (revert|emit|call)/) return "assertion"
+      if (m ~ /^EvmError/ || m ~ /^panic: / || m ~ /^custom error / || m ~ /^[A-Za-z_$][A-Za-z0-9_$]*\(.*\)$/) return "revert"
+      if (m ~ /[^ ] (!=|==|<=|>=|<|>|!~=) [^ ]/) return "assertion"
+      if (inv) return "assertion"
+      return "revert"
+    }
+    function emit(name, msg, inv, reverts,   k) {
+      k = name SUBSEP msg; if (k in seen) return; seen[k] = 1
+      gsub(/\t/, " ", msg); print classify(name, msg, inv, reverts) "\t" name "\t" msg; n++
+    }
+    # an invariant failure: [FAIL: <msg>] alone, its sequence, then " <name>() (runs: N, calls: N, reverts: N)"
+    wait && /^[ \t]*[A-Za-z_$][A-Za-z0-9_$]*\([^)]*\)[ \t]+\(runs:/ {
+      nm = $0; sub(/^[ \t]*/, "", nm); sub(/[ \t]+\(runs:.*$/, "", nm)
+      rv = 0; if (match($0, /reverts: [0-9]+/)) rv = substr($0, RSTART + 9, RLENGTH - 9) + 0
+      emit(nm, wmsg, 1, rv); wait = 0; next }
+    /^\[FAIL/ {
+      line = $0
+      if (match(line, /\] [A-Za-z_$][A-Za-z0-9_$]*\([^)]*\)[ \t]+\(.*\)[ \t]*$/)) {
+        nm = substr(line, RSTART + 2); sub(/[ \t]+\(.*$/, "", nm)
+        msg = substr(line, 1, RSTART); sub(/^\[FAIL(: )?/, "", msg); sub(/\]$/, "", msg)
+        emit(nm, msg, (nm ~ /^invariant/), 0); wait = 0; next }
+      msg = line; sub(/^\[FAIL(: )?/, "", msg); sub(/\][ \t]*$/, "", msg); wmsg = msg; wait = 1; next }
+    END { if (!n) exit 1 }'
+}

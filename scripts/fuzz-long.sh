@@ -27,7 +27,8 @@
 #                     FOUNDRY_PROFILE and FORGE_FLAGS; a `.env` in the project that sets one is refused (NOTHING PROVEN)
 #          FOUNDRY_PROFILE  the profile of the long budget (default: long)
 #          RUNS       override the profile's invariant runs (this script sets FOUNDRY_INVARIANT_RUNS from it)
-#          DEPTH      override the profile's invariant depth (FOUNDRY_INVARIANT_DEPTH, likewise)
+#          DEPTH      override the profile's invariant depth (FOUNDRY_INVARIANT_DEPTH, likewise). A depth below the kit's
+#                     long default, 128, is said in one WARNING line with the number (v0.5.1), never changed
 #          SEED       replay a specific seed
 #          ESTIMATE_ONLY  any value but empty or 0 (1, true, yes) to print what the campaign will cost (above) and stop
 #                     there: exit 0, no campaign, no bench, nothing written - the refusals before the cost (a profile that
@@ -232,6 +233,13 @@ esac
 long_runs="$(inv_of "$cfg" runs)"; long_depth="$(inv_of "$cfg" depth)"
 long_budget=$((long_runs * long_depth))
 echo "invariant budget (runs x depth): $long_budget under '$FOUNDRY_PROFILE', $default_budget under the default profile"
+# v0.5.1: a long campaign that inherits a shallow depth says so, with the number - the kit's own long profile is 1000 x
+# 128 over its everyday 64 x 64 (scripts/setup-deps.sh), and one written over an everyday depth of 8 runs 8-call
+# sequences however many runs it adds. Nothing is changed here: the depth is the owner's.
+KIT_LONG_DEPTH=128
+if [ "$long_depth" -gt 0 ] && [ "$long_depth" -lt "$KIT_LONG_DEPTH" ]; then
+  echo "fuzz-long: WARNING - this campaign's depth is $long_depth, below the kit's default $KIT_LONG_DEPTH for the long campaign (the everyday one here: $default_depth): no call sequence longer than $long_depth is tried, however many runs - nothing changed; raise depth in [profile.$FOUNDRY_PROFILE.invariant] (or DEPTH=) to go deeper"
+fi
 if [ "$long_budget" -le "$default_budget" ] && [ "${ALLOW_SMALL_BUDGET:-0}" != "1" ]; then
   echo "fuzz-long: the budget of this run, $long_runs x $long_depth = $long_budget, is not larger than the everyday one. NOTHING PROVEN."
   suggest_block

@@ -26,6 +26,12 @@ Open before this round, from phase 3 (`pending/`, provisional severity): {{PENDI
 each briefly and spend the round on what they do not cover; a round that only rediscovers this list has a thin ROUND
 line (`AGENTS.md` §6c, 5, a lazy round). *No `pending:` finding: delete this paragraph.*
 
+Handed to this round by name - independent threats the owner left undecided (`T-<n>: handed: round` in
+`.gauntlet/THREATS.md`; `.gauntlet/reports/06-threats.txt` lists them under "handed to the model round"), each by its id
+and text: {{HANDED_THREATS}} - each is a target: turn it into a finding with a test, or say in the report how you tried
+and why it does not hold. After the round each becomes the finding it produced or is handed to the human audit by name
+(`briefs/threat-model.md`, section 3). *None handed: delete this paragraph.*
+
 ## What changed since the last round, and is therefore your target
 
 *One short paragraph per change. Be specific: name the function, say what the new behaviour is, and say what you
@@ -55,7 +61,7 @@ list you will pay for rediscoveries.*
 
 - Work **only** in `{{BENCH}}`. Never compile in another agent's bench or in the shared one. Dependencies by
   symlink.
-- Read-only on the bench (the copy of the project you were given) except your own scratch directory `{{SCRATCH}}` and your report `{{REPORT}}`. `{{SCRATCH}}` is `test/audit/<round>/` INSIDE the bench: forge compiles `test/`, so your tests run with plain `forge test --match-path 'test/audit/<round>/*'`; nothing under `.gauntlet/` is in the bench, and the project's own `test/` is not yours to change.
+- Read-only on the bench (the copy of the project you were given) except three places: your own scratch directory `{{SCRATCH}}`, your report `{{REPORT}}`, and `{{BENCH}}/.gauntlet/reports/`, where the kit's scripts you run in the bench write their own reports (`battery.sh .` below, `size.sh`). `{{SCRATCH}}` is `test/audit/<round>/` INSIDE the bench: forge compiles `test/`, so your tests run with plain `forge test --match-path 'test/audit/<round>/*'`; no file of the project's `.gauntlet/` is in the bench, and the project's own `test/` is not yours to change.
 - No mainnet writes, no keys, no broadcast, no installs, no browser.
 - **Reproduce the baseline before attacking anything**: run the battery in your bench (`{{KIT}}/scripts/battery.sh .`)
   and compare it with what the orchestrator's battery wrote for this revision - the files themselves, not numbers retyped

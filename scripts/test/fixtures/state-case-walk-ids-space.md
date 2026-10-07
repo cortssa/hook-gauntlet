@@ -15,7 +15,7 @@ ceiling:                   1 model rounds (one discovery round) set by the reque
 real_manager_battery:      n/a (chain not chosen)
 waiting_on_owner:          high F1 F3 F4 R01-1 R01-2 R01-5 - to tell · triage of F1-F6 R01-1..R01-8 · read-back of scope · spec read · chain · the undecided interview items (D-01, D-06)
 rehearsal:                 n/a (no runbook)
-threat_model:              diffed (1 matched, 0 new, 0 refused)
+threat_model:              diffed (1 matched, 0 new, 0 refused, 0 handed)
 location:                  .gauntlet/
 dossier:                   skeleton (14 open, 6 judges not done)
 notes:                     pending: F1 F2 F3 F4 F6 - promises 2 3 4 5 6 7, owner undecided · static triage: forge lint only, Slither not installed · fork: not done - chain undecided, no endpoint, no network in this session · real manager: n/a - chain not chosen

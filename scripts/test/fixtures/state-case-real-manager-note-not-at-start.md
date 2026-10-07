@@ -17,6 +17,6 @@ waiting_on_owner:          none
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
-threat_model:              diffed (1 matched, 0 new, 0 refused)
+threat_model:              diffed (1 matched, 0 new, 0 refused, 0 handed)
 notes:                     fork: ran on a fork; todo - real manager: not run yet, RPC_URL not asked
 ```

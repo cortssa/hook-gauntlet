@@ -18,7 +18,7 @@ waiting_on_owner:          F-24, accept or fix (does not block round 6)
 location:                  .gauntlet/
 dossier:                   none
 rehearsal:                 n/a (no runbook)
-threat_model:              diffed (11 matched, 3 new, 1 refused)
+threat_model:              diffed (11 matched, 3 new, 1 refused, 0 handed)
 notes:                     static triage: slither 0.11.6, forge lint
 ```
 

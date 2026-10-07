@@ -216,7 +216,10 @@ it again. No row true and nothing waiting on the owner: `no row is true: the tab
 Row 1 is quiet by the flags in one case only: the owner absent, and every id of the open highs - `open_findings:
 high=N (<ids>)` - is in an item `high <id>[, <id>...] - to tell` of `waiting_on_owner` (commas or spaces, case aside,
 each once; an id there that is not an open high is refused) - then the `because:` line of whatever is given names those ids. Otherwise, with a high open, it is a question
-(the owner present: answer `--judge 1=false` once they have been told; a `told:` note is not read). Row 9b is quiet once
+(the owner present: tell them, then write the note `told: <YYYY-MM-DD> <id>[, <id>...]` in `notes:` - the day, and each
+high told, by id - and the flags quiet the row for those ids as they do for the to-tell items; an id there that is not
+an open high is refused, and a `told:` note with no date first is not read: the row is asked, answered `--judge
+1=false` once they have been told). Row 9b is quiet once
 the dossier names the open findings: `skeleton (<K> open, ...)` with K the number open (high + medium + low;
 informational findings are not counted) - decided by the flags, never asked; while it does not, the question row 9b
 asks is the owner's presence; `complete` next to an open finding is refused. What the flags cannot decide is not guessed. Rows 1 (a high
@@ -256,18 +259,23 @@ the hook's public interface and the economic model, and writes its own numbered 
 `.gauntlet/THREATS-independent.md` (`briefs/threat-model.md`: what it receives, what it must not see, the file's form).
 The walker's own list, `.gauntlet/THREATS.md`, was written in phase 2 from `doctrine/HOOK-ATTACKS.md` and the spec; once
 the independent list is in, the walker fills one matching line under each of its threats, `matches: T-<n>[, T-<n>...]`
-or `new`. Then `scripts/threat-diff.sh <proj>` compares the two by id and reads each independent threat as MATCHED (a
+or `matches: new` (a bare `new` reads the same). Then `scripts/threat-diff.sh <proj>` compares the two by id and reads each independent threat as MATCHED (a
 walker's threat names it), NEW (the walker's list did not have it, and a test names it on a line of its own right
 above the test function, `/// @custom:threat T-<n>`: an invariant now - solc builds no tag of a project's own but
-`@custom:<name>`, and `/// @threat` there breaks the build), REFUSED (neither, and a heading of `DECISIONS.md` says so in
+`@custom:<name>`, and `/// @threat` there breaks the build; v0.5.1: only above a test or invariant whose name carries
+the id, `test_T7_...` or `invariant_T7_...`, and each such pair - the threat's text beside the test's name and file - is
+printed and kept in the report, for a reader to judge the fit), REFUSED (neither, and a heading of `DECISIONS.md` says so in
 one line, in this form and no other: `## <id> · <YYYY-MM-DD> · threat T-<n>[, T-<n>...] refused: <why>` - an id, a real
 date, a middle dot between spaces; a heading with no id or no date, a date that is not one, or hyphens for the dots is
-not a refusal, and the diff names its line) or UNMATCHED. It writes `.gauntlet/reports/06-threats.txt` - the model that
+not a refusal, and the diff names its line), HANDED (v0.5.1: the owner leaves it undecided, and `.gauntlet/THREATS.md`
+hands it on by name on a line of its own, `T-<n>: handed: round` - a target the round's brief lists by id and text - or
+`T-<n>: handed: audit` - to the human audit, untested; after the round each `handed: round` gets `became: <the finding's
+id>` right under it, or becomes `handed: audit`) or UNMATCHED. It writes `.gauntlet/reports/06-threats.txt` - the model that
 wrote the independent list and what it received, the two files' sha256 in full (`sha256 .gauntlet/THREATS.md: <hex>`),
 one line per threat with its status, the walker's own threats (`new`) - and prints the line for `STATE.md`:
 
 ```
-threat_model:              diffed (<n> matched, <m> new, <k> refused)
+threat_model:              diffed (<n> matched, <m> new, <k> refused, <h> handed)
 ```
 
 only when no independent threat is UNMATCHED (exit 0). One left, it is `threat-diff: REFUSED - <u> of <t> independent
@@ -277,8 +285,8 @@ missing is `threat_model: not yet - <which, and who writes it>` (exit 1, nothing
 refused naming the file, the line and what is wrong (exit 2, nothing written). Nothing is read as free text: a line that
 starts like a threat (`T-`, `W-`, after list markers or a heading) and is not of its form, a threat with fewer than three
 fields or a placeholder in one, an id twice, a matching line in another shape or outside its threat's block, an id named
-that the independent list does not have, `@custom:threat` in another shape, `@threat` at all, or a tag in a file with
-no test function - each is refused, never skipped. `next.sh` refuses `phase:` 4 or higher with `threat_model: not yet` - `next: REFUSED - phase <n>
+that the independent list does not have, `@custom:threat` in another shape, `@threat` at all, a tag that is not right above a
+test or invariant whose name carries its ids, or a threat handed twice, handed and matched, or handed and refused - each is refused, never skipped. `next.sh` refuses `phase:` 4 or higher with `threat_model: not yet` - `next: REFUSED - phase <n>
 claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes
 <proj>/.gauntlet/THREATS-independent.md from <kit>/briefs/threat-model.md, then <kit>/scripts/threat-diff.sh <proj> - or
 write the phase that is open` - and reads a `threat_model: diffed (...)`, at any phase, against the files themselves, by
@@ -286,7 +294,10 @@ the same library (`scripts/lib/threats.sh`): a list gone or not of its form, an 
 named), or counts other than the line's, is refused (exit 2, no escape: the files are the record). **The lists are
 frozen after the diff:** a `diffed` line with no `06-threats.txt`, a report that does not give that line, or a list
 that is no longer the file the report hashed - a walker's threat added after reading the other list, an independent
-threat reworded - is refused, `re-run threat-diff.sh`, even when the counts come out the same.
+threat reworded - is refused, `re-run threat-diff.sh`, even when the counts come out the same. And once a round has run
+(`last_audit_round` not `none`), `phase:` 4 or higher with a `handed: round` that has no `became:` is refused, naming
+each threat and its two answers - the finding it produced, or `handed: audit` - never a phase to write back (a `became:`
+is an edit of the list: run the diff again, its counts the same).
 
 ## The ROUND line
 

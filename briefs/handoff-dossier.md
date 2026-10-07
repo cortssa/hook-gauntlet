@@ -105,7 +105,8 @@ exists: it is the only section with no file to assemble from. Three honest sente
   start, and it is the cheapest day of their time you can save. -> `SPEC.md` section 3
 - **The invariants, in words**, each with the test that checks it and its **evidence label** (PROVED / MODEL-TESTED /
   PROPERTY-TESTED / MUTATION-TESTED / SUPPORTED / REASONED / UNVERIFIED - `doctrine/EVIDENCE.md`). A test nobody has
-  seen fail is not listed as evidence. REASONED is a target, and the auditor should know it is one. -> `SPEC.md` section 4
+  seen fail is not listed as evidence. MUTATION-TESTED cites the mutant and its `kill: assertion` line; a mutant whose
+  only kill is a revert is written `KILLED (revert)` and does not earn the label. REASONED is a target, and the auditor should know it is one. -> `SPEC.md` section 4
 - The assumptions the spec stands on, and which of them a discovery round tried to break. -> `SPEC.md` section 5b
 - Trust assumptions and admission rules: what must be true of a pool, a token or an operator, and **who enforces it**.
   -> `SPEC.md` section 5
@@ -165,13 +166,17 @@ read from `.gauntlet/reports/06-threats.txt` - the report `scripts/threat-diff.s
 
 - who wrote the independent list (the report's `model:`, and its family), what it received (`received:`), and who wrote
   the walker's list; one family for both is said here, as a limit: a blind spot they share is in neither list;
-- the line `threat_model: diffed (<n> matched, <m> new, <k> refused)`, and the two files' hashes;
+- the line `threat_model: diffed (<n> matched, <m> new, <k> refused, <h> handed)`, and the two files' hashes;
 - one row per independent threat:
 
-| threat (T-<n>: who / what is lost / the call sequence) | matched by (W-<n>) / new - the invariant that names it (`/// @custom:threat`) / refused - the `DECISIONS.md` line | the test's evidence label (`doctrine/EVIDENCE.md`) |
+| threat (T-<n>: who / what is lost / the call sequence) | matched by (W-<n>) / new - the invariant that names it (`/// @custom:threat`) / refused - the `DECISIONS.md` line / handed - `handed: round, became F-<n>` or `handed: audit` | the test's evidence label (`doctrine/EVIDENCE.md`) |
 |---|---|---|
 | {{THREAT}} | {{STATUS}} | {{LABEL}} |
 
+- the pairs, as the report gives them (`the pairs - ...`): each threat a test names, its text beside the test's name and
+  file, so that the reader judges the fit - the script only checks that the test's name carries the id;
+- the handed threats, by name: each `handed: audit` one (and each `handed: round` the round did not turn into a finding)
+  listed as **untested**, its three fields written out - they are in section 9 too;
 - the walker's own threats (`new` in `.gauntlet/THREATS.md`): the ones the independent reader did not see.
 
 The `new` rows are the ones the route would have missed without this step, and the refused ones are claims: an auditor
@@ -185,9 +190,9 @@ section 9.
 | build + lints | | warnings: | |
 | static analysis | `scripts/static-triage.sh`: what ran, each with its version (the report's header), and what did not - `not installed`, or `the owner declined the install` | N findings per tool, from the report's counts; what was triaged: fixed / by design / accepted / false positive -> `STATIC-TRIAGE.md` (each finding above informational, or its group) | `.gauntlet/reports/05-static.txt` |
 | unit tests | | passed / failed / skipped | |
-| invariant fuzzing | | runs x depth, calls; corpus on? the CAMPAIGN census from `scripts/census.sh` - for each core action, in how many runs it succeeded at least once; for each boundary, in how many runs it was reached; runs with an unexplained revert (not the smoke test's numbers, and not the one block of logs forge prints: that is a single run). `reverts: 0` is not a result: in a green campaign with `fail_on_revert = true` it cannot be anything else | |
+| invariant fuzzing | | runs x depth, calls; corpus on? the CAMPAIGN census from `scripts/census.sh` - for each core action, in how many runs it succeeded at least once; for each boundary, in how many runs it was reached; runs with an unexplained revert (not the smoke test's numbers, and not the one block of logs forge prints: that is a single run); the gate's attempts, from `.gauntlet/reports/03-census-attempts.txt` - how many, and every CORE action, REACH boundary or floor dropped or lowered since the first (the gate's record says them): a gate that passed after its boundaries were cut is not the gate first set. `reverts: 0` is not a result: in a green campaign with `fail_on_revert = true` it cannot be anything else | |
 | coverage | | lines / **branches** per file in scope; every uncovered branch named | |
-| mutation | | which files, against which tests; mutants generated, killed, survived, invalid, skipped, timed out; each survivor -> test or proof of equivalence (`MUTANTS.md`) | |
+| mutation | | which files, against which tests; mutants generated, killed, survived, invalid, skipped, timed out; each kill with its reason, the `kill:` line `scripts/mutate.sh` writes - `assertion`, or `KILLED (revert)` (the code reverted where the test expected nothing: it does not count toward MUTATION-TESTED, `doctrine/EVIDENCE.md` section 2); each survivor -> test or proof of equivalence (`MUTANTS.md`) | |
 | brutalize | | | |
 | real pool manager | | chain id, address, code hash; suite result with `V4_MANAGER=fixture` | |
 | independent reference model | | which property, how the model differs in structure from the code, sequences compared - or "not done", and in full mode the owner's reason | |
@@ -213,6 +218,10 @@ the owner` with the reason for N from `DECISIONS.md` - every round it cut short 
 interview whose ROUND line says `gate pass (read-back pending)`: the owner was absent, the interview was played from their
 files, and nobody has yet read the scope and the non-goals back to them - say so here, with the item still in
 `waiting_on_owner`; and a spec whose ROUND line says it: the owner has not yet read the spec (phase 1's gate).
+
+| | |
+|---|---|
+| environment divergences stated by the owner | {{DIVERGENCES}} - each `DECISIONS.md` entry `## <id> · <date> · divergence: <what>` (interview question 17c; `scripts/next.sh` lists them in a note on the dossier's rows), by id; none: `none stated` |
 
 ## 9. What was NOT checked (must - the auditor reads this first)
 

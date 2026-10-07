@@ -19,7 +19,7 @@ waiting_on_owner:          triage of F-1, F-2, F-3, F-4, r01-N1, r01-N2, r01-N3,
 location:                  .gauntlet/
 dossier:                   skeleton (10 open, 6 judges not done)
 rehearsal:                 n/a (no runbook)
-threat_model:              diffed (1 matched, 0 new, 0 refused)
+threat_model:              diffed (1 matched, 0 new, 0 refused, 0 handed)
 notes:                     static triage: forge lint only, Slither not installed
                            fork: n/a - no chain chosen (D-17), no endpoint; not done
                            pending: F-1 - promise 2 (epoch 0 starts at initialization), owner undecided

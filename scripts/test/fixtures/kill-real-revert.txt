@@ -1,0 +1,65 @@
+No files changed, compilation skipped
+{"timestamp":1791374587,"event":"failure","invariant":"invariant_settles","target":"test/Revert.t.sol:HandlerRevertInvariant","reason":"CurrencyNotSettled()"}
+{"timestamp":1791374587,"event":"failure","invariant":"invariant_no_unexplained_reverts","target":"test/Revert.t.sol:RevertCountInvariant","reason":"the handler met a failure it did not predict: settle reverted: CurrencyNotSettled: 1 != 0"}
+
+Ran 4 tests for test/Revert.t.sol:RevertKills
+[FAIL: panic: arithmetic underflow or overflow (0x11)] test_arithmetic() (gas: 7524)
+[FAIL: EvmError: Revert] test_bare_revert() (gas: 5454)
+[FAIL: CurrencyNotSettled()] test_custom_error() (gas: 5386)
+[FAIL: the pool is locked] test_require_string() (gas: 5771)
+Suite result: FAILED. 0 passed; 4 failed; 0 skipped; finished in 706.78µs (249.62µs CPU time)
+
+Ran 1 test for test/Revert.t.sol:HandlerRevertInvariant
+[FAIL: CurrencyNotSettled()]
+	[Sequence] (original: 1, shrunk: 1)
+		sender=0x00000000000000000000000000000000000000bb addr=[src/A.sol:A]0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f calldata=settle() args=[]
+ invariant_settles() (runs: 1, calls: 1, reverts: 1)
+
+╭----------+----------+-------+---------+----------╮
+| Contract | Selector | Calls | Reverts | Discards |
++==================================================+
+| A        | settle   | 1     | 1       | 0        |
+╰----------+----------+-------+---------+----------╯
+
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; finished in 40.42ms (39.82ms CPU time)
+
+Ran 1 test for test/Revert.t.sol:RevertCountInvariant
+[FAIL: the handler met a failure it did not predict: settle reverted: CurrencyNotSettled: 1 != 0]
+	[Sequence] (original: 1, shrunk: 1)
+		sender=0x0000000000000000000000000000000000001445 addr=[test/Revert.t.sol:Handler]0x2e234DAe75C793f67A35089C9d99245E1C58470b calldata=poke() args=[]
+ invariant_no_unexplained_reverts() (runs: 1, calls: 1, reverts: 0)
+
+╭----------+----------+-------+---------+----------╮
+| Contract | Selector | Calls | Reverts | Discards |
++==================================================+
+| Handler  | poke     | 1     | 0       | 0        |
+╰----------+----------+-------+---------+----------╯
+
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; finished in 81.40ms (80.71ms CPU time)
+
+Ran 3 test suites in 84.32ms (122.52ms CPU time): 0 tests passed, 6 failed, 0 skipped (6 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/Revert.t.sol:HandlerRevertInvariant
+[FAIL: CurrencyNotSettled()]
+	[Sequence] (original: 1, shrunk: 1)
+		sender=0x00000000000000000000000000000000000000bb addr=[src/A.sol:A]0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f calldata=settle() args=[]
+ invariant_settles() (runs: 1, calls: 1, reverts: 1)
+
+Encountered 1 failing test in test/Revert.t.sol:RevertCountInvariant
+[FAIL: the handler met a failure it did not predict: settle reverted: CurrencyNotSettled: 1 != 0]
+	[Sequence] (original: 1, shrunk: 1)
+		sender=0x0000000000000000000000000000000000001445 addr=[test/Revert.t.sol:Handler]0x2e234DAe75C793f67A35089C9d99245E1C58470b calldata=poke() args=[]
+ invariant_no_unexplained_reverts() (runs: 1, calls: 1, reverts: 0)
+
+Encountered 4 failing tests in test/Revert.t.sol:RevertKills
+[FAIL: panic: arithmetic underflow or overflow (0x11)] test_arithmetic() (gas: 7524)
+[FAIL: EvmError: Revert] test_bare_revert() (gas: 5454)
+[FAIL: CurrencyNotSettled()] test_custom_error() (gas: 5386)
+[FAIL: the pool is locked] test_require_string() (gas: 5771)
+
+Encountered a total of 6 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 6 failed tests
+
+Fuzz seed: 0x1 (use `--fuzz-seed` to reproduce)

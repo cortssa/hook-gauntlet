@@ -16,7 +16,7 @@ ceiling:                   1 model rounds agreed; 1 used
 real_manager_battery:      n/a (chain not chosen)
 waiting_on_owner:          high all open - to tell · triage of F-1 F-2 M-1
 rehearsal:                 n/a (no runbook)
-threat_model:              diffed (1 matched, 0 new, 0 refused)
+threat_model:              diffed (1 matched, 0 new, 0 refused, 0 handed)
 location:                  .gauntlet/
 dossier:                   skeleton (3 open, 2 judges not done)
 notes:                     fork: n/a - a next.sh fixture, no chain

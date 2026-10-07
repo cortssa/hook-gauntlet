@@ -39,6 +39,9 @@
 #     [invariant] written here (the module's own), or over yours 4 x its runs (at least 1000) and its depth (forge's
 #     256 x 500 for a key it does not set), fail_on_revert = true, shrink_run_limit = 20000; a budget of yours this cannot
 #     read as numbers - not written, and said (fuzz-long.sh prints the block to paste).
+#   - v0.5.1: an [invariant] of yours whose depth is below the kit's 64 is said, with the number (`setup-deps: WARNING -
+#     your [invariant] depth is <n>, below the kit's default 64 ...`), and so is the long profile written over it, which
+#     inherits that depth (below the kit's long default, 128) - nothing is changed: the depth is yours to raise.
 # COPY_ROOT: the last lines before the import lines say what scripts/mutate.sh needs for the layout it set up -
 # `COPY_ROOT=..` (the `../` before lib/hook-gauntlet) when the kit is reached outside the project, none when it is inside
 # (doctrine/EVIDENCE.md section 2: without it a fix variant's copy does not compile, NOTHING PROVEN).
@@ -300,6 +303,9 @@ awk -v lf="$FLOG" '
         print "[profile.long.invariant]"; print "runs = " lr; print "depth = " ld; print "fail_on_revert = true"; print "shrink_run_limit = 20000"
         print "long\tadded\t" lr "\t" ld > lf
       }
+      # v0.5.1: an everyday depth below the kit default (64): said, with the number - and the long profile written
+      # over it inherits it. Nothing changed: the depth is for the owner to raise
+      if (hasinv && !invodd && invdepth != "" && invdepth != "x" && invdepth + 0 < 64) print "shallow\t" invdepth "\t" (haslong ? "same" : (lr == "" ? "unread" : "added")) > lf
     }
   }
 ' "$TMPD/foundry.in" "$TMPD/foundry.in" > "$FN"
@@ -337,6 +343,15 @@ while IFS=$'\t' read -r what k new old; do
               fi ;;
         odd) [ "$MODE" = check ] || echo "setup-deps: foundry.toml: [profile.default] sets its invariant keys inline or dotted - left as it is (QUICKSTART.md 7b needs fail_on_revert = true in them)" ;;
       esac ;;
+    shallow)
+      if [ "$MODE" != check ]; then
+        case "$new" in
+          added) w="; the [profile.long.invariant] written here keeps it (depth = $k, below the kit's long default 128): the long campaign inherits your depth" ;;
+          same) w="; your [profile.long.invariant] is left as it is - scripts/fuzz-long.sh says its depth when it runs" ;;
+          *) w="" ;;
+        esac
+        echo "setup-deps: WARNING - your [invariant] depth is $k, below the kit's default 64 (QUICKSTART.md 7b, the everyday campaign): call sequences longer than $k are never tried - left as it is, yours to raise$w"
+      fi ;;
     invfor) say foundry.toml "+ fail_on_revert = true   (under your [invariant], which had none: QUICKSTART.md 7b)"; f_changes=$((f_changes + 1)) ;;
     long)
       case "$k" in
