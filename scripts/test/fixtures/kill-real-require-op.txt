@@ -1,0 +1,24 @@
+Compiling 2 files with Solc 0.8.26
+Solc 0.8.26 finished in 375.89ms
+Compiler run successful!
+
+Ran 4 tests for test/Require.t.sol:RequireOpKills
+[FAIL: f == 0] test_set_e() (gas: 29537)
+[FAIL: fee > cap] test_set_fee_under_cap() (gas: 29554)
+[FAIL: k >= cap] test_set_k() (gas: 29573)
+[FAIL: 2 * fee > cap] test_set_twice() (gas: 29844)
+Suite result: FAILED. 0 passed; 4 failed; 0 skipped; finished in 801.69µs (484.89µs CPU time)
+
+Ran 1 test suite in 8.76ms (801.69µs CPU time): 0 tests passed, 4 failed, 0 skipped (4 total tests)
+
+Failing tests:
+Encountered 4 failing tests in test/Require.t.sol:RequireOpKills
+[FAIL: f == 0] test_set_e() (gas: 29537)
+[FAIL: fee > cap] test_set_fee_under_cap() (gas: 29554)
+[FAIL: k >= cap] test_set_k() (gas: 29573)
+[FAIL: 2 * fee > cap] test_set_twice() (gas: 29844)
+
+Encountered a total of 4 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 4 failed tests
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger

@@ -338,18 +338,32 @@ parse_backtest_totals() {
 #     revert     an UNEXPECTED revert: an unexpected-revert count (the kit's invariant_no_unexplained_reverts, a message
 #                that says a failure was not predicted), a handler call that reverted in an invariant run (`reverts: N`
 #                above 0 on its line, fail_on_revert), `EvmError: ...`, a panic that is not an assertion's (arithmetic,
-#                division), a custom error (`CurrencyNotSettled()`), `custom error 0x...`; and any message this does not
-#                recognise as an assertion's, in a test that is not an invariant - a require's string and an
-#                assertTrue's own message print the same, and an unknown is never counted as an assertion
+#                division), a custom error (`CurrencyNotSettled()`), `custom error 0x...`; a require's string that holds
+#                a comparison of words (`fee > cap`, `f == 0`, `2 * fee > cap`: an operand is not a value); and any
+#                message this does not recognise as an assertion's, in a test that is not an invariant - a require's
+#                string and an assertTrue's own message print the same, and an unknown is counted as a revert
 #     assertion  an assert failed: `assertion failed` (forge-std's, and `panic: assertion failed (0x01)`), a comparison
-#                (`<a> != <b>`, `<=`, `!~=` ... - assertEq with a message of its own prints `msg: <a> != <b>`), an
-#                expected revert that did not come (`next call did not revert as expected`) or came with another error
-#                (`Error != expected error: ...`) - the test's oracle WAS the revert, and it broke -, and an invariant
-#                whose run met no revert (its own check failed)
-#   Fixtures: scripts/test/fixtures/kill-real-{assertion,revert,setup}.txt (forge 1.8.1). exit 1: no failing test read.
+#                whose two operands END the message and are both VALUES, as forge prints them for assertEq, assertLt,
+#                assertNotEq, assertApproxEq... with a message of their own (`msg: <a> != <b>`, `msg: <a> !~= <b> (max
+#                delta: ..., real delta: ...)`): a value is a number (`-5`, `1.500000`), `0x` and hex (an address, a
+#                bytes32, bytes), `true`/`false`, or a list of those (`[1, 2]`) - a string compared with a message
+#                prints words and reads as a revert (conservative); a require whose own string ends in two values
+#                (`"0 != 1"`) is read as an assertion: the line shows the message, read it; an expected revert that did
+#                not come (`next call did not revert as expected`) or came with another error (`Error != expected
+#                error: ...`) - the test's oracle WAS the revert, and it broke -, and an invariant whose run met no
+#                revert (its own check failed)
+#   Fixtures: scripts/test/fixtures/kill-real-{assertion,assert-msg,revert,require-op,setup}.txt (forge 1.8.1).
+#   exit 1: no failing test read.
 kill_reasons() {
   [ -r "$1" ] || return 1
   _parse_clean "$1" | LC_ALL=C awk '
+    BEGIN {   # a value as forge prints an assertion operand; a comparison of two of them, at the end of the message
+      sc = "(-?[0-9]+([.][0-9]+)?|0x[0-9a-fA-F]*|true|false)"; val = "(" sc "|[[](" sc "(, " sc ")*)?[]])"
+      cmp = val " (!=|==|<=|>=|<|>|!~=) " val "$" }
+    function valcmp(m) {
+      sub(/ [(]max delta: [^()]*, real delta: [^()]*[)]$/, "", m)
+      return (m ~ ("^" cmp) || m ~ (": " cmp))
+    }
     function classify(name, msg, inv, reverts,   m) {
       m = msg; sub(/; counterexample:.*$/, "", m)
       if (name == "setUp()" || m ~ /^setup failed/) return "setup"
@@ -358,7 +372,7 @@ kill_reasons() {
       if (m ~ /assertion failed/) return "assertion"
       if (m ~ /did not revert as expected/ || m ~ /^Error != expected error/ || m ~ /expected (revert|emit|call)/) return "assertion"
       if (m ~ /^EvmError/ || m ~ /^panic: / || m ~ /^custom error / || m ~ /^[A-Za-z_$][A-Za-z0-9_$]*\(.*\)$/) return "revert"
-      if (m ~ /[^ ] (!=|==|<=|>=|<|>|!~=) [^ ]/) return "assertion"
+      if (valcmp(m)) return "assertion"
       if (inv) return "assertion"
       return "revert"
     }

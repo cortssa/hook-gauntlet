@@ -55,8 +55,12 @@ A test is evidence only after it has failed on code that is wrong in the way the
   <the failing test>` in the mutant's report: `assertion` (an assert failed - `assertEq`, `assertTrue`, `panic:
   assertion failed`; and an expected revert that did not come, or came with another error: the test's oracle WAS that
   revert, and it broke), `revert` (the code reverted where the test expected nothing - and any message not read as an
-  assertion's: `assertTrue(x, "msg")` prints only `msg`, as a `require` does, so outside an invariant prefer the
-  assertions that print their comparison), or `setup` (`setUp()` failed: nothing was tested). **MUTATION-TESTED
+  assertion's: `assertTrue(x, "msg")` prints only `msg`, as a `require` does; a comparison is an assertion's only when
+  the message ends in two VALUES as forge prints them - `msg: 2 != 1`, `-5 < 3`, `0x...`, `true`, `[1, 2]` -, so a
+  `require` whose string reads `fee > cap` or `f == 0` is a revert, and so is `assertEq` of two strings with a message
+  of its own; outside an invariant prefer the assertions that print a comparison of values. A `require` whose own string
+  ends in two values, `"0 != 1"`, still reads as an assertion: the `kill:` line shows the message - read it), or `setup`
+  (`setUp()` failed: nothing was tested). **MUTATION-TESTED
   requires every kill it cites to be `assertion`**; a mutant killed only by reverts is written `KILLED (revert)` and
   does not count toward the label (measured on a first real case: an invariant labelled MUTATION-TESTED by a mutant the
   manager's revert killed, not the invariant's assertion).

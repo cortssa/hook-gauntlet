@@ -24,9 +24,16 @@
   (row 1's condition and its hash, row 4b's, re-pasted). (7) `setup-deps.sh` and `fuzz-long.sh` warn, with the number,
   when the depth is below the kit's (64 everyday, 128 long); nothing is changed. (8) `matches: new` reads as bare `new`;
   the round brief names what the auditor may write in the bench (`.gauntlet/reports/`).
+  A comparison in forge's message is read as an assertion only when the message ends in two values as forge prints
+  them for an assert with a message of its own (a number, `0x` and hex, `true`/`false`, a list of those; `!~=` with its
+  `(max delta: ..., real delta: ...)`): a `require` in the code whose string holds a comparison of words (`fee > cap`,
+  `f == 0`) is a revert, not an assertion (two more real forge 1.8.1 fixtures: `kill-real-require-op.txt`, every
+  operator message a revert, and `kill-real-assert-msg.txt`, every value shape forge prints, an assertion).
   **Known gaps:** a kill's reason is read from forge's message - `assertTrue(x, "msg")` prints only `msg`, as a `require`
-  does, and outside an invariant is read as a revert (conservative, never the other way); a shape forge prints that the
-  parser does not know leaves the kill unread. A name carrying the id does not make a test fit its threat: the reader
+  does, and outside an invariant is read as a revert, and so is `assertEq` of two strings with a message of its own
+  (they print words): conservative. The other way remains in one shape: a `require` whose own string ends in two values
+  (`"0 != 1"`) is read as an assertion - the `kill:` line shows the message, and a reader reads it. A shape forge prints
+  that the parser does not know leaves the kill unread. A name carrying the id does not make a test fit its threat: the reader
   judges the pair. `became:` must name an id, not a finding that exists; "a round has run" is `last_audit_round` not
   `none`. The attempts file is plain text that nothing hashes, and only the gate (`--aggregate`) writes it, not the run
   mode's smoke check. Nothing checks that the dossier's section 8 carries the divergences the note lists. A `told:` note

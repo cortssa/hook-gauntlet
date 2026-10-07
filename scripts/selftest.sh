@@ -5996,6 +5996,20 @@ td_has "$TMP/o7533" "$(printf 'revert\ttest_custom_error()\tCurrencyNotSettled()
 td_has "$TMP/o7533" "$(printf 'revert\tinvariant_no_unexplained_reverts()\tthe handler met a failure it did not predict')"
 td_has "$TMP/o7533" "$(printf 'revert\tinvariant_settles()\tCurrencyNotSettled()')"
 v51_kr 7534 kill-real-setup.txt "setup"
+# a require IN THE CODE whose string holds a comparison ("fee > cap", "f == 0") is a revert: a comparison is read as
+# an assertion's only when both operands at the end of forge's message are values, as forge prints them for assertEq,
+# assertLt, assertApproxEqAbs ... with a message of their own (kill-real-assert-msg.txt: every value shape forge 1.8.1
+# prints; a string compared with a message of its own prints words, and reads as a revert - conservative)
+v51_kr 7526 kill-real-require-op.txt "revert revert revert revert"
+kill_reasons "$FIX/kill-real-require-op.txt" > "$TMP/o7527" 2>&1
+td_has "$TMP/o7527" "$(printf 'revert\ttest_set_fee_under_cap()\tfee > cap')"
+td_has "$TMP/o7527" "$(printf 'revert\ttest_set_e()\tf == 0')"
+td_has "$TMP/o7527" "$(printf 'revert\ttest_set_twice()\t2 * fee > cap')"
+v51_kr 7528 kill-real-assert-msg.txt "assertion assertion assertion assertion assertion assertion assertion assertion assertion assertion assertion assertion assertion assertion assertion revert assertion assertion"
+kill_reasons "$FIX/kill-real-assert-msg.txt" > "$TMP/o7529" 2>&1
+td_has "$TMP/o7529" "$(printf 'assertion\ttest_approx_rel()\tclose enough: 5000000000000000000 !~= 1000000000000000000 (max delta: 1.0000000000000000%%, real delta: 400.0000000000000000%%)')"
+td_has "$TMP/o7529" "$(printf 'assertion\ttest_uint_array()\tthe list is kept: [1, 2] != [1, 3]')"
+td_has "$TMP/o7529" "$(printf 'revert\ttest_string()\tthe name is kept: abc != abd')"
 kill_reasons "$FIX/summary-real-many-suites.txt" > "$TMP/o7535" 2>&1; check "kill_reasons: a log with no failing test reads nothing" 1 $? "$TMP/o7535"
 if command -v forge > /dev/null 2>&1 && [ -e "$HERE/../foundry-kit/lib" ]; then
   MKR="$S51/mk"; mkdir -p "$MKR/src" "$MKR/test" "$MKR/.gauntlet"; ln -s "$(cd "$HERE/../foundry-kit/lib" && pwd -P)" "$MKR/lib"
@@ -6012,6 +6026,12 @@ if command -v forge > /dev/null 2>&1 && [ -e "$HERE/../foundry-kit/lib" ]; then
   printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/B.sol";\ncontract SetUpDep is Test { B b; function setUp() public { b = new B(); b.set(); require(b.x() == 1, "setUp depends on set"); } function test_x() public { assertEq(b.x(), 1); } }\n' > "$MKR/test/SetUpDep.t.sol"
   LABEL=krs OUT_DIR="$S51/mut" "$HERE/mutate.sh" "$MKR" src/B.sol "x = 1;" "x = 3;" > "$TMP/o7538" 2>&1; check "mutate.sh: a mutant that breaks setUp() - NOTHING PROVEN, its reason said" 2 $? "$TMP/o7538"
   td_has "$TMP/o7538" 'kill: setup - setUp() ("setUp depends on set")'
+  printf 'pragma solidity ^0.8.26;\ncontract F { uint256 public cap = 100; uint256 public fee; function setFee(uint256 f) external { require(f <= cap, "fee > cap"); fee = f; } }\n' > "$MKR/src/F.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/F.sol";\ncontract FUnit is Test { F f; function setUp() public { f = new F(); } function test_set_fee() public { f.setFee(50); assertEq(f.fee(), 50); } }\n' > "$MKR/test/F.t.sol"
+  LABEL=kro OUT_DIR="$S51/mut" "$HERE/mutate.sh" "$MKR" src/F.sol "uint256 public cap = 100;" "uint256 public cap = 10;" > "$TMP/o7539" 2>&1
+  check "mutate.sh: a mutant that trips a require whose string holds a comparison (\"fee > cap\") - KILLED (revert), not an assertion" 0 $? "$TMP/o7539"
+  td_has "$TMP/o7539" "KILLED (revert) - 1 test(s) went red on the mutant"
+  td_has "$S51/mut/kro.txt" 'kill: revert - test_set_fee() ("fee > cap")'
 else
   echo "  SKIPPED - no forge or no kit lib/ here: mutate.sh's kill lines are NOT proven on this machine"; skipped=1
 fi

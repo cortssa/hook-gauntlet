@@ -1,0 +1,50 @@
+No files changed, compilation skipped
+
+Ran 18 tests for test/Shapes.t.sol:Shapes
+[FAIL: the owner is set: 0x000000000000000000000000000000000000bEEF != 0x0000000000000000000000000000000000000001] test_address() (gas: 3855)
+[FAIL: close enough: 5 !~= 1 (max delta: 2, real delta: 4)] test_approx_abs() (gas: 3848)
+[FAIL: close enough: 5000000000000000000 !~= 1000000000000000000 (max delta: 1.0000000000000000%, real delta: 400.0000000000000000%)] test_approx_rel() (gas: 3876)
+[FAIL: the pot is whole: 1000000000000000000 != 1000000000000000007] test_big_uint() (gas: 3742)
+[FAIL: the flag is off: true != false] test_bool() (gas: 3785)
+[FAIL: the data is kept: 0x1234 != 0x5678] test_bytes() (gas: 4388)
+[FAIL: the root is set: 0x0000000000000000000000000000000000000000000000000000000000000001 != 0x0000000000000000000000000000000000000000000000000000000000000000] test_bytes32() (gas: 3806)
+[FAIL: the price holds: 1.500000000000000000 != 2.000000000000000000] test_decimal() (gas: 3848)
+[FAIL: the balance stays above three: -5 < 3] test_ge_int() (gas: 3750)
+[FAIL: delta is one: -1 != 1] test_int_neg() (gas: 3805)
+[FAIL: under two dollars: 3.000000 > 2.000000] test_le_decimal() (gas: 3825)
+[FAIL: x stays below two: 2 >= 2] test_lt() (gas: 3760)
+[FAIL: the pot is whole: 115792089237316195423570985008687907853269984665640564039457584007913129639935 != 0] test_max_uint() (gas: 3769)
+[FAIL: the ids differ: 1 == 1] test_noteq() (gas: 3740)
+[FAIL: two owners: 0x0000000000000000000000000000000000000001 == 0x0000000000000000000000000000000000000001] test_noteq_address() (gas: 3880)
+[FAIL: the name is kept: abc != abd] test_string() (gas: 4384)
+[FAIL: one call adds one: 2 != 1] test_uint() (gas: 3805)
+[FAIL: the list is kept: [1, 2] != [1, 3]] test_uint_array() (gas: 5811)
+Suite result: FAILED. 0 passed; 18 failed; 0 skipped; finished in 1.58ms (1.88ms CPU time)
+
+Ran 1 test suite in 13.99ms (1.58ms CPU time): 0 tests passed, 18 failed, 0 skipped (18 total tests)
+
+Failing tests:
+Encountered 18 failing tests in test/Shapes.t.sol:Shapes
+[FAIL: the owner is set: 0x000000000000000000000000000000000000bEEF != 0x0000000000000000000000000000000000000001] test_address() (gas: 3855)
+[FAIL: close enough: 5 !~= 1 (max delta: 2, real delta: 4)] test_approx_abs() (gas: 3848)
+[FAIL: close enough: 5000000000000000000 !~= 1000000000000000000 (max delta: 1.0000000000000000%, real delta: 400.0000000000000000%)] test_approx_rel() (gas: 3876)
+[FAIL: the pot is whole: 1000000000000000000 != 1000000000000000007] test_big_uint() (gas: 3742)
+[FAIL: the flag is off: true != false] test_bool() (gas: 3785)
+[FAIL: the data is kept: 0x1234 != 0x5678] test_bytes() (gas: 4388)
+[FAIL: the root is set: 0x0000000000000000000000000000000000000000000000000000000000000001 != 0x0000000000000000000000000000000000000000000000000000000000000000] test_bytes32() (gas: 3806)
+[FAIL: the price holds: 1.500000000000000000 != 2.000000000000000000] test_decimal() (gas: 3848)
+[FAIL: the balance stays above three: -5 < 3] test_ge_int() (gas: 3750)
+[FAIL: delta is one: -1 != 1] test_int_neg() (gas: 3805)
+[FAIL: under two dollars: 3.000000 > 2.000000] test_le_decimal() (gas: 3825)
+[FAIL: x stays below two: 2 >= 2] test_lt() (gas: 3760)
+[FAIL: the pot is whole: 115792089237316195423570985008687907853269984665640564039457584007913129639935 != 0] test_max_uint() (gas: 3769)
+[FAIL: the ids differ: 1 == 1] test_noteq() (gas: 3740)
+[FAIL: two owners: 0x0000000000000000000000000000000000000001 == 0x0000000000000000000000000000000000000001] test_noteq_address() (gas: 3880)
+[FAIL: the name is kept: abc != abd] test_string() (gas: 4384)
+[FAIL: one call adds one: 2 != 1] test_uint() (gas: 3805)
+[FAIL: the list is kept: [1, 2] != [1, 3]] test_uint_array() (gas: 5811)
+
+Encountered a total of 18 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 18 failed tests
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger
