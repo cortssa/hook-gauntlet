@@ -111,7 +111,8 @@ Before phase 0, install the state convention in the owner's project: run `script
 `.gauntlet/` with a new project's `STATE.md`, `DECISIONS.md`, `LOG.md` and `.gitignore`, and records the spec's hash,
 because the spec is the owner's (`--spec <file>` when it is not `SPEC.md` at the project's root). Only as a fallback,
 by hand: copy the three files from `state/`, and its `.gitignore`, into `.gauntlet/` and empty the examples, which
-describe a fictional hook (`state/README.md`) - that records no spec, so the spec check is off.
+describe a fictional hook (`state/README.md`) - that records no spec, so the spec check is off until phase 2, where
+`next.sh` refuses the missing record (silence is a refusal: `doctrine/EVIDENCE.md` §9).
 
 ```
 <kit>/scripts/init-state.sh <proj>      # <proj>/.gauntlet/: the three files and .gitignore; the spec's hash

@@ -11,7 +11,7 @@ blackbox:                  never_run
 open_findings:             high=0 medium=0 low=0 reasoned_high_or_medium=0
 last_audit_round:          none
 last_other_round:          none
-ceiling:                   8 model rounds (adversarial + black-box) agreed in phase 0; 3 used
+ceiling:                   8 model rounds (adversarial + black-box) agreed in phase 0; 0 used
 real_manager_battery:      current
 waiting_on_owner:          none
 location:                  .gauntlet/

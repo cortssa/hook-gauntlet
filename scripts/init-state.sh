@@ -22,7 +22,14 @@
 #                   default refusal of `--spec` or `--src` on a project that already has a STATE.md. It is a signature,
 #                   not a password - the kit cannot tell an owner from an agent at a shell; it records the name and
 #                   says what it cannot know. Refused on a project with no STATE.md (a new project records both
-#                   without it).
+#                   without it). `--by walker` (v0.5.3): the WALKER signs, the owner absent - accepted only when the
+#                   STATE.md's notes carry an item `owner absent: <why>` (the record of the owner's absence,
+#                   exactly `walker`, case-sensitive - `Walker`, `walker (owner absent)` and the like are refused,
+#                   doctrine/NEXT.md's notes), else refused saying the owner is present by the record; the record then
+#                   carries `by: walker (owner absent)` under its re-recorded line, and next.sh puts it in the dossier's
+#                   section 8 as a divergence. The case it exists for: a hook handed over as code with no owner's spec
+#                   (briefs/spec-template.md) - from phase 2 next.sh refuses a missing anchor, and the route's spec,
+#                   .gauntlet/SPEC.md, is what the walker anchors (--spec .gauntlet/SPEC.md --by walker).
 # Writes:  <proj>/.gauntlet/
 #            STATE.md      a title for the project, the flag block with the starting values state/README.md lists
 #                          (phase: 0, every bytecode_changed_since flag yes but last_promotion n/a, battery: never, ...,
@@ -103,6 +110,25 @@ sha256_of() { if command -v sha256sum > /dev/null 2>&1; then sha256sum < "$1" | 
 # shellcheck source=lib/state-example.sh
 . "$HERE/lib/state-example.sh" || refuse "$HERE/lib/state-example.sh is missing (the test of the kit's example, next.sh's)."
 is_example_state() { is_kit_example "$1" 0 || example_by_values "$1" "$KIT" > /dev/null; }   # as next.sh reads a STATE.md
+# owner_absent_noted <STATE.md>: 0 when its flag block's notes have an item `owner absent: <why>` - read at the START of a
+# note item (a notes line, or a part after `;` or the middle dot, a list marker allowed), as next.sh reads a note
+owner_absent_noted() {
+  local blk line item innotes=0
+  local -a items
+  blk="$(flag_block "$1")" || return 1
+  while IFS= read -r line; do
+    if [[ $line =~ ^notes:(.*)$ ]]; then innotes=1; line="${BASH_REMATCH[1]}"
+    elif [[ $line =~ ^[a-z_]+: ]]; then innotes=0; continue
+    elif [ "$innotes" != 1 ]; then continue; fi
+    IFS=';' read -ra items <<< "${line//$'\302\267'/;}"
+    for item in ${items[@]+"${items[@]}"}; do
+      item="${item#"${item%%[![:space:]]*}"}"
+      if [[ $item =~ ^[-*+][[:space:]]+(.*)$ ]]; then item="${BASH_REMATCH[1]}"; fi
+      [[ $item =~ ^owner\ absent:[[:space:]]*[^[:space:]] ]] && return 0
+    done
+  done <<< "$blk"
+  return 1
+}
 # the anchor of src/, as pending-red.sh and battery.sh compute it (v0.4.2)
 # shellcheck source=lib/src-anchor.sh
 . "$HERE/lib/src-anchor.sh" || refuse "$HERE/lib/src-anchor.sh is missing (the anchor of src/)."
@@ -158,22 +184,36 @@ if [ -n "$HAS" ]; then
     LOGF="$(dirname "$HAS")/LOG.md"
     [ ! -e "$LOGF" ] || [ -f "$LOGF" ] || refuse "$LOGF is not a file: the re-record writes its line there."
     [ "$src_given" != 1 ] || src_has_files || refuse "--src: $PROJ/src has no file in it: there is nothing to anchor (the anchor is src/'s file list and contents)."
+    # --by walker: the walker signs, the owner absent - only when the STATE.md records that absence (the header)
+    BY_SHOWN="$BY_ARG"
+    # the walker's word is exactly `walker`: any other spelling of it (Walker, " walker", "walker (owner absent)"), or a
+    # name that claims the owner's absence, is neither the owner's name nor the walker's - refused, never taken as a name
+    by_lc="${BY_ARG,,}"
+    if [ "$BY_ARG" != walker ] && { [[ $by_lc =~ ^[[:space:]]*walker ]] || [[ $by_lc == *"owner absent"* ]]; }; then
+      refuse "--by '$BY_ARG' is neither an owner's name nor the walker's word: the walker signs as --by walker, exactly (lower case, alone), and only with the note 'owner absent: <why>' in STATE.md's notes; the owner signs with their own name."
+    fi
+    if [ "$BY_ARG" = walker ]; then
+      owner_absent_noted "$HAS" \
+        || refuse "--by walker: the owner is present by the record - $HAS has no note 'owner absent: <why>' in its flag block's notes - and a walker never signs a re-record while the owner is there: the owner signs it (--by \"<their name>\"). With the owner absent, write that note first (doctrine/NEXT.md, the notes); the record then says by: walker (owner absent), and the dossier's section 8 carries it as a divergence."
+      BY_SHOWN="walker (owner absent)"
+    fi
     rerecord() { # rerecord <spec|src>: one signed re-record - the record's line 1, its re-recorded line, the LOG.md line
       local kind="$1" rec old old8 prior_rr line new8 entry what
       if [ "$kind" = spec ]; then rec="$G/spec.sha256"; what="the spec's hash"; else rec="$G/src.sha256"; what="the anchor of src/"; fi
       old="(none)"; [ -f "$rec" ] && old="$(sed -n '1{s/\r$//;p;}' "$rec")"
       old8="$(printf '%s' "$old" | LC_ALL=C sed -n 's/^\([0-9a-f]\{8\}\)[0-9a-f]\{56\}  .*/\1/p')"; [ -n "$old8" ] || old8=none
-      prior_rr="$([ -f "$rec" ] && sed -n '2,${s/\r$//;/^re-recorded /p;}' "$rec")"   # earlier re-records are kept
+      prior_rr="$([ -f "$rec" ] && sed -n '2,${s/\r$//;/^re-recorded /p;/^by: walker (owner absent)$/p;}' "$rec")"   # earlier re-records are kept, a walker's signature line with its own
       if [ "$kind" = spec ]; then line="$(record_spec)" || exit 2; else line="$(record_src)" || exit 2; fi   # rewrites line 1 (the new hash and path)
       new8="${line:0:8}"
       # the record keeps line 1 (what next.sh, pending-red.sh and battery.sh parse) and gains one line per re-record,
       # appended, the earlier ones kept
-      { [ -z "$prior_rr" ] || printf '%s\n' "$prior_rr"; printf 're-recorded %s by "%s" %s -> %s\n' "$(date +%F)" "$BY_ARG" "$old8" "$new8"; } >> "$rec" \
+      { [ -z "$prior_rr" ] || printf '%s\n' "$prior_rr"; printf 're-recorded %s by "%s" %s -> %s\n' "$(date +%F)" "$BY_SHOWN" "$old8" "$new8"
+        [ "$BY_ARG" != walker ] || printf 'by: walker (owner absent)\n'; } >> "$rec" \
         || refuse "$what is re-recorded in $rec and the re-record line could not be appended to it."
       if [ "$kind" = spec ]; then
-        entry="$(date +%F) spec re-recorded: $SPEC_REL $old8 -> $new8, signed --by \"$BY_ARG\" (init-state --spec --by: the kit cannot tell whose hands these were; the owner reads this line, and the dossier carries it)"
+        entry="$(date +%F) spec re-recorded: $SPEC_REL $old8 -> $new8, signed --by \"$BY_SHOWN\" (init-state --spec --by: the kit cannot tell whose hands these were; the owner reads this line, and the dossier carries it)"
       else
-        entry="$(date +%F) src/ re-recorded: $old8 -> $new8, signed --by \"$BY_ARG\" (init-state --src --by: the kit cannot tell whose hands these were; the owner reads this line, and the dossier carries it)"
+        entry="$(date +%F) src/ re-recorded: $old8 -> $new8, signed --by \"$BY_SHOWN\" (init-state --src --by: the kit cannot tell whose hands these were; the owner reads this line, and the dossier carries it)"
       fi
       # its own paragraph, as scripts/round.sh appends: a blank line before it unless the file already ends in one
       if [ -s "$LOGF" ] && [ -n "$(tail -c 1 "$LOGF")" ]; then printf '\n' >> "$LOGF"; fi
@@ -185,7 +225,7 @@ if [ -n "$HAS" ]; then
     }
     if [ "$spec_given" = 1 ] && [ "$src_given" = 1 ]; then w="the spec's hash, the anchor of src/ and two lines"
     elif [ "$spec_given" = 1 ]; then w="the spec's hash and one line"; else w="the anchor of src/ and one line"; fi
-    echo "init-state: $HAS exists: nothing written but $w in LOG.md - a re-record signed --by \"$BY_ARG\"."
+    echo "init-state: $HAS exists: nothing written but $w in LOG.md - a re-record signed --by \"$BY_SHOWN\"."
     [ "$spec_given" != 1 ] || rerecord spec
     [ "$src_given" != 1 ] || rerecord src
     echo "init-state: next: $NEXT_CMD"

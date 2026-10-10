@@ -38,7 +38,9 @@
 #   - src/ is the owner's: with a record of its anchor, <project>/.gauntlet/src.sha256 (scripts/init-state.sh;
 #     scripts/lib/src-anchor.sh), the battery says on every run whether src/ is as recorded, and refuses - exit 2, nothing
 #     run - when it differs or is gone, with the spec's refusal for src/ (no escape, no command an agent could run). No
-#     record: one line says how one is made (a project of the route), or that the tree is not anchored; the run goes on.
+#     record: one line says how one is made (a project of the route), or that the tree is not anchored; the run goes on -
+#     but from phase 2 (v0.5.3: a project whose STATE.md says phase 2 or higher) no record is refused too, exit 2,
+#     `anchor record missing: <proj>/.gauntlet/src.sha256`, naming the owner's signed re-record (silence is a refusal).
 #   - an assignment to `_skipPermissionCheck` in a file under test/ (any: `= true`, `= !false`, a constant, `= false` -
 #     in its code, a `//` comment's text aside; `==` is not one) runs the hook as the manager drives it, the callback whose
 #     bit is missing never called - allowed only while that permission-bits finding is OPEN AND RECORDED: the file has a
@@ -53,6 +55,9 @@
 #     (scripts/lib/owner-tree.sh, bits_rule_skipped): the kit's own worked examples (its hostile hooks are mis-flagged on
 #     purpose), a tree with no .gauntlet/ (a bench), a bench whose .gauntlet/ holds only reports/. A `.gauntlet-bench`
 #     marker beside a .gauntlet/ with records in it skips nothing.
+# Seals:   (v0.5.3) each of the four reports gets <report>.sha256 beside it (scripts/lib/src-anchor.sh, report_seal: the
+#          report's SHA-256 with the anchor of src/ it ran on, and this script's): next.sh reads 01-build.txt and 02-test.txt
+#          only with a seal that matches them and the src/ there is now. The summary's `sealed` line says so.
 # Exit:    0 all steps passed, 1 something failed - a failed test fails it whatever forge's exit code (`--allow-failure`
 #          in FORGE_FLAGS exits 0 over one). The summary names which, and the test line names the filter in force.
 #          2 nothing run: a line break in FORGE_FLAGS, or a variable the re-run could not remove, or OUT_DIR refused, or src/
@@ -233,6 +238,13 @@ else
   echo "assert-fresh-build.sh not found next to battery.sh: freshness NOT checked" | tee "$OUT_DIR/04-freshness.txt"
   rc_fresh=1
 fi
+# v0.5.3: each report sealed (scripts/lib/src-anchor.sh, report_seal): <report>.sha256 beside it - its SHA-256 with the
+# anchor of src/ it ran on, and this script. next.sh reads a report with no seal, a seal that does not match it, or one
+# made on another src/, as no record
+seal_fail=""
+for r in 01-build.txt 02-test.txt 03-sizes.txt 04-freshness.txt; do
+  report_seal "$PROJ_REAL" "$OUT_DIR/$r" "$HERE/battery.sh" || seal_fail="${seal_fail:+$seal_fail, }$r"
+done
 
 echo
 echo "== battery summary =="
@@ -245,6 +257,8 @@ echo "profile   $profile_shown${FORGE_GLOBAL_KEYS:+; and from $FORGE_GLOBAL_FILE
 # by NAME, per test directory, so a log shows which parts of the suite ran (e.g. the v4 sandbox's test/sim)
 echo "suites    $(parse_suites_by_dir "$OUT_DIR/02-test.txt")"
 echo "src       $SRC_ANCHOR_SHORT"
+if [ -z "$seal_fail" ]; then echo "sealed    01-build.txt 02-test.txt 03-sizes.txt 04-freshness.txt (each its .sha256: src/ $(src_anchor_key "$PROJ_REAL" | cut -c1-8))"
+else echo "sealed    NOT $seal_fail: its .sha256 could not be written - next.sh does not read it as a record"; fi
 [ -z "$BITS_UNDER" ] || echo "bits      UNDER open permission-bits finding $BITS_UNDER: _skipPermissionCheck set in $BITS_FILES (each finding's test red on the harness's own line, .gauntlet/pending-red/)"
 [ -z "$BITS_SKIP" ] || echo "bits      not checked: $BITS_SKIP"
 echo "sizes     rc=$rc_sizes"

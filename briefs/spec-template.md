@@ -24,7 +24,9 @@ block and charges a surcharge above a threshold. Replace all of it.
 
 Source: {{OWNER_SPEC_PATH}} (the owner's, sha256 {{OWNER_SPEC_HASH8}}, unchanged)
 the path is relative to the project; the 8 hex are the first of line 1 of .gauntlet/spec.sha256; no owner's spec
-(phase 0 from code, nothing recorded): delete this line.
+(phase 0 from code, nothing recorded): delete this line - and, the owner absent, anchor THIS file before phase 2
+(`scripts/init-state.sh <proj> --spec .gauntlet/SPEC.md --by walker`, with the note `owner absent: <why>` in STATE.md:
+the record says by: walker (owner absent), and the dossier's section 8 carries it).
 
 Battery: {{TESTS}} passing · size {{SIZE}} (margin {{MARGIN}}) · long fuzz {{FUZZ}} · {{N}} adversarial rounds,
 {{M}} black-box rounds. **Not deployed. No human security review yet.**

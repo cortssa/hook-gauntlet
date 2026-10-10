@@ -34,22 +34,36 @@ it, line 1 of `.gauntlet/spec.sha256` becomes the new hash and one line is appen
 <old 8 hex> -> <new 8 hex>`, and a matching paragraph is appended to the `LOG.md` beside that `STATE.md` - `<date> spec
 re-recorded: <spec> <old 8 hex> -> <new 8 hex>, signed --by "<name>" (init-state --spec --by: the kit cannot tell whose
 hands these were; the owner reads this line, and the dossier carries it)` - and `next.sh` repeats the re-record,
-signed, under every answer. No record (a project set up by hand), nothing is said. **`src/` is the owner's too**
+signed, under every answer. The owner absent, the WALKER may sign, `--by walker`, and only with a note `owner absent:
+<why>` in the flag block's notes (the record of the owner's absence; without it `--by walker` is refused, the owner being
+present by the record): the record then carries `by: walker (owner absent)`, and `next.sh`'s dossier rows (9b, 18, 18b)
+name it for section 8 as a divergence - a hook handed over as code with no owner's spec anchors the route's
+`.gauntlet/SPEC.md` so (`--spec .gauntlet/SPEC.md --by walker`). No record before phase 2 (a project set up by hand, a spec not found), nothing is said;
+from `phase:` 2 (v0.5.3, silence is a refusal: `doctrine/EVIDENCE.md` §9) a missing record is refused, `next: REFUSED -
+anchor record missing: <proj>/.gauntlet/spec.sha256; re-run scripts/init-state.sh <proj> --spec <the owner's spec> --by
+<owner> - ...` (`src.sha256` the same, `--src`): the owner records it, signed. **`src/` is the owner's too**
 (v0.4.2): with `.gauntlet/src.sha256`, `scripts/pending-red.sh` and `scripts/battery.sh` say on every run whether `src/` is
 as recorded, and refuse before anything runs when it differs or is gone - the spec's refusal, for the code: undo the
 change, write what you assumed in `DECISIONS.md`; a finding's fix is the owner's decision, shown on a copy
 (`scripts/mutate.sh`), never in `src/`; the owner re-records a change of their own, signed (`--src` with `--by`, the
 same act as the spec's: a `re-recorded` line in `src.sha256` and a paragraph `<date> src/ re-recorded: <old 8 hex> ->
-<new 8 hex>, signed ...` in `LOG.md`). No record on a project that has its state (set up before v0.4.2): one line says
-how one is made, once per project (the first command leaves `.gauntlet/src-anchor-told`; the battery's summary and the
-records keep saying it), and nothing is refused. Each red record of `pending-red.sh` names the anchor it was made on. A project with no state at all is refused by `next.sh <proj>` with the
+<new 8 hex>, signed ...` in `LOG.md`). No record on a project that has its state (set up before v0.4.2), before phase 2:
+one line says how one is made, once per project (the first command leaves `.gauntlet/src-anchor-told`; the battery's
+summary and the records keep saying it), and nothing is refused; from phase 2 (v0.5.3) the battery and `pending-red.sh`
+refuse it too, `<script>: REFUSED - anchor record missing: <proj>/.gauntlet/src.sha256; re-run scripts/init-state.sh <proj>
+--src --by <owner> - ... Nothing run.` (exit 2). **The reports are sealed** (v0.5.3): `battery.sh`, `fuzz-long.sh`,
+`census.sh`, `mutate.sh`, `static-triage.sh`, `threat-diff.sh` and `round.sh` (for the round's report) write
+`<report>.sha256` beside each report they write - line 1 `<sha256>  <the report's name>` (the SHA-256 of the report's
+bytes followed by line 2), line 2 `src/ <the anchor of src/ it ran on>`, line 3 `by <the script> (sha256 <12 hex> of the
+script)`; `next.sh` reads a report it checks only with a seal that matches it and the `src/` there is now. What a seal
+proves is currency, not authorship (`doctrine/EVIDENCE.md` §9). Each red record of `pending-red.sh` names the anchor it was made on. A project with no state at all is refused by `next.sh <proj>` with the
 command: `next: REFUSED - <proj> has no .gauntlet/STATE.md and no STATE.md: <kit>/scripts/init-state.sh <proj> writes
 one (or give the STATE.md)`.
 
 Or by hand, only as a fallback - it records no spec, so the spec check is off: copy the three files into the project (a `.gauntlet/` directory works well, or the project root), then **empty the
 examples**: `scripts/next.sh` refuses a `STATE.md`, or the `DECISIONS.md` and `LOG.md` beside it, that is still the
 example - its line "Example file. The project is fictional." (in `DECISIONS.md` and `LOG.md` only as a line of its own:
-a log entry that quotes it is not the example) or `BlockCapHook` in its title - with `next: FIRST - fill STATE.md: it is
+a log entry that quotes it is not the example) or `BlockCapHook` in its title - with `next: REFUSED - FIRST - fill STATE.md: it is
 still the kit's example (state/README.md, "empty the examples")` (exit 2, no escape) - for `STATE.md` followed by
 ` - <kit>/scripts/init-state.sh <proj> writes an empty one`. Emptying `STATE.md` means:
 keep its flag block (the fenced block at the top: `next.sh` reads nothing else) and its section headers, retitle it for
@@ -79,7 +93,7 @@ line, below; `notes:` starts empty.) A `STATE.md` whose flag block still shares 
 or more lines with the example's - the same values, whatever the spacing (each line trimmed and its runs of spaces and
 tabs made one, on both sides; a line written `key:value`, no space after its first colon, read as `key: value`) - counting `last_audit_round`, `last_other_round`, `open_findings`, `ceiling`,
 `waiting_on_owner`, `notes`, `bytecode_changed_since` and `threat_model`, not the flags a new project can share by chance - is the
-example with its marker deleted and its title changed, and is refused the same way: `next: FIRST - fill STATE.md: its
+example with its marker deleted and its title changed, and is refused the same way: `next: REFUSED - FIRST - fill STATE.md: its
 values are still the kit's example's (<the first shared line, as the example has it>)`. Copy `state/.gitignore` into `<project>/.gauntlet/` too, wherever the three files go: the benches live in
 `<project>/.gauntlet/bench/` (`scripts/bench.sh`, `fuzz-long.sh`, `mutate.sh`: inside the project, never `$HOME` - and
 only once `.gauntlet/` exists: in a tree without it the scripts refuse and ask for `BENCH_ROOT` outside it), and it
@@ -184,10 +198,10 @@ included - needs a new run (not keyed: the libraries and the compiler); each par
 the v4 harness's permission-bits line stays current while `src/` (the hash on its `anchor:` line) and the file itself
 are as recorded - its red comes from the harness and `src/`, not from the test helpers. The record says what it is on
 its first line, `pending-red: red <file> key=<key> <date>`, then the failing tests and the last 20 lines of forge's
-output; `next.sh` reads that line. Without a current record: `next: pending/<file> - not seen red on the code as it
+output; `next.sh` reads that line. Without a current record: `next: REFUSED - pending/<file> - not seen red on the code as it
 stands: <kit>/scripts/pending-red.sh <proj> pending/<file>` - with a stale one, the part that changed in brackets before
 the command (`(its red record of <date> is stale - test/ changed since)`); with one whose first line is not that, for that file and the key in
-its name (an empty or handwritten file): `next: pending/<file>: record unreadable - run scripts/pending-red.sh again`
+its name (an empty or handwritten file): `next: REFUSED - pending/<file>: record unreadable - run scripts/pending-red.sh again`
 (exit 2 both). A directory below `pending/` named `*.sol` is refused: a test there is a file. When the v4 harness
 refuses the deploy in `setUp()` (`V4Harness: ... permission bit ...`), `pending-red.sh` prints the harness's whole line
 and says that refusal IS the finding, and how its test records it: `_skipPermissionCheck = true` in `setUp`, and the
@@ -198,8 +212,9 @@ suite under `test/` against that record). And a file
 that `STATE.md` or `DECISIONS.md` cites must be a non-empty regular file (not `LOG.md`'s: a log is history, and a file
 it names may have been moved or deleted since, legitimately): a path starting `pending/`, `test/`, `src/` or
 `.gauntlet/reports/` whose last part has an extension, looked up from the project and in its benches
-(`.gauntlet/bench/<name>/`), else `next: DECISIONS.md cites a file that does not exist: <path>` - or `that is empty`,
-`that is a directory` (exit 2). No refusal prints an escape (v0.4.2: the two these checks have are in `scripts/next.sh`'s
+(`.gauntlet/bench/<name>/`), else `next: REFUSED - DECISIONS.md cites a file that does not exist: <path>` - or `that is empty`,
+`that is a directory`, or, a report under `.gauntlet/reports/` with a seal that does not match it, `that is not a record
+(report <name>: mismatch ...)` (exit 2; v0.5.3). No refusal prints an escape (v0.4.2: the two these checks have are in `scripts/next.sh`'s
 header, and one used appends a line to `LOG.md` naming what it let through). Not a citation: a path in a fenced code block (the flag block's `pending:`
 notes are read), after `to write`, `planned` or `TODO` on its line, followed by `*`, `?`, `<`, `{` or `[`, or with
 `..` in it.
@@ -346,7 +361,17 @@ FIRST, when you open the entry that closes the round, and write the entry's head
 example `LOG.md` shows the order); `--dry-run` prints the line and writes
 nothing, for pasting into an entry you have already written. `--json` is a VIEW computed from the ROUND lines each
 time it runs, never a stored file: a ROUND line typed by hand in another shape is named on stderr (exit 1) and left
-out, and the others are printed.
+out, and the others are printed. And two records with it (v0.5.3): right under the ROUND line, `src/ at round <id>:
+<the anchor of src/ as it stands>` (`none` with no `src/`) - `next.sh` holds `bytecode_changed_since`'s
+`last_audit_round=no` to it, and to a round recorded before v0.5.3, with no such line, it says so in a note and takes the
+flag as written; and the report's seal, `<report>.sha256` beside it, when `--report` names a file (from the project, from
+the `LOG.md`'s directory, or from here). `next.sh` reads the ROUND lines (through `--json`) for four flags: the newest
+discovery or regression round is `last_audit_round` (one named stopped by row 11b's note `round <id> stopped` is spent,
+not delivered, and passed over), the discovery, regression and black-box rounds are the ceiling's `M used`, and the
+black-box rounds are what `blackbox` says (`doctrine/NEXT.md`, the last section but one). A ROUND line in `LOG.md`
+that `--json` cannot read back is refused by `next.sh`, naming the line; a round the environment stopped twice is two lines
+of the ROUND kind (the attempt and its retry, two ids), and each needs its own `round <id> stopped` note - the refusal names
+those that have none.
 
 ### Conventions worth keeping
 

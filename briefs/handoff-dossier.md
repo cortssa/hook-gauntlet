@@ -222,7 +222,10 @@ OPERATOR set, the owner absent in full mode: `ceiling: N model rounds, set by th
 the owner` with the reason for N from `DECISIONS.md` - every round it cut short was cut by the operator's number. An
 interview whose ROUND line says `gate pass (read-back pending)`: the owner was absent, the interview was played from their
 files, and nobody has yet read the scope and the non-goals back to them - say so here, with the item still in
-`waiting_on_owner`; and a spec whose ROUND line says it: the owner has not yet read the spec (phase 1's gate).
+`waiting_on_owner`; and a spec whose ROUND line says it: the owner has not yet read the spec (phase 1's gate). An
+anchor the walker signed, the owner absent (`by: walker (owner absent)` in `.gauntlet/spec.sha256` or `src.sha256`;
+`scripts/next.sh` names it in a note on the dossier's rows): `anchor signed by the walker, the owner absent` - the spec
+or the code in force was fixed by the walker, not confirmed by the owner.
 
 | | |
 |---|---|

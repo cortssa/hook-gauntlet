@@ -25,16 +25,17 @@
 #          (usable as a BASELINE; a baseline of the older three-column form is read too). A source forge compiled under two
 #          paths (a relative path out of the project and the absolute one) is ONE row, and the run says how many it merged.
 # Exit:    0 ok, 1 a margin is below MIN_MARGIN or MIN_INIT_MARGIN, 2 no sizes could be read (a table without BOTH size
-#          columns measures nothing), or a line break in FORGE_FLAGS, or OUT_DIR refused (above)
+#          columns measures nothing), or a line break in FORGE_FLAGS, or OUT_DIR refused (above); 1 also when a library
+#          of the kit's is missing (v0.5.3, the kit's convention, doctrine/NEXT.md: the environment - the line says which)
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
-. "$HERE/lib/parse.sh" || { echo "size: $HERE/lib/parse.sh is missing"; exit 2; }
+. "$HERE/lib/parse.sh" || { echo "size: $HERE/lib/parse.sh is missing"; exit 1; }
 # shellcheck source=lib/forge-env.sh
-. "$HERE/lib/forge-env.sh" || { echo "size: $HERE/lib/forge-env.sh is missing"; exit 2; }
+. "$HERE/lib/forge-env.sh" || { echo "size: $HERE/lib/forge-env.sh is missing"; exit 1; }
 # shellcheck source=lib/owner-tree.sh
-. "$HERE/lib/owner-tree.sh" || { echo "size: $HERE/lib/owner-tree.sh is missing"; exit 2; }
+. "$HERE/lib/owner-tree.sh" || { echo "size: $HERE/lib/owner-tree.sh is missing"; exit 1; }
 
 PROJECT="${1:-.}"
 [ "$#" -gt 0 ] && shift

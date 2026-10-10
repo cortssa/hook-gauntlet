@@ -132,9 +132,14 @@ and `next.sh` repeats it under every answer). The route's own spec is `.gauntlet
 also anchors `src/` (`.gauntlet/src.sha256`, the hash of its file list and contents; nothing when there is no hook
 yet): `scripts/pending-red.sh` and `scripts/battery.sh` refuse to run on a `src/` that changed since - a finding's fix is
 the owner's, shown on a copy, never written into `src/` - until the owner re-records it, signed (`--src`, the same
-act). It refuses a project that already has a `STATE.md` of its own.
+act). It refuses a project that already has a `STATE.md` of its own. Silence is a refusal (v0.5.3): from `phase: 2` a
+missing `spec.sha256` or `src.sha256` is refused by `next.sh` (and `src.sha256` by the battery and `pending-red.sh`) until
+the owner records it, signed (`init-state.sh <proj> --spec <spec> --by "<name>"`, `--src` likewise); and the reports the
+scripts write carry a seal, `<report>.sha256` beside each, without which `next.sh` reads the report as missing - what
+a seal proves is that the report is current, not who wrote it (`doctrine/EVIDENCE.md` §9).
 
-Only as a fallback, by hand - it records no spec, so the spec check is off: copy `<kit>/state/STATE.md`,
+Only as a fallback, by hand - it records no spec, so the spec check is off until phase 2, where `next.sh` refuses its
+absence: copy `<kit>/state/STATE.md`,
 `DECISIONS.md`, `LOG.md` and `.gitignore` into `.gauntlet/`, then **empty the examples**: they describe a fictional `BlockCapHook`; delete its lines but keep, in `STATE.md`, the section headers and the flag block at the top (the title is the one line that
 names the hook: retitle it), and in `DECISIONS.md` and `LOG.md` the rules paragraph at the top (their only
 headers are the fictional entries: delete those whole), set to the starting values `doctrine/NEXT.md` gives. `.gauntlet/` is the default

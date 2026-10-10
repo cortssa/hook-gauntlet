@@ -102,7 +102,7 @@
 #     nothing is checked.
 # And three more before any row (K40, K41), for what a walker of the route wrote that nothing read (the local-model walk, judged 2026-09-30):
 #   - STATE.md still the kit's example is refused before it is parsed (exit 2, no escape: an example is never a state):
-#     `next: FIRST - fill STATE.md: it is still the kit's example (state/README.md, "empty the examples")`. The example
+#     `next: REFUSED - FIRST - fill STATE.md: it is still the kit's example (state/README.md, "empty the examples")`. The example
 #     is known by its marker line, `*Example file. The project is fictional. Delete this and start yours.*` (anywhere
 #     in STATE.md; in DECISIONS.md and LOG.md only as a whole line - a log that quotes it is not the example, K48), or
 #     by the example hook's name, BlockCapHook, in the title (the first `# ` line). The same for the DECISIONS.md and
@@ -111,23 +111,23 @@
 #     both sides) - counting only the non-generic flags (last_audit_round, last_other_round, open_findings, ceiling,
 #     waiting_on_owner, notes, bytecode_changed_since, threat_model) - is the example with its marker deleted and its
 #     title changed:
-#     `next: FIRST - fill STATE.md: its values are still the kit's example's (<the first shared line, as the example
+#     `next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's (<the first shared line, as the example
 #     has it>)`. (the local-model walk: STATE.md stayed the example for 2 h 20 min, and next.sh answered "row 13 - a
 #     REGRESSION round" on it, twice);
 #   - each .sol file below pending/ needs its record of being seen RED on src/ as it stands, written by
 #     scripts/pending-red.sh (scripts/lib/pending-record.sh: keyed by the SHA-256 of the file list and contents of src/,
 #     test/, pending/, foundry.toml and remappings.txt - edit any and the record is not the current one; a record whose
 #     failure is the v4 harness's permission-bits line stays current while src/ and that file are as recorded, v0.4.2):
-#     without it `next: pending/<file> - not seen red on the code as it stands: <kit>/scripts/pending-red.sh <proj>
+#     without it `next: REFUSED - pending/<file> - not seen red on the code as it stands: <kit>/scripts/pending-red.sh <proj>
 #     pending/<file>` (exit 2), and with a record made on another key the same line says, in brackets before the
 #     command, which part of the key changed since (`its red record of <date> is stale - test/ changed since`). The record is read: its first line `pending-red: red <file> key=<key> <date>`, for that file and the
-#     key in its name, else `next: pending/<file>: record unreadable - run scripts/pending-red.sh again` (exit 2). A
+#     key in its name, else `next: REFUSED - pending/<file>: record unreadable - run scripts/pending-red.sh again` (exit 2). A
 #     directory below pending/ named *.sol is refused (it is not a test file). Escape: PENDING_RED=0, said on stderr -
 #     never printed in a refusal (v0.4.2) - and, when it lets a test through, written down (below, "a used escape");
 #   - a file STATE.md or DECISIONS.md cites under the project - a path starting `pending/`, `test/`, `src/` or
 #     `.gauntlet/reports/` (or the same after `./`) whose last part has an extension - must be a non-empty regular file
 #     (not LOG.md's: a LOG is history, and a file it names may be gone since, legitimately - K47):
-#     `next: <file> cites a file that does not exist: <path>`, `... that is empty: <path>`, `... that is a directory:
+#     `next: REFUSED - <file> cites a file that does not exist: <path>`, `... that is empty: <path>`, `... that is a directory:
 #     <path>` (exit 2). Not a citation: a path inside a fenced code
 #     block (the flag block's `pending:` notes excepted: they are read), one after `to write`, `planned` or `TODO` on
 #     the same line, one followed by `*`, `?`, `<`, `{` or `[` (a pattern or a placeholder), one with `..` (a range),
@@ -146,7 +146,7 @@
 #     assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec - phase 1's rows - is
 #     <proj>/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4). The owner, present, re-records a change of
 #     their own with scripts/init-state.sh, signed; an agent never does it.` - and a spec that is gone, the same with
-#     `is missing`. No record: nothing said. No escape, and the refusal never prints a command an agent could run.
+#     `is missing`. No record: nothing said here - from phase 2 a missing record is refused (v0.5.3, below). No escape, and the refusal never prints a command an agent could run.
 #     When spec.sha256 carries a `re-recorded` line (init-state --spec --by), every answer but the FIRST carries one note
 #     under it, `next: note - the spec <spec> was re-recorded [(<N> re-records; the last:)] on <date>, signed --by
 #     "<name>" (<old8> -> <new8>; .gauntlet/spec.sha256): the owner confirms that signature is theirs, or the spec in
@@ -185,6 +185,37 @@
 #     never the phase. And the rows that write the dossier (9b, 18, 18b) add one note after the answer: the environment
 #     divergences the owner stated in the DECISIONS.md beside STATE.md (`## <id> · <YYYY-MM-DD> · divergence: <what>`),
 #     or `none stated` - the dossier's section 8 row - and one more naming a heading that says divergence in another shape;
+#   - v0.5.3, silence is a refusal - a missing record is never a pass:
+#     - the anchors: from phase 2 (`phase:` 2 or higher - doctrine/NEXT.md row 4b, the first row by which init-state.sh
+#       must have run on a hook that compiles, its spec's phase closed; before it a hook still to be written or a spec not
+#       found leave init-state.sh nothing to record), a missing .gauntlet/spec.sha256 or .gauntlet/src.sha256 is refused,
+#       `next: REFUSED - anchor record missing: <proj>/.gauntlet/<spec|src>.sha256; re-run scripts/init-state.sh <proj>
+#       --spec <the spec>|--src --by <owner> - ...` (the owner's act, signed). A line 1 rewritten by hand with no
+#       `re-recorded` line is not caught by any hash (every anchor is recomputable from public inputs): procedure, not code;
+#     - the reports a check below reads (.gauntlet/reports/01-build.txt, 02-test.txt, 06-census.txt, 06-census-gate.txt,
+#       06-threats.txt) are records only with their seal, `<report>.sha256` beside each, written by the script that writes
+#       the report (scripts/lib/src-anchor.sh, report_check): no seal, a seal that does not match the report, or one made
+#       on another src/ than the one there is now (the anchor of src/ as it stands) - the check reads the report as
+#       missing, and its refusal says why in its parentheses: `report <name>: no anchor ...`, `... mismatch ...`, `...
+#       stale ...`. A file cited under .gauntlet/reports/ that has a seal is held to it (`cites a file that is not a
+#       record`), never for currency: a cited report is history;
+#     - four flags against the round records - the ROUND lines of the LOG.md beside STATE.md, read by scripts/round.sh
+#       --json: `last_audit_round` is the id of the newest discovery or regression ROUND line (none: no such line) - one
+#       the environment stopped, named by row 11b's note `round <id> stopped`, delivered nothing and is passed over;
+#       `ceiling ...; <M> used` has M the number of discovery, regression and black-box ROUND lines (every model round,
+#       NEXT.md); `blackbox` never_run with no black-box ROUND line (skipped_by_owner is not checked - left for later), current or stale with one,
+#       `stopped (<id>)` with a black-box ROUND line of that id; and `bytecode_changed_since` last_audit_round=no with the
+#       anchor of src/ as it stands the one scripts/round.sh wrote under that round's line (`src/ at round <id>: <hex>`)
+#       - a round recorded before v0.5.3 has no such line, and the flag is taken as written with one note after the
+#       answer, never refused for it. A flag that disagrees: `next: REFUSED - STATE says <flag>: <value>; the record says
+#       <value> (...)` - for last_audit_round naming the audit rounds after it that no `round <id> stopped` note names
+#       (row 11b: each stopped attempt is a ROUND line of its own, and needs its own note). A ROUND line round.sh cannot
+#       read back is refused, naming it (`next: REFUSED - <LOG.md> line <n> is not a ROUND line of the fixed shape ...`).
+#       The anchors, the owner absent: `init-state.sh <proj> --spec|--src --by walker`, accepted only with a note
+#       `owner absent: <why>` in STATE.md (init-state.sh's header); the record says `by: walker (owner absent)`, and the
+#       rows that write the dossier (9b, 18, 18b) add a note naming it - a divergence of the dossier's section 8;
+#     - every line next.sh prints with exit 2 starts `next: REFUSED - ` (the example's `FIRST - fill`, a pending/ test's,
+#       a cited file's included), on stderr as before;
 #   - after the answer, whatever it is, `next: note - the kit has N files not in its MANIFEST (<first three>): ...` on
 #     stdout when the kit's root has a MANIFEST and files under the kit are not in it - deps, builds, .git and what the
 #     kit's own runs write (corpus/, census/, broadcast/, .gauntlet/) aside, by the rule scripts/gen-manifest.sh and
@@ -221,9 +252,11 @@
 #          nothing waits on the owner: the table has a hole or a flag is stale (NEXT.md's STOP rule); 2 REFUSED - a flag
 #          missing, of an unknown value, a malformed line, a bad --judge, a pending/ test and the notes disagreeing, or the
 #          table and NEXT.md disagree, the spec changed or gone since init-state recorded it, a phase or a battery flag its
-#          records do not bear out: one line on stderr naming what - and, one line on stderr too, a state file that is
-#          still the kit's example (next: FIRST - fill ...), a pending/ test with no current, readable red record, a cited file
-#          that is not a non-empty regular file; 3 a row above the one given needs judgement
+#          records do not bear out, an anchor record missing from phase 2, a round flag its ROUND lines do not bear out: one
+#          line on stderr naming what - and, one line on stderr too, a state file that is still the kit's example (next:
+#          REFUSED - FIRST - fill ...), a pending/ test with no current, readable red record, a cited file that is not a
+#          non-empty regular file (or not the report its seal sealed): every exit-2 line starts `next: REFUSED - `;
+#          3 a row above the one given needs judgement
 #          (named), or rows still need judgement before the pause can be given.
 
 set -uo pipefail
@@ -270,7 +303,7 @@ esac
 #   <name>=<v>[,<v>...] (one of) | <name>!=<v> | <name>><n> (a number above n) | row:<id> (that row's condition) | -
 #   (always). Names: the flags of STATE.md, and the parts parse_state below derives from them.
 ROWS='
-0   | 4373c98d | act  | -                   | phase=sketch | -
+0   | 58249b92 | act  | -                   | phase=sketch | -
 1   | 89ce9899 | act  | -                   | open_findings.high_not_recorded>0 | does a high finding reproduce (open_findings high: {highs_not_recorded} not recorded to tell) that the owner has not been told of? The owner present: tell them, then write the note told: <YYYY-MM-DD> <id>[, <id>...] in notes: and the flags quiet this row (a told: note in another shape is not read; answered false once told, it stays on the record only here); absent: record every open high in waiting_on_owner as high <id>[, <id>...] - to tell, and the flags quiet this row
 2   | 64c00456 | gate | 11,11b,12,13,13b,15 | ceiling=reached | -
 3   | 8949c656 | act  | -                   | waiting_on_owner!=none | -
@@ -465,7 +498,7 @@ parse_state() {
     local re_stop='^stopped[[:space:]]+[(][A-Za-z0-9][A-Za-z0-9._-]*([,;[:space:]][^()]*)?[)]$'
     [[ $val =~ $re_stop ]] \
       || refuse "blackbox: '$val' is not stopped (<round id>): the id of the black-box round stopped twice (row 11b), in parentheses."
-    V[blackbox]=stopped
+    V[blackbox]=stopped; V[blackbox.id]="${val#*(}"; V[blackbox.id]="${V[blackbox.id]%%[),; ]*}"
   else
     enum blackbox never_run current stale skipped_by_owner stopped
   fi
@@ -542,9 +575,11 @@ parse_state() {
   elif [[ ${val,,} == *operator* ]]; then   # in ANY case: `set by the Operator` passed as the owner's ceiling (V24)
     [[ $val =~ $re_op ]] || refuse "flag 'ceiling': '$val' is not the operator's form, '<N> model rounds, set by the operator (owner absent); <M> used'."
     if [ "${BASH_REMATCH[2]}" -ge "${BASH_REMATCH[1]}" ]; then V[ceiling]=reached; else V[ceiling]=open; fi
+    V[ceiling.used]=$((10#${BASH_REMATCH[2]}))
     CEIL_SHOW="${BASH_REMATCH[2]} of ${BASH_REMATCH[1]} used, set by the operator (owner absent)"
   elif [[ $val =~ $re_ceil ]]; then
     if [ "${BASH_REMATCH[2]}" -ge "${BASH_REMATCH[1]}" ]; then V[ceiling]=reached; else V[ceiling]=open; fi
+    V[ceiling.used]=$((10#${BASH_REMATCH[2]}))
     CEIL_SHOW="${BASH_REMATCH[2]} of ${BASH_REMATCH[1]} used"
   else
     refuse "flag 'ceiling': '$val' is none of 'not agreed ...', 'undecided ...', '<N> model rounds ...; <M> used', '<N> model rounds, set by the operator (owner absent); <M> used'."
@@ -791,7 +826,7 @@ manifest_note() {
   if [ "$n" = 1 ]; then echo "next: note - the kit has 1 file not in its MANIFEST ($first): the kit is not to be changed; move it out"
   else echo "next: note - the kit has $n files not in its MANIFEST ($first): the kit is not to be changed; move them out"; fi
 }
-on_exit() { local rc=$?; [ -z "${SPEC_NOTE:-}" ] || echo "$SPEC_NOTE"; manifest_note; exit "$rc"; }
+on_exit() { local rc=$?; [ -z "${SPEC_NOTE:-}" ] || echo "$SPEC_NOTE"; [ -z "${ROUND_NOTE:-}" ] || echo "$ROUND_NOTE"; manifest_note; exit "$rc"; }
 if [ "$check_only" != 1 ]; then trap on_exit EXIT; fi
 
 # before any row: the kit's own tools proven on this machine, for these scripts and this forge (K31, K31b). Not for
@@ -857,8 +892,8 @@ if [ "$(basename "$ST_DIR")" = ".gauntlet" ]; then PROJ="$(dirname "$ST_DIR")"; 
 # the spec's hash in <proj>/.gauntlet/spec.sha256 (`<sha256>  <the spec's path relative to the project>`, the
 # .gauntlet/ beside STATE.md); with that record, a spec whose hash differs, or that is gone, is refused. No escape: the
 # owner's re-record (init-state.sh --spec ... --by "<name>", v0.4.1b D1b: signed, refused without the signature) is the
-# way on, and it is a written act - and the refusal never prints that command. No record: nothing said (a project
-# set up by hand, or before v0.4.1).
+# way on, and it is a written act - and the refusal never prints that command. No record: nothing said here (a project
+# set up by hand, or before v0.4.1) - from phase 2 its absence is refused after the flags are read (v0.5.3, below).
 c_sha256() { if command -v sha256sum > /dev/null 2>&1; then sha256sum < "$1" | cut -d' ' -f1; else shasum -a 256 < "$1" | cut -d' ' -f1; fi; }
 c_rec="$PROJ/.gauntlet/spec.sha256"
 if [ -f "$c_rec" ]; then
@@ -892,16 +927,105 @@ for c_f in "$STATE" "$ST_DIR/DECISIONS.md" "$ST_DIR/LOG.md"; do
     # Not for a DECISIONS.md or LOG.md beside a STATE.md of the project's own: init-state.sh refuses that STATE.md
     # (nor for the kit's own example read in place, <kit>/state/STATE.md: the kit is not a project)
     c_cmd=""; [ "$c_f" != "$STATE" ] || [ "$ST_DIR" = "$KIT/state" ] || c_cmd=" - $KIT/scripts/init-state.sh $PROJ writes an empty one"
-    echo "next: FIRST - fill $(basename "$c_f"): it is still the kit's example (state/README.md, \"empty the examples\")$c_cmd" >&2
+    echo "next: REFUSED - FIRST - fill $(basename "$c_f"): it is still the kit's example (state/README.md, \"empty the examples\")$c_cmd" >&2
     exit 2
   fi
   [ "$c_f" = "$STATE" ] || continue
   if c_same="$(example_by_values "$c_f" "$KIT")"; then
-    echo "next: FIRST - fill STATE.md: its values are still the kit's example's ($(head -1 <<< "$c_same"))" >&2
+    echo "next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(head -1 <<< "$c_same"))" >&2
     exit 2
   fi
 done
 parse_state "$STATE"
+
+# ------------------------------------------------------------------------------------------------ silence is a refusal (v0.5.3)
+# The anchors: from phase 2 - doctrine/NEXT.md row 4b, a hook that compiles and a spec phase closed: init-state.sh had
+# something to record by then - a missing anchor record is a refusal, never the "nothing said" it was (a review found it: delete
+# .gauntlet/spec.sha256 and the spec check was off, without a word). Before phase 2 they may be absent: a hook still to
+# be written, no spec found. A line 1 rewritten by hand with no `re-recorded` line is not caught here: the anchors are
+# recomputable from public inputs, and that defence is procedural (doctrine/EVIDENCE.md, "silence is a refusal").
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || refuse "$HERE/lib/src-anchor.sh is missing (the anchor of src/, and the reports' seals)."
+SRC_NOW="$(src_anchor_key "$PROJ")"
+if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 2 ]; then
+  [ -f "$PROJ/.gauntlet/spec.sha256" ] \
+    || refuse "anchor record missing: $PROJ/.gauntlet/spec.sha256; re-run scripts/init-state.sh $PROJ --spec <the owner's spec> --by <owner> - the owner's act, signed, never an agent's: from phase 2 (doctrine/NEXT.md row 4b) the spec is anchored, and phase ${V[phase]} is open; the owner absent: --by walker, with the note 'owner absent: <why>' in STATE.md's notes (the record then says by: walker (owner absent), and the dossier's section 8 carries it)"
+  [ -f "$PROJ/.gauntlet/src.sha256" ] \
+    || refuse "anchor record missing: $PROJ/.gauntlet/src.sha256; re-run scripts/init-state.sh $PROJ --src --by <owner> - the owner's act, signed, never an agent's: from phase 2 (doctrine/NEXT.md row 4b) src/ is anchored, and phase ${V[phase]} is open; the owner absent: --by walker, with the note 'owner absent: <why>' in STATE.md's notes (the record then says by: walker (owner absent), and the dossier's section 8 carries it)"
+fi
+# The round records: the ROUND lines of the LOG.md beside STATE.md (scripts/round.sh writes them, and reads them back
+# with --json - a line of another shape is not a record and is not counted). Four flags are held to them (the header).
+c_log="$ST_DIR/LOG.md"; c_logn="$(basename "$ST_DIR")/LOG.md"
+declare -a RR_ID=() RR_TYPE=()
+if [ -f "$c_log" ]; then
+  # a ROUND line round.sh cannot read back is no record, and it is not passed over in silence: refused, naming it
+  c_bad="$("$HERE/round.sh" --json "$c_log" 2>&1 > /dev/null | grep -m 1 '^round: line ')"
+  [ -z "$c_bad" ] \
+    || refuse "$c_logn ${c_bad#round: } - a round record is a ROUND line in the shape scripts/round.sh writes and reads back (round.sh --json): write it with scripts/round.sh, or correct it to that shape (state/README.md, \"The ROUND line\")"
+  while IFS=$'\t' read -r c_id c_ty; do RR_ID+=("$c_id"); RR_TYPE+=("$c_ty"); done \
+    < <("$HERE/round.sh" --json "$c_log" 2> /dev/null | LC_ALL=C sed -nE 's/^\{"id":"(([^"\\]|\\.)*)","phase":[0-9]+,"type":"([a-z-]+)",.*/\1\t\3/p')
+fi
+# a round the environment STOPPED (row 11b's note, `round <id> stopped`, read at the start of a note item) is spent - it
+# counts toward the ceiling - and delivered nothing: it is not the last audit round
+declare -A RR_STOPPED=()
+for c_line in ${NOTE_LINES[@]+"${NOTE_LINES[@]}"}; do
+  IFS=';' read -ra c_items <<< "${c_line//$'\302\267'/;}"
+  for c_item in ${c_items[@]+"${c_items[@]}"}; do
+    c_item="$(trim "$c_item")"
+    if [[ $c_item =~ ^[-*+][[:space:]]+(.*)$ ]]; then c_item="${BASH_REMATCH[1]}"; fi
+    if [[ $c_item =~ ^round[[:space:]]+([A-Za-z0-9._-]+)[[:space:]]+stopped([^A-Za-z0-9_]|$) ]]; then RR_STOPPED[${BASH_REMATCH[1]}]=1; fi
+  done
+done
+rr_audit="" rr_model=0 rr_bb=""
+for c_i in "${!RR_ID[@]}"; do
+  case "${RR_TYPE[$c_i]}" in
+    discovery | regression) [ -n "${RR_STOPPED[${RR_ID[$c_i]}]+x}" ] || rr_audit="${RR_ID[$c_i]}"; rr_model=$((rr_model + 1)) ;;
+    black-box) rr_bb="${rr_bb:+$rr_bb, }${RR_ID[$c_i]}"; rr_model=$((rr_model + 1)) ;;
+  esac
+done
+c_rwhere="the ROUND lines of $c_logn, scripts/round.sh writes one per round"
+# the audit rounds recorded after the one last_audit_round names (all of them when it names none, or one not on record)
+# that no `round <id> stopped` note names: when the environment stopped them (row 11b - a died attempt and its retry are
+# two ROUND lines, two ids), each needs its note; the refusal names them
+c_after=""
+for c_i in "${!RR_ID[@]}"; do
+  case "${RR_TYPE[$c_i]}" in discovery | regression) ;; *) continue ;; esac
+  [ "${RR_ID[$c_i]}" != "${V[last_audit_round]}" ] || { c_after=""; continue; }
+  [ -n "${RR_STOPPED[${RR_ID[$c_i]}]+x}" ] || c_after="${c_after:+$c_after, }${RR_ID[$c_i]}"
+done
+c_stopwhy=""
+[ -z "$c_after" ] || c_stopwhy="; if the environment stopped them (row 11b), each attempt needs its own note, and these have none: $c_after (notes: round <id> stopped)"
+if [ "${V[last_audit_round]}" = none ] && [ -n "$rr_audit" ]; then
+  refuse "STATE says last_audit_round: ${RAW[last_audit_round]}; the record says $rr_audit (the newest discovery or regression round in $c_rwhere)$c_stopwhy"
+elif [ "${V[last_audit_round]}" != none ] && [ "${V[last_audit_round]}" != "$rr_audit" ]; then
+  refuse "STATE says last_audit_round: ${RAW[last_audit_round]}; the record says ${rr_audit:-none} (the newest discovery or regression round in $c_rwhere)$c_stopwhy"
+fi
+if [ -n "${V[ceiling.used]+x}" ] && [ "${V[ceiling.used]}" != "$rr_model" ]; then
+  refuse "STATE says ceiling: ${RAW[ceiling]}; the record says $rr_model used (the discovery, regression and black-box rounds in $c_rwhere: every model round counts, doctrine/NEXT.md)"
+fi
+case "${V[blackbox]}" in
+  current | stale) [ -n "$rr_bb" ] \
+      || refuse "STATE says blackbox: ${RAW[blackbox]}; the record says none (no black-box round in $c_rwhere)" ;;
+  never_run) [ -z "$rr_bb" ] \
+      || refuse "STATE says blackbox: ${RAW[blackbox]}; the record says $rr_bb (a black-box round in $c_rwhere)" ;;
+  stopped) case ", $rr_bb, " in *", ${V[blackbox.id]}, "*) ;;
+      *) refuse "STATE says blackbox: ${RAW[blackbox]}; the record says ${rr_bb:-none} (the black-box rounds in $c_rwhere: ${V[blackbox.id]} is not one of them)" ;; esac ;;
+esac
+# bytecode_changed_since.last_audit_round=no: the anchor of src/ now, against the one round.sh wrote under that round's
+# line. A round recorded before v0.5.3 has no such line: the flag is taken as written, and a note says so - never refused
+ROUND_NOTE=""
+if [ "${V[last_audit_round]}" != none ] && [ "${V[bytecode_changed_since.last_audit_round]}" = no ]; then
+  c_key="$(LC_ALL=C awk -v p="src/ at round ${V[last_audit_round]}: " '{ sub(/\r$/, "") } index($0, p) == 1 { k = substr($0, length(p) + 1) } END { print k }' "$c_log")"
+  if [[ $c_key =~ ^([0-9a-f]{64}|none)$ ]]; then
+    [ "$c_key" = "$SRC_NOW" ] \
+      || refuse "STATE says bytecode_changed_since.last_audit_round: no; the record says yes (src/ is ${SRC_NOW:0:8} now, ${c_key:0:8} when round ${V[last_audit_round]} was recorded: its line 'src/ at round ${V[last_audit_round]}: ...' in $c_logn)"
+  else
+    ROUND_NOTE="next: note - round ${V[last_audit_round]} has no 'src/ at round ${V[last_audit_round]}: <anchor>' line in $c_logn (recorded before v0.5.3, or by hand): bytecode_changed_since.last_audit_round=no is taken as written, not checked"
+  fi
+fi
+# The reports' seals (v0.5.3): rep_ok <name> - 0 when .gauntlet/reports/<name> is a record: there, its seal matching it
+# and made on the src/ there is now (scripts/lib/src-anchor.sh, report_check). REP_WHY says why not (empty: not there).
+rep_ok() { local r=0; report_check "$PROJ/.gauntlet/reports/$1" "$SRC_NOW" || r=$?; REP_WHY="$RA_WHY"; return "$r"; }
 
 # ------------------------------------------------------------------------------------------------ the phase against its records
 # v0.4.1, D2: a walker wrote `phase: 2` seventeen minutes after `phase: 0`, by hand, while this script answered "row 4 -
@@ -920,8 +1044,8 @@ build_green() { # build_green <01-build.txt>: 0 when it is forge's record of a b
     END { exit (ok && !bad) ? 0 : 1 }'
 }
 if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 2 ]; then
-  build_green "$PROJ/.gauntlet/reports/01-build.txt" \
-    || refuse "phase ${V[phase]} is open but there is no green build record (.gauntlet/reports/01-build.txt): run $KIT/scripts/setup-deps.sh $PROJ then $KIT/scripts/battery.sh $PROJ (they may run at phase 1), or write the phase that is open"
+  { rep_ok 01-build.txt && build_green "$PROJ/.gauntlet/reports/01-build.txt"; } \
+    || refuse "phase ${V[phase]} is open but there is no green build record (.gauntlet/reports/01-build.txt${REP_WHY:+ - $REP_WHY}): run $KIT/scripts/setup-deps.sh $PROJ then $KIT/scripts/battery.sh $PROJ (they may run at phase 1), or write the phase that is open"
   [ "${V[phase]}" -lt 3 ] || [ "${V[battery]}" != never ] \
     || refuse "phase ${V[phase]} claims phase 2 closed and battery is never: $KIT/scripts/battery.sh $PROJ, or write the phase that is open"
 fi
@@ -930,11 +1054,12 @@ fi
 # shellcheck source=lib/parse.sh
 . "$HERE/lib/parse.sh" || refuse "$HERE/lib/parse.sh is missing (forge's summary line, read in the battery's record)."
 c_test="$PROJ/.gauntlet/reports/02-test.txt"
-c_sum="$(parse_test_summary "$c_test" 2> /dev/null)" || c_sum=""
+c_sum="" c_twhy=""
+if rep_ok 02-test.txt; then c_sum="$(parse_test_summary "$c_test" 2> /dev/null)" || c_sum=""; else c_twhy="$REP_WHY"; fi
 c_pass="" c_fail="" c_total=""
 [ -z "$c_sum" ] || read -r c_pass c_fail _ c_total <<< "$c_sum"
 if [ "${V[battery]}" = green ]; then
-  if [ ! -f "$c_test" ]; then c_why="there is no test record (.gauntlet/reports/02-test.txt)"
+  if [ ! -f "$c_test" ] || [ -n "$c_twhy" ]; then c_why="there is no test record (.gauntlet/reports/02-test.txt${c_twhy:+ - $c_twhy})"
   elif [ -z "$c_sum" ]; then c_why="its test record (.gauntlet/reports/02-test.txt) has no summary of forge's: no test ran"
   elif [ "$c_fail" != 0 ]; then c_why="its test record (.gauntlet/reports/02-test.txt) says $c_fail test(s) FAILED"
   elif [ "$c_pass" = 0 ]; then c_why="its test record (.gauntlet/reports/02-test.txt) says 0 tests passed: no test ran"
@@ -942,20 +1067,21 @@ if [ "${V[battery]}" = green ]; then
   [ -z "$c_why" ] || refuse "battery is green and $c_why: $KIT/scripts/battery.sh $PROJ, then write the battery flag its verdict gives"
 fi
 if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 3 ] && { [ -z "$c_sum" ] || [ "${c_total:-0}" = 0 ]; }; then
-  refuse "phase ${V[phase]} claims phase 2 closed and the battery's test record (.gauntlet/reports/02-test.txt) shows no test ran - a battery that failed before its tests left only a build record: $KIT/scripts/battery.sh $PROJ, or write the phase that is open"
+  refuse "phase ${V[phase]} claims phase 2 closed and the battery's test record (.gauntlet/reports/02-test.txt${c_twhy:+ - $c_twhy}) shows no test ran - a battery that failed before its tests left only a build record: $KIT/scripts/battery.sh $PROJ, or write the phase that is open"
 fi
 if [ "${V[phase]}" != sketch ] && [ "${V[phase]}" -ge 4 ]; then
   # phase 3's gate (AGENTS.md section 3, NEXT.md row 4b): an invariant suite, a census, the fork question answered
   c_inv="$( { [ -d "$PROJ/test" ] && grep -rlE --include='*.sol' 'function[[:space:]]+invariant[A-Za-z0-9_]*[[:space:]]*\(' "$PROJ/test" 2> /dev/null; } | head -1)"
   [ -n "$c_inv" ] \
     || refuse "phase ${V[phase]} claims phase 3 closed and there is no invariant suite under $PROJ/test (no .sol file with a function invariant...()): write it on the kit's InvariantBase (QUICKSTART.md 7b), then $KIT/scripts/battery.sh $PROJ - or write the phase that is open"
-  c_cen=""
+  c_cen="" c_cwhy=""
   for c_f in 06-census.txt 06-census-gate.txt; do
     c_p="$PROJ/.gauntlet/reports/$c_f"
+    if ! rep_ok "$c_f"; then [ -z "$REP_WHY" ] || c_cwhy="${c_cwhy:+$c_cwhy; }$REP_WHY"; continue; fi
     if [ -s "$c_p" ] && ! grep -q 'the campaign FAILED - no census' "$c_p"; then c_cen="$c_p"; break; fi
   done
   [ -n "$c_cen" ] \
-    || refuse "phase ${V[phase]} claims phase 3 closed and there is no census report (.gauntlet/reports/06-census.txt or 06-census-gate.txt): $KIT/scripts/census.sh $PROJ - or write the phase that is open"
+    || refuse "phase ${V[phase]} claims phase 3 closed and there is no census report (.gauntlet/reports/06-census.txt or 06-census-gate.txt${c_cwhy:+ - $c_cwhy}): $KIT/scripts/census.sh $PROJ - or write the phase that is open"
   c_fork=""
   for c_line in ${NOTE_LINES[@]+"${NOTE_LINES[@]}"}; do
     IFS=';' read -ra c_items <<< "${c_line//$'\302\267'/;}"
@@ -989,8 +1115,8 @@ if [ "${V[threat_model]}" = diffed ]; then
     *) refuse "$c_tmw and $TD_WHY: $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints" ;;
   esac
   c_rep="$PROJ/.gauntlet/reports/06-threats.txt"
-  [ -f "$c_rep" ] \
-    || refuse "$c_tmw and there is no .gauntlet/reports/06-threats.txt (the report threat-diff.sh writes, with the sha256 of the two lists it diffed): re-run $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints"
+  rep_ok 06-threats.txt \
+    || refuse "$c_tmw and there is no .gauntlet/reports/06-threats.txt (${REP_WHY:-the report threat-diff.sh writes, with the sha256 of the two lists it diffed}): re-run $KIT/scripts/threat-diff.sh $PROJ, then write the line it prints"
   for c_f in THREATS-independent.md THREATS.md; do
     c_h="$(LC_ALL=C awk -v p="sha256 .gauntlet/$c_f: " '{ sub(/\r$/, "") } index($0, p) == 1 { print substr($0, length(p) + 1); exit }' "$c_rep")"
     c_now="$(td_sha256 "$PROJ/.gauntlet/$c_f")"; c_hs="${c_h:0:8}"
@@ -1106,9 +1232,9 @@ while IFS= read -r c_f; do
   # current: on the full key, or a permission-bits record on its own (src/ and the file as recorded: pending-record.sh)
   pending_record_current "$PROJ" "$c_f" && continue
   case "$PR_STATE" in
-    unreadable) c_msg="next: $c_f: record unreadable - run scripts/pending-red.sh again ($KIT/scripts/pending-red.sh $PROJ $c_f)"; c_why="record unreadable" ;;
-    stale) c_msg="next: $c_f - not seen red on the code as it stands ($PR_WHY): $KIT/scripts/pending-red.sh $PROJ $c_f"; c_why="not seen red on the code as it stands: $PR_WHY" ;;
-    *) c_msg="next: $c_f - not seen red on the code as it stands: $KIT/scripts/pending-red.sh $PROJ $c_f"; c_why="not seen red on the code as it stands" ;;
+    unreadable) c_msg="next: REFUSED - $c_f: record unreadable - run scripts/pending-red.sh again ($KIT/scripts/pending-red.sh $PROJ $c_f)"; c_why="record unreadable" ;;
+    stale) c_msg="next: REFUSED - $c_f - not seen red on the code as it stands ($PR_WHY): $KIT/scripts/pending-red.sh $PROJ $c_f"; c_why="not seen red on the code as it stands: $PR_WHY" ;;
+    *) c_msg="next: REFUSED - $c_f - not seen red on the code as it stands: $KIT/scripts/pending-red.sh $PROJ $c_f"; c_why="not seen red on the code as it stands" ;;
   esac
   if [ "${PENDING_RED-}" = 0 ]; then c_let="${c_let:+$c_let, }$c_f ($c_why)"; continue; fi
   echo "$c_msg" >&2
@@ -1159,17 +1285,24 @@ for c_f in "$STATE" "$ST_DIR/DECISIONS.md"; do
   [ -f "$c_f" ] || continue
   c_is=0; [ "$c_f" != "$STATE" ] || c_is=1
   while IFS=$'\t' read -r c_n c_p; do
-    # a non-empty regular file (K48: an empty file or a directory at the cited path passed as "exists" - V40)
-    [ -f "$PROJ/$c_p" ] && [ -s "$PROJ/$c_p" ] && continue
+    # a non-empty regular file (K48: an empty file or a directory at the cited path passed as "exists" - V40) - and a
+    # report under .gauntlet/reports/ with a seal beside it, the report its seal sealed (v0.5.3; history: not currency)
+    if [ -f "$PROJ/$c_p" ] && [ -s "$PROJ/$c_p" ]; then
+      case "$c_p" in .gauntlet/reports/*) [ -f "$PROJ/$c_p.sha256" ] && ! report_check "$PROJ/$c_p" - && c_what="is not a record ($RA_WHY)" || continue ;;
+        *) continue ;; esac
+    else
+      c_what=""
+    fi
     c_hit=""   # a path written relative to a bench named on its line (`.gauntlet/bench/v01`, `test/verify/V01.t.sol`)
-    for c_b in "$PROJ"/.gauntlet/bench/*/; do [ -f "$c_b$c_p" ] && [ -s "$c_b$c_p" ] && { c_hit=1; break; }; done
+    [ -n "$c_what" ] || for c_b in "$PROJ"/.gauntlet/bench/*/; do [ -f "$c_b$c_p" ] && [ -s "$c_b$c_p" ] && { c_hit=1; break; }; done
     [ -z "$c_hit" ] || continue
-    if [ -d "$PROJ/$c_p" ]; then c_what="is a directory"
+    if [ -n "$c_what" ]; then :
+    elif [ -d "$PROJ/$c_p" ]; then c_what="is a directory"
     elif [ -f "$PROJ/$c_p" ]; then c_what="is empty"
     elif [ -e "$PROJ/$c_p" ]; then c_what="is not a regular file"
     else c_what="does not exist"; fi
     if [ "${CITED_FILES-}" = 0 ]; then c_let="${c_let:+$c_let, }$c_p (cited by $(basename "$c_f") line $c_n; it $c_what)"; continue; fi
-    echo "next: $(basename "$c_f") cites a file that $c_what: $c_p (line $c_n of $c_f)" >&2
+    echo "next: REFUSED - $(basename "$c_f") cites a file that $c_what: $c_p (line $c_n of $c_f)" >&2
     exit 2
   done < <(cited_paths "$c_f" "$c_is")
 done
@@ -1206,6 +1339,13 @@ divergence_note() {
   if [ -n "$got" ]; then echo "next: note - environment divergences stated by the owner (DECISIONS.md, ## <id> · <date> · divergence: <what>): $got - the dossier's section 8 row \"environment divergences stated by the owner\" carries each"
   else echo "next: note - environment divergences stated by the owner (DECISIONS.md, ## <id> · <date> · divergence: <what>): none stated - the dossier's section 8 row \"environment divergences stated by the owner\" says \"none stated\""; fi
   [ -z "$odd" ] || echo "next: note - DECISIONS.md line(s) $odd name a divergence in another shape than ## <id> · <YYYY-MM-DD> · divergence: <what>, and are not read"
+  # an anchor the walker signed, the owner absent (init-state.sh --by walker): a divergence the dossier's section 8 carries
+  local c_w
+  for c_w in spec.sha256 src.sha256; do
+    if [ -f "$PROJ/.gauntlet/$c_w" ] && grep -qx 'by: walker (owner absent)' "$PROJ/.gauntlet/$c_w"; then
+      echo "next: note - .gauntlet/$c_w says by: walker (owner absent): the walker signed that anchor, not the owner - the dossier's section 8 carries it as a divergence (\"anchor signed by the walker, the owner absent\")"
+    fi
+  done
 }
 because() { local w="$1"; [ -z "$ROW1_QUIET" ] || w="${w:+$w; }$ROW1_QUIET"; echo "because: ${w:-the row holds whatever the flags say}"; }
 # paused <why>: NEXT.md row 3, "if none, stop and say what is waiting" - the end of the route with the owner absent (after

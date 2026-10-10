@@ -36,8 +36,16 @@
 #                        no policy reads it today
 #          --dry-run     print the line, write nothing
 # Text fields may not contain "|" (the separator) or control characters.
+# And two records beside it (v0.5.3, silence is a refusal - scripts/next.sh reads them):
+#          - under the ROUND line, one line: `src/ at round <id>: <the anchor of src/ as it stands, 64 hex>` (`none`: no
+#            src/; scripts/lib/src-anchor.sh) - the code the round read. next.sh holds `bytecode_changed_since.
+#            last_audit_round=no` to it; a round recorded before v0.5.3 has none, and the flag is then taken as written,
+#            with a note. The project is LOG.md's directory, or its parent when that is .gauntlet/ (next.sh's rule).
+#          - the report's seal, <report>.sha256 beside it (scripts/lib/src-anchor.sh, report_seal), when --report names a
+#            file: an absolute path, else one from the project, else from LOG.md's directory (reports/r05.md from
+#            .gauntlet/LOG.md), else from here. No such file: one line says so, and nothing is sealed.
 # Exit:    0 written (or printed); 2 REFUSED - a malformed or missing argument, a duplicate id, or no LOG.md: nothing was
-#          written. --json: 0 every ROUND line read; 1 a ROUND line is not of the shape this script writes (named on
+#          written; 1 a library of the kit's missing (the environment, v0.5.3), nothing written. --json: 0 every ROUND line read; 1 a ROUND line is not of the shape this script writes (named on
 #          stderr, not printed - the others are); 2 no such file.
 
 set -uo pipefail
@@ -45,6 +53,7 @@ set -uo pipefail
 TYPES="interview spec battery discovery regression black-box verifier executor promotion rehearsal handoff simulation threat-model"
 
 refuse() { echo "round: $* NOTHING WRITTEN." >&2; exit 2; }
+HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # ------------------------------------------------------------------------------------------------ --json: the view
 if [ "${1:-}" = "--json" ]; then
@@ -182,6 +191,20 @@ if [ "$dry" = "1" ]; then printf '%s\n' "$line"; exit 0; fi
 # its own paragraph: a blank line before it unless the file already ends in one
 if [ -s "$LOG" ] && [ -n "$(tail -c 1 "$LOG")" ]; then printf '\n' >> "$LOG"; fi
 if [ -s "$LOG" ] && [ -n "$(tail -n 1 "$LOG")" ]; then printf '\n' >> "$LOG"; fi
-printf '%s\n' "$line" >> "$LOG" || { echo "round: could not write to $LOG." >&2; exit 2; }
-printf '%s\n' "$line"
+# v0.5.3: the anchor of src/ the round read, on the line under it (the header), and the report's seal
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "round: $HERE/lib/src-anchor.sh is missing. NOTHING WRITTEN." >&2; exit 1; }
+LOG_DIR="$(cd "$(dirname "$LOG")" && pwd)" || refuse "cannot enter the directory of $LOG."
+if [ "$(basename "$LOG_DIR")" = ".gauntlet" ]; then PROJ="$(dirname "$LOG_DIR")"; else PROJ="$LOG_DIR"; fi
+key_line="src/ at round $id: $(src_anchor_key "$PROJ")"
+printf '%s\n%s\n' "$line" "$key_line" >> "$LOG" || { echo "round: could not write to $LOG." >&2; exit 2; }
+printf '%s\n%s\n' "$line" "$key_line"
+rep_file=""
+case "$report" in
+  /*) [ ! -f "$report" ] || rep_file="$report" ;;
+  *) for c in "$PROJ/$report" "$LOG_DIR/$report" "$PWD/$report"; do [ -f "$c" ] && { rep_file="$c"; break; }; done ;;
+esac
+if [ -z "$rep_file" ]; then echo "round: the report $report is not a file here (from the project, from $LOG_DIR or from here): not sealed"
+elif report_seal "$PROJ" "$rep_file" "$HERE/round.sh"; then echo "round: sealed the report: $rep_file.sha256"
+else echo "round: could not write $rep_file.sha256: the report is not sealed"; fi
 echo "round: appended to $LOG. Write the entry's body under it (state/README.md)."

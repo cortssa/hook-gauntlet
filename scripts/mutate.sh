@@ -58,6 +58,9 @@
 #          over it (`--allow-failure`), and a mutant whose summary cannot be read has not survived anything (rc=2).
 #          2 nothing was proven              (bad arguments, no unique match, the change does not compile, the UNCHANGED
 #                                             code is not green under the same TEST_FLAGS, or no test ran at all)
+#          1 too (v0.5.3, the kit's convention: doctrine/NEXT.md) when a library of the kit's is missing - the environment
+# Seals:   (v0.5.3) the mutant's report, <OUT_DIR>/<LABEL>.txt, gets <LABEL>.txt.sha256 beside it once this run writes it
+#          (scripts/lib/src-anchor.sh, report_seal: on the project's src/, the copy's mutant aside).
 # A kill has a reason (v0.5.1): for each failing test of a killed mutant, `kill: <reason> - <the failing test> ("<forge's
 #          message>")` in the output and in the mutant's report, <OUT_DIR>/<LABEL>.txt - `assertion` (an assert failed,
 #          or an expected revert did not come or came with another error), `revert` (the code reverted where the test
@@ -87,11 +90,13 @@ OUT_DIR="${OUT_DIR:-$PROJECT/.gauntlet/reports/mutants}"
 case "$OUT_DIR" in /*) ;; *) OUT_DIR="$PWD/$OUT_DIR" ;; esac   # the logs are written after a cd into the copy
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
-. "$HERE/lib/parse.sh" || { echo "mutate: $HERE/lib/parse.sh is missing"; exit 2; }
+. "$HERE/lib/parse.sh" || { echo "mutate: $HERE/lib/parse.sh is missing"; exit 1; }
 # shellcheck source=lib/forge-env.sh
-. "$HERE/lib/forge-env.sh" || { echo "mutate: $HERE/lib/forge-env.sh is missing"; exit 2; }
+. "$HERE/lib/forge-env.sh" || { echo "mutate: $HERE/lib/forge-env.sh is missing"; exit 1; }
 # shellcheck source=lib/owner-tree.sh
-. "$HERE/lib/owner-tree.sh" || { echo "mutate: $HERE/lib/owner-tree.sh is missing"; exit 2; }
+. "$HERE/lib/owner-tree.sh" || { echo "mutate: $HERE/lib/owner-tree.sh is missing"; exit 1; }
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "mutate: $HERE/lib/src-anchor.sh is missing"; exit 1; }
 # forge reads a test filter and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, foundry_match_contract,
 # FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only FOUNDRY_MATCH_CONTRACT): one exported
 # for another command would decide the verdict in silence (measured, 2026-09-27: FORGE_ALLOW_FAILURE made a broken variant
@@ -159,7 +164,13 @@ fi
 [ -d "$COPY_PARENT" ] || copy_refused "it is not a directory (it does not exist?)"
 COPY="$(mktemp -d -p "$COPY_PARENT" mutate.XXXXXX 2> /dev/null)" || COPY=""
 if [ -z "$COPY" ] || [ ! -d "$COPY" ]; then COPY=""; copy_refused "mktemp could not create a directory in it"; fi
+LOG_WRITTEN=0   # v0.5.3: the mutant's report, once this run writes it, is sealed on the way out (cleanup)
 cleanup() {
+  # its seal: <LABEL>.txt.sha256 beside it, on the project's src/ - not the copy's, which the mutant changed
+  # (scripts/lib/src-anchor.sh, report_seal)
+  if [ "$LOG_WRITTEN" = 1 ] && [ -f "$LOG" ]; then
+    report_seal "$PROJECT" "$LOG" "$HERE/mutate.sh" || echo "mutate: could not write $LOG.sha256 - next.sh does not read it as a record"
+  fi
   [ -n "${COPY:-}" ] || return 0
   if [ "${KEEP:-0}" = "1" ]; then echo "copy kept at $COPY"; else rm -rf "${COPY:?}"; fi
 }
@@ -280,6 +291,7 @@ count="$(awk '
     while ((i = index(line, old)) > 0) { n++; out = out substr(line, 1, i - 1) new; line = substr(line, i + length(old)) }
     print out line > ENVIRON["MUT_TARGET"] }
   END { print n }' "$WORK/$FILE")"
+LOG_WRITTEN=1
 if [ "$count" != "1" ]; then
   echo "mutate: the old string matched $count time(s) in $FILE; it must match exactly once. NOTHING PROVEN." | tee "$LOG"
   exit 2

@@ -2,6 +2,56 @@
 
 ## Unreleased (v0.5)
 
+- **v0.5.3 - silence is a refusal.** A review of the kit's records found four places where a missing or unbacked record
+  read as a pass. These are corrections of false greens, not features. (1) **The anchors.** Deleting
+  `.gauntlet/spec.sha256` turned the spec check off without a word, and deleting `src.sha256` made the battery's and
+  `pending-red.sh`'s check return "no anchor recorded". From phase 2 (`doctrine/NEXT.md` row 4b: a hook that compiles,
+  the spec's phase closed - before it, a hook still to be written or a spec not found leave `init-state.sh` nothing to
+  record) `next.sh` refuses either record missing, and the battery and `pending-red.sh` refuse `src.sha256` missing:
+  `REFUSED - anchor record missing: <proj>/.gauntlet/<spec|src>.sha256; re-run scripts/init-state.sh <proj> --spec <the
+  owner's spec>|--src --by <owner> - ...`. (2) **The reports are sealed.** `battery.sh`, `fuzz-long.sh`, `census.sh`,
+  `mutate.sh`, `static-triage.sh`, `threat-diff.sh` and `round.sh` (the round's report) write `<report>.sha256` beside
+  each report they write: its SHA-256 with the anchor of `src/` it ran on, and a line naming the script and its own
+  sha256. `next.sh` reads `01-build.txt`, `02-test.txt`, the census reports and `06-threats.txt` only with a seal that
+  matches and was made on the `src/` there is now. Without one, the check reads the report as missing and says why in
+  its refusal (`report <name>: no anchor` / `mismatch` / `stale`). A report cited by path with a seal is held to it, but
+  not for currency. (3) **Four flags against the round records.** `next.sh` reads the ROUND lines of the `LOG.md`
+  beside `STATE.md` (through `round.sh --json`). `last_audit_round` must be the newest discovery or regression round,
+  passing over one that row 11b's note `round <id> stopped` names. The ceiling's `M used` must be the count of
+  discovery, regression and black-box rounds. `blackbox` must agree with the black-box rounds: `never_run` with none,
+  `current` or `stale` with one, `stopped (<id>)` with that one. `bytecode_changed_since`'s `last_audit_round=no` holds
+  only while `src/` is what `round.sh` now writes under each ROUND line, `src/ at round <id>: <anchor>`. A round
+  recorded before v0.5.3 has no such line: the flag is taken as written, with a note. A disagreement is refused as
+  `REFUSED - STATE says <flag>: <value>; the record says <value>`. (4) **One exit-code convention**, written in
+  `doctrine/NEXT.md` ("The kit's exit codes"): 0 done or yes, 1 usage or the environment, 2 a refusal or a verdict of
+  no, 3+ only where a header documents it. Fixed to it: a library of the kit's missing (2 in `mutate.sh`,
+  `fuzz-long.sh`, `pending-red.sh` and six others, 1 in `battery.sh` and `backtest.sh`: now 1 everywhere a script says so
+  on its own line), and a build record that cannot be removed or nothing to hash with (now 1 in `fuzz-long.sh` and
+  `census.sh`, as in `battery.sh`). Every line `next.sh` prints with exit 2 now starts `next: REFUSED - `: the example's
+  `FIRST - fill`, a `pending/` test's and a cited file's had no prefix. (5) `doctrine/EVIDENCE.md` §9, "Silence is a
+  refusal", says what a seal proves: currency, not authorship. Every input of a seal or an anchor is public. A model
+  that computes one by hand gets past it: the seal makes a typed report a deliberate act, and nothing more. A line 1
+  rewritten by hand with no `re-recorded` line is caught by no hash. The defence against a deliberate fabricator is the
+  verifier who reproduces and the owner who reads the LOG and the dossier. The ROUND lines, and the `src/ at round`
+  line and `round <id> stopped` note beside them, are text and can be typed by hand too; the verifier confronts them
+  with the sealed reports. (6) **The owner absent.** A hook handed over as code with no owner's spec had no way past
+  phase 2. The anchor stays required; the walker may sign it, `init-state.sh <proj> --spec|--src --by walker`, accepted
+  only with a note `owner absent: <why>` in STATE.md (a new `notes:` convention: the kit had no record of the owner's
+  absence a script reads) and refused, saying so, without it. The record carries `by: walker (owner absent)`; rows 9b,
+  18 and 18b name it in a note, and the dossier's section 8 carries it as a divergence. The missing-anchor refusal names
+  this path. (7) A ROUND line `round.sh --json` cannot read back is refused, naming the line; and the refusal of a
+  `last_audit_round` behind the record names the audit rounds after it that no `round <id> stopped` note names (row 11b:
+  each stopped attempt is a line of its own). The selftest's `nx` seals the fixtures'
+  reports and writes the ROUND lines their flags claim before each run, because a fixture is a project the scripts
+  made. The new cases run raw.
+  **Known gaps:** the exit-code convention is written, and the older scripts keep the codes their headers document:
+  1 for a run that failed its own check (BATTERY FAILED, SURVIVED, a floor, a margin, STALE BUILD, not diffed); 1 for
+  a refusal in `backtest.sh`, `fetch-bytecode.sh` and `bench.sh`; 2 for a bad argument in four scripts. `NEXT.md`
+  lists them, and none was changed. `size.sh`'s and `backtest.sh`'s reports are not sealed, and `next.sh` reads
+  neither. A round report is sealed only when `round.sh` finds its file. The `src/` key covers `src/` alone, not a
+  compiler setting, so `bytecode_changed_since` is caught only when `src/` changed. `blackbox: skipped_by_owner` is not
+  held to the black-box rounds (left for later). `--by walker` is a word anyone at a shell can type, as `--by` was.
+
 - **v0.5.2 - what the code says about itself.** Measured against a human report of the same code, the first real case
   found its critical and high findings and none of its five medium, low or note ones. Of those five, one was of this
   kind (documentation that leaves the code's parameters out); the others were of kinds the attack catalogue

@@ -77,16 +77,21 @@
 #          over one: a FAIL line or a failed count is a failed campaign); 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
 #          than the everyday one, no invariant campaign ran - including a build or a setUp that failed before any could,
 #          which is never reported as a counterexample - or one skipped itself, or the bench cannot hold the project).
+#          1 too (v0.5.3, the kit's convention: doctrine/NEXT.md) when the environment fails it before any campaign: a
+#          library of the kit's missing, or a build record that cannot be removed (scripts/lib/forge-env.sh).
+# Seals:   (v0.5.3) 05-fuzz-long.txt and 06-census-long.txt get <report>.sha256 beside them (scripts/lib/src-anchor.sh).
 
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
-. "$HERE/lib/parse.sh" || { echo "fuzz-long: $HERE/lib/parse.sh is missing"; exit 2; }
+. "$HERE/lib/parse.sh" || { echo "fuzz-long: $HERE/lib/parse.sh is missing"; exit 1; }
 # shellcheck source=lib/forge-env.sh
-. "$HERE/lib/forge-env.sh" || { echo "fuzz-long: $HERE/lib/forge-env.sh is missing"; exit 2; }
+. "$HERE/lib/forge-env.sh" || { echo "fuzz-long: $HERE/lib/forge-env.sh is missing"; exit 1; }
 # shellcheck source=lib/owner-tree.sh
-. "$HERE/lib/owner-tree.sh" || { echo "fuzz-long: $HERE/lib/owner-tree.sh is missing"; exit 2; }
+. "$HERE/lib/owner-tree.sh" || { echo "fuzz-long: $HERE/lib/owner-tree.sh is missing"; exit 1; }
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "fuzz-long: $HERE/lib/src-anchor.sh is missing"; exit 1; }
 # forge reads a test filter, a budget and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, FOUNDRY_TEST,
 # FOUNDRY_INVARIANT_RUNS, FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only
 # FOUNDRY_MATCH_CONTRACT): one exported for another command would narrow or weaken this run in silence (measured,
@@ -186,7 +191,7 @@ global_shown="${FORGE_GLOBAL_KEYS:+; from $FORGE_GLOBAL_FILE: $FORGE_GLOBAL_KEYS
 # invariants, over a planted mutant), so its record is removed and the campaign builds from nothing - and so when a source
 # changed that forge's incremental build does not follow, or nothing recorded what the last build read (forge-env.sh)
 if [ "$ESTIMATE_ONLY" != "1" ]; then   # the cost alone builds nothing: the project's cache is not touched
-  forge_cache_rehome fuzz-long; [ "$?" -ne 2 ] || { echo "fuzz-long: NOTHING PROVEN."; exit 2; }
+  forge_cache_rehome fuzz-long; [ "$?" -ne 2 ] || { echo "fuzz-long: NOTHING PROVEN."; exit 1; }   # the environment (v0.5.3: exit 1, as battery.sh)
   sources_pre="$(forge_sources_snapshot)"
 fi
 flags_shown="$(forge_flags_shown "$FORGE_FLAGS")"
@@ -354,6 +359,12 @@ else
   echo "no census was written: the suite does not call writeCensus() from afterInvariant(), or foundry.toml lacks the"
   echo "fs_permissions line for ./census. What this campaign REACHED is unmeasured - the log above shows one run of it."
 fi
+# v0.5.3: the two reports sealed (scripts/lib/src-anchor.sh, report_seal: <report>.sha256 beside each, on the project's
+# src/ - the bench runs a copy of it), whatever the verdict below: a report with no seal is not a record
+for fl_r in 05-fuzz-long.txt 06-census-long.txt; do
+  [ ! -f "$OUT_DIR/$fl_r" ] || report_seal "$SRC" "$OUT_DIR/$fl_r" "$HERE/fuzz-long.sh" \
+    || echo "fuzz-long: could not write $OUT_DIR/$fl_r.sha256 - next.sh does not read $fl_r as a record"
+done
 if [ "$rc" -eq 0 ] && [ "$calls" = "0" ]; then
   echo "fuzz-long: NO INVARIANT CAMPAIGN RAN (MATCH='$MATCH' matched nothing?). NOTHING PROVEN."
   exit 2

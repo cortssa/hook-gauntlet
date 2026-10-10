@@ -210,3 +210,21 @@ the token is assumed to do, what liquidity or price conditions are assumed - eac
 That table is an attack surface like any other: the discovery round that attacks the does-not-apply list attacks it too.
 It is the only defence this kit has against proving the wrong theorem beautifully, and it is a weak one. The strong
 one is the human audit, which is why the route ends there.
+
+## 9. Silence is a refusal - and what the records prove
+
+**Silence is a refusal.** A record the route needs and cannot find is never a pass. From phase 2 (`NEXT.md` row 4b)
+`scripts/next.sh` refuses a missing `.gauntlet/spec.sha256` or `src.sha256`, and the battery and `pending-red.sh` refuse a
+missing `src.sha256`; a report a check reads (`01-build.txt`, `02-test.txt`, the census reports, `06-threats.txt`) is a
+record only with the seal its script wrote beside it, `<report>.sha256` - its SHA-256 with the anchor of `src/` it ran
+on - and is read as missing without one, with one that does not match it, or with one made on another `src/`; and
+`last_audit_round`, the ceiling's `M used`, `blackbox` and `bytecode_changed_since`'s `last_audit_round` are held to
+the ROUND lines `scripts/round.sh` writes. Said plainly: the anchors prove currency, not authorship. Every input of a seal,
+an anchor or a red record is public, so a model that computes a sidecar by hand gets past it - the seals turn an
+accidental fabrication (a report a model typed) into a deliberate act, and stop there; and a line 1 of `spec.sha256` or
+`src.sha256` rewritten by hand, with no `re-recorded` line under it, is caught by no hash at all. The ROUND lines are
+text too, and so are the `src/ at round <id>:` line under each and a `round <id> stopped` note: any of them can be typed
+by hand, and `next.sh` reads what is written. The defence there is the verifier who confronts the ROUND lines with the
+sealed reports (a round with no report, a report with no round, a count that does not add up). The defence against
+a deliberate fabricator is not cryptographic: it is the verifier who reproduces the numbers from the commands
+(`VERIFY.md`), and the owner who reads `LOG.md` and the dossier.

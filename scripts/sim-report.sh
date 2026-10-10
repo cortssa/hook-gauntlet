@@ -8,6 +8,7 @@
 #
 # Usage:   scripts/sim-report.sh <file>          (the file GAUNTLET_SIM pointed at; census/sim.tsv by convention)
 # Exit:    0 printed; 2 the file is empty or missing (NOTHING MEASURED).
+#          1: a library of the kit's missing (v0.5.3, the kit's convention, doctrine/NEXT.md: the environment).
 #
 # Columns of a line (tab separated, written by SimLedger.line):
 #   label  agent  decided  executed  refused  in  out  quoted  shortfall  worst  windfall  gas  pnl  gasCost  pnlNet  atQuote
@@ -25,7 +26,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
-. "$HERE/lib/parse.sh" || { echo "sim-report: $HERE/lib/parse.sh is missing"; exit 2; }
+. "$HERE/lib/parse.sh" || { echo "sim-report: $HERE/lib/parse.sh is missing"; exit 1; }
 [ -s "${1:-}" ] || { echo "sim-report: ${1:-<no file>} is empty or missing. NOTHING MEASURED."; exit 2; }
 # A line with fewer than 13 fields, or with a field in columns 3-16 that is not an integer, is MALFORMED: counted and
 # named below, never added up (awk reads "12a" as 12 and "-" as 0). `scripts/lib/parse.sh`, `sim_ledger_filter`.

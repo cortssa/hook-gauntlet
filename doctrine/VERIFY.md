@@ -23,7 +23,8 @@ The short version: **a result you did not check is a rumour with good formatting
    Say in the log what you did NOT read.
 6. **Reproduce before you fix.** Every high and medium finding, on a bench of your own, by your own means - not by
    re-running their script. A finding you could not reproduce is not yet yours to fix, and a fix applied to an
-   unreproduced finding is a guess.
+   unreproduced finding is a guess. Confront the LOG's ROUND lines with the sealed reports too (`EVIDENCE.md` section
+   9): a ROUND line is text anyone can type, and a seal only says a report is current.
 7. **Verify with your own instruments, not theirs.** Your own mutants, your own bench, your own copy of the tree. An
    executor's tests passing under the executor's runner is one opinion, stated twice.
 8. **Ask WHY it passes, not THAT it passes.** Read the name and the message of the test that went red, the revert

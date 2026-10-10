@@ -32,7 +32,7 @@ location:                  .gauntlet/ | root       (where these files and the do
 dossier:                   none | skeleton (K open, N judges not done) | complete (N judges not done)   (K = high + medium + low still open, informational NOT counted; `complete` means no finding is open - with one open the dossier is a skeleton)
 rehearsal:                 n/a (no runbook) | not yet | done (YYYY-MM-DD)   (phase 7: a deployment runbook in the dossier, followed or not yet by an agent that did not write it)
 threat_model:              not yet | diffed (<n> matched, <m> new, <k> refused, <h> handed)   (phase 3: a fresh agent's `.gauntlet/THREATS-independent.md`, from `briefs/threat-model.md`, against the walker's `.gauntlet/THREATS.md`; `scripts/threat-diff.sh <proj>` prints the line - n matched by the walker's list, m new to it and now an invariant, k refused in `DECISIONS.md`, h handed on by name - to the model round or the human audit - in `THREATS.md`, the owner leaving them undecided)
-notes:                     free lines the table reads by name at the START of a note item (a line, or a part after `·` or `;`; a list marker before it allowed): `static triage: <tools>` (row 7: `scripts/static-triage.sh` prints it - `static triage: forge lint only, Slither not installed` when that is all) · `not fuzzable: <id> - <why>` · `real manager: <what replaced it>` (row 7b) · `fork: <answer or n/a - why>` · `pending: <id> - <promise>, owner undecided` (row 6b; several ids: `pending: F-4, F-5 - ...`) · `told: <YYYY-MM-DD> <id>[, <id>...]` (row 1, the owner present: the open highs told to them, by id, on that day)
+notes:                     free lines the table reads by name at the START of a note item (a line, or a part after `·` or `;`; a list marker before it allowed): `static triage: <tools>` (row 7: `scripts/static-triage.sh` prints it - `static triage: forge lint only, Slither not installed` when that is all) · `not fuzzable: <id> - <why>` · `real manager: <what replaced it>` (row 7b) · `fork: <answer or n/a - why>` · `pending: <id> - <promise>, owner undecided` (row 6b; several ids: `pending: F-4, F-5 - ...`) · `told: <YYYY-MM-DD> <id>[, <id>...]` (row 1, the owner present: the open highs told to them, by id, on that day) · `owner absent: <why>` (the record that the owner is not there to sign: with it, and only with it, `scripts/init-state.sh <proj> --spec|--src --by walker` anchors the spec or `src/` in the owner's place - a hook handed over as code with no owner's spec anchors the route's `.gauntlet/SPEC.md` so - and the record says `by: walker (owner absent)`, a divergence of the dossier's section 8)
 ```
 
 A new project starts with: `phase: 0`, every `bytecode_changed_since` flag `yes` (nothing has run yet), `battery: never`,
@@ -65,7 +65,7 @@ gets its one retry - and the reading continues below it, at row 15.
 
 | # | if this is true | do this | why |
 |---|---|---|---|
-| 0 | `phase` is `sketch` (the design is still moving). Only the owner puts a hook in sketch mode: the owner absent, a hook handed over as code with a spec is NOT a sketch - phase 0, `briefs/owner-interview.md` question 0, `DECISIONS.md` with `source: assumed, owner absent`. Before this row or any other, `STATE.md` and the `DECISIONS.md` and `LOG.md` beside it are the project's own: `scripts/next.sh` refuses the kit's example (`next: FIRST - fill STATE.md: it is still the kit's example`, no escape): `scripts/init-state.sh <proj>` writes the three empty (the starting values below) and records the spec's hash - the spec is the owner's: `next.sh` refuses it changed or gone (owner absent, an assumption goes in `DECISIONS.md` with `source: assumed, owner absent`, never into the spec; the owner's own change is re-recorded by the owner, signed — `init-state.sh --spec ... --by`, refused without it, never an agent's act — and the route's spec is `.gauntlet/SPEC.md`) - or empty the examples by hand (`state/README.md`) | local judges only: compiler, unit tests, a first fuzz. **No model rounds.** When the design has stopped moving, write the spec and continue at row 4 | `CHANGES.md` section 1: an audit of a moving target is money spent on code that will not exist |
+| 0 | `phase` is `sketch` (the design is still moving). Only the owner puts a hook in sketch mode: the owner absent, a hook handed over as code with a spec is NOT a sketch - phase 0, `briefs/owner-interview.md` question 0, `DECISIONS.md` with `source: assumed, owner absent`. Before this row or any other, `STATE.md` and the `DECISIONS.md` and `LOG.md` beside it are the project's own: `scripts/next.sh` refuses the kit's example (`next: REFUSED - FIRST - fill STATE.md: it is still the kit's example`, no escape): `scripts/init-state.sh <proj>` writes the three empty (the starting values below) and records the spec's hash - the spec is the owner's: `next.sh` refuses it changed or gone (owner absent, an assumption goes in `DECISIONS.md` with `source: assumed, owner absent`, never into the spec; the owner's own change is re-recorded by the owner, signed — `init-state.sh --spec ... --by`, refused without it, never an agent's act — and the route's spec is `.gauntlet/SPEC.md`) - or empty the examples by hand (`state/README.md`) | local judges only: compiler, unit tests, a first fuzz. **No model rounds.** When the design has stopped moving, write the spec and continue at row 4 | `CHANGES.md` section 1: an audit of a moving target is money spent on code that will not exist |
 | 1 | a **high** finding reproduces and the owner has not been told. The owner absent, "told" is as far as the route can tell them: every open high named in `open_findings` is recorded in `waiting_on_owner` as `high <id>[, <id>...] - to tell` - then this row is quiet. The owner present, "told" is a note in `notes:`, `told: <YYYY-MM-DD> <id>[, <id>...]` - the day they were told, each high by id; every open high recorded one way or the other, and this row is quiet; one neither, and it is not | tell them now, with the test, before anything else in this table, and write `told: <YYYY-MM-DD> <id>[, <id>...]` in `notes:`. Absent: write `waiting_on_owner: high <id>[, <id>...] - to tell`, every open high named, and the same on the skeleton's status line; the route continues; when a high closes, take its id out | never batch a high; nothing outranks it, not even the ceiling |
 | 2 | the ceiling is reached | **a gate, not a stop: no more model rounds.** Rows 11, 11b, 12, 13, 13b and 15 are off (a retry is a model round; a black-box that never ran, or is stale, does not run now - rows 16 and 18b take it, and the dossier says `black-box: not run - ceiling reached` on its status line and in sections 8 and 9: it is a round, not a judge of section 6). Report what was bought, what is open and what the next unit would cost. Then the route CONTINUES without rounds: every open finding is triaged (row 9) or, the owner absent, listed by name in the skeleton (row 9b - it stays open, and the route pauses at row 3, until the owner triages it); then, nothing open, rows 16-18b with `ceiling_reached: yes` on the dossier's status line. The owner may raise the ceiling in writing instead | a route without a ceiling does not end - and a route that stops dead at the ceiling never delivers the dossier, which is the one thing it exists to produce |
 | 3 | `waiting_on_owner` is not `none` | skip every row below whose action depends on the answer (row 7b turns itself off while the endpoint or the chain is what is asked), take the first that does not. None standing, and none left to judge: **pause** - `STOP - paused, waiting on the owner: <items>` - and change nothing until they answer. This is where the route ENDS with the owner absent: after row 9b's skeleton, this row holds the table (a pause, not a hole: the STOP rule below). An undecided light/full mode does not block round 1: the mode is READ from `COST.md` §1's table by the hook's own facts (immutable, or third-party funds without a cap: full; the heavier row wins; light only when no row decides), with its ceiling - light: 3 model rounds + 1 black-box = 4; full: `undecided`, so row 2 cannot fire until the owner sets one, or the OPERATOR sets one in writing (`COST.md` §1: `ceiling: N model rounds, set by the operator (owner absent); M used`, the decision in `DECISIONS.md` with `source: operator (owner absent)`; the dossier says whose ceiling it was) - the mode itself written in `DECISIONS.md` with `source: assumed, owner absent` | the owner's decisions are the owner's |
@@ -137,7 +137,8 @@ gets its one retry - and the reading continues below it, at row 15.
 
 The rows are data inside the script, one line per row, each keeping a hash of its condition cell above; a row in one
 and not the other, another order, a condition reworded, or a malformed table line is a refusal naming the row
-(`--check-table`). A refusal goes to stderr (`next: REFUSED - ...`, exit 2), and so do the two `FIRST - fill` lines;
+(`--check-table`). A refusal goes to stderr (`next: REFUSED - ...`, exit 2) - every line printed with exit 2 starts so
+(v0.5.3), the two `FIRST - fill` lines (`next: REFUSED - FIRST - fill ...`), a `pending/` test's and a cited file's too;
 an answer goes to stdout, and so does the selftest's `FIRST - prove the kit` line (exit 0): a caller that keeps stdout
 alone sees nothing of a refusal but its exit code, and one that keeps stderr alone misses the selftest's line - read both. Before any row, the kit's own tools must be proven on this machine: `scripts/selftest.sh`, ending PASSED, leaves `<kit>/.gauntlet/selftest-passed` (the SHA-256 of the kit's scripts, a hash of this machine's identity, the date, the first line of `forge --version`); absent, with one of the three missing, or written for other scripts, on another machine or with another forge, `next.sh` prints only `next: FIRST - prove the kit on this machine: <kit>/scripts/selftest.sh - it takes about <N> minutes; give it a tool timeout above that or run it in the background (then run next.sh again) - <which>` (exit 0; `<N>` measured, `<which>` says the scripts, the machine or forge) - a property of the machine and the kit, not a flag of `STATE.md`. A kit copied to another machine with its `.gauntlet/`, or a project copied with the kit in `lib/hook-gauntlet`, starts with the selftest. The script refuses (exit 2) a flag it cannot read - missing, a value off its list, a malformed
 line, a `dossier: complete` next to an open finding, a "to tell" item in any shape but the one above, an id recorded to
@@ -145,7 +146,30 @@ tell that is not an open high, a high count that does not match its ids - and a 
 `pending: <id>` note names, or an id of a `pending:` note with no file there (row 6b; no `pending/`, nothing checked).
 Before any row, too: the spec the owner wrote, once `scripts/init-state.sh` recorded its hash (`.gauntlet/spec.sha256`):
 changed or gone since, `next: REFUSED - <spec> changed since init-state recorded it: the spec is the owner's ...` (exit 2,
-no escape - the owner's re-record, signed (`init-state.sh --spec ... --by`, refused without it, never an agent's act), is the way on; no record, nothing said); and the phase against
+no escape - the owner's re-record, signed (`init-state.sh --spec ... --by`, refused without it, never an agent's act), is the way on). No
+record is no pass (v0.5.3, silence is a refusal - `EVIDENCE.md` §9): before row 4b - phase 0 or 1, a spec not found or a
+hook still to be written - the records may be absent; from `phase:` 2 a missing `.gauntlet/spec.sha256` or `src.sha256` is
+refused, `next: REFUSED - anchor record missing: <proj>/.gauntlet/<spec|src>.sha256; re-run scripts/init-state.sh <proj>
+--spec <the owner's spec>|--src --by <owner> - the owner's act, signed, ...; the owner absent: --by walker, with the note
+'owner absent: <why>' ...` - the owner absent, the walker signs (`--by walker`, accepted only with that note; a hook with
+no owner's spec anchors the route's `.gauntlet/SPEC.md`), the record says `by: walker (owner absent)`, and rows 9b, 18 and
+18b name it in a note for the dossier's section 8; the owner present, `--by walker` is refused. The reports the checks below read
+(`01-build.txt`, `02-test.txt`, `06-census.txt`, `06-census-gate.txt`, `06-threats.txt`) count only with the seal the
+script that wrote them leaves beside each, `<report>.sha256` (its SHA-256 with the anchor of `src/` it ran on, and the
+script): none, one that does not match, or one made on another `src/` than the one there is now, and the check reads the
+report as missing, its refusal saying why (`report <name>: no anchor` / `mismatch` / `stale`); a report cited by path
+under `.gauntlet/reports/` with a seal is held to it, never for currency. And four flags are held to the ROUND lines of the
+`LOG.md` beside `STATE.md` (`scripts/round.sh`): `last_audit_round` is the newest discovery or regression round - not one
+named stopped by row 11b's note `round <id> stopped` -, `none` with none; the ceiling's `M used` is the number of
+discovery, regression and black-box rounds; `blackbox` is `never_run` with no black-box round (`skipped_by_owner` is not
+checked against the rounds - left for later),
+`current` or `stale` with one, `stopped (<id>)` with that one; `bytecode_changed_since`'s `last_audit_round=no` holds
+while `src/` is what `round.sh` wrote under that round's line (`src/ at round <id>: <anchor>`) - a round recorded before
+v0.5.3 has no such line, and the flag is taken as written with a `next: note` after the answer. A flag that disagrees:
+`next: REFUSED - STATE says <flag>: <value>; the record says <value> (...)` - for `last_audit_round`, naming the audit
+rounds after it that no `round <id> stopped` note names (row 11b: a died attempt and its retry are two ROUND lines, and
+each stopped one needs its own note). A ROUND line `round.sh --json` cannot read back is refused, naming it: `next:
+REFUSED - <LOG.md> line <n> is not a ROUND line of the fixed shape (...): <the line> - ...`. And the phase against
 its records: `phase:` 2 or higher - phase 2 open - with no green build record (`.gauntlet/reports/01-build.txt`, which
 `scripts/battery.sh` writes; `scripts/setup-deps.sh` and then the battery may run while phase 1 is open, and the
 refusal names both), or 3 or higher with `battery: never`, is refused, naming the battery (no escape). So are
@@ -171,7 +195,7 @@ answer, whatever it is, a kit whose `MANIFEST` does not list a file under it (de
 `next: note - the kit has N files not in its MANIFEST (...): the kit is not to be changed; move them out` (not a
 refusal). Three more refusals come before any row (the local-model walk, judged 2026-09-30): a `STATE.md`, `DECISIONS.md` or `LOG.md` that is still the kit's
 example - by its marker line, its title, or, for `STATE.md`, by its values: three or more of the example's
-non-generic flag lines, whatever the spacing, `key:value` as `key: value` (`next: FIRST - fill STATE.md: ...`, no
+non-generic flag lines, whatever the spacing, `key:value` as `key: value` (`next: REFUSED - FIRST - fill STATE.md: ...`, no
 escape; for `STATE.md` it names `scripts/init-state.sh <proj>`, which writes an empty one); a file in `pending/` with no
 current, readable record of being seen red on `src/` as it stands (`scripts/pending-red.sh` writes it); a file under
 the project that `STATE.md` or `DECISIONS.md` cites and that is not a non-empty regular file - missing, empty or a
@@ -187,3 +211,20 @@ answered - it is decided by the flags, and the rows below that wait on the owner
 themselves off (7b). No row true and nothing waiting: `no row is true: the table has a hole or a flag is stale`
 (exit 1). No row true, none to judge, and something waiting: `STOP - paused, waiting on the owner: <items>` (exit 0).
 The details, and the ROUND line, are in `state/README.md`.
+
+## The kit's exit codes
+
+One convention (v0.5.3): 0 = done, or yes; 1 = usage or the environment - a tool or a library of the kit's missing, a bad
+argument, a build that cannot run; 2 = a refusal, or a verdict of no; 3 and above only where a script's header already
+documents them (`scripts/release-guard.sh`). Every line `scripts/next.sh` prints with exit 2 starts `next: REFUSED - `.
+v0.5.3 made the scripts agree where two of them gave one condition two codes: a library of the kit's missing is 1 in
+every script that says so on its own line, and a build record that cannot be removed, or nothing to hash with
+(`scripts/lib/forge-env.sh`), is 1 in `battery.sh`, `fuzz-long.sh` and `census.sh`. The scripts written before the
+convention keep the codes their headers document - each header is that script's contract, and a wrapper reads the exit
+code first and the line second. Among them: `next.sh` (1 a hole in the table, 3 judgement pending; its own libraries
+missing are refused, 2), `selftest.sh` (1 FAILED, 3 INCOMPLETE), and 1 for a run that failed its own check in
+`battery.sh` (BATTERY FAILED), `fuzz-long.sh` (LONG FUZZ FAILED), `census.sh` (a floor not met), `mutate.sh` (SURVIVED,
+VARIANT FAILED), `threat-diff.sh` (not diffed), `size.sh` (a margin) and `assert-fresh-build.sh` (STALE BUILD - its 2 is
+"nothing decided", a library missing included); 1 for a refusal in `backtest.sh`, `fetch-bytecode.sh` and `bench.sh`; 2
+for a bad argument in `mutate.sh`, `census.sh`, `round.sh` and `init-state.sh`. And `mutate.sh`'s `KILLED (revert)` exits
+0 with its verdict in the line: it does not count toward MUTATION-TESTED (`EVIDENCE.md` §2).

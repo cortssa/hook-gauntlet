@@ -81,7 +81,11 @@
 #          writeCensus from afterInvariant, or foundry.toml lacks fs_permissions for ./census), or MIN_PCT is not a
 #          number from 1 to 100; otherwise forge's exit code when the campaign itself failed - 1 when forge exited 0 over a
 #          FAILED test (`--allow-failure`): a failed campaign is never judged, whatever forge exited with.
-#          The gate (--aggregate) exits the same way (0, 1 or 2); its last line says which, and why.
+#          The gate (--aggregate) exits the same way (0, 1 or 2); its last line says which, and why. v0.5.3, the kit's
+#          convention (doctrine/NEXT.md): 1, not 2, when the environment stops it before the campaign - a library of the
+#          kit's missing, a build record that cannot be removed (scripts/lib/forge-env.sh).
+# Seals:   (v0.5.3) 06-census.txt, 06-census-gate.txt and 03-census-attempts.txt get <report>.sha256 beside them where
+#          this run writes them (scripts/lib/src-anchor.sh, report_seal); next.sh reads a census report only with its seal.
 
 set -uo pipefail
 
@@ -295,7 +299,9 @@ if [ "${1:-}" = "--aggregate" ]; then
   # never into a tree without the kit's convention (V26b: QUICKSTART's own line made <proj>/.gauntlet/ in one): refused
   # before the record's directory is made (scripts/lib/owner-tree.sh)
   # shellcheck source=lib/owner-tree.sh
-  . "$(cd "$(dirname "$0")" && pwd)/lib/owner-tree.sh" || { echo "census gate: FAILED - scripts/lib/owner-tree.sh is missing"; exit 2; }
+  . "$(cd "$(dirname "$0")" && pwd)/lib/owner-tree.sh" || { echo "census gate: FAILED - scripts/lib/owner-tree.sh is missing"; exit 1; }
+  # shellcheck source=lib/src-anchor.sh
+  . "$(cd "$(dirname "$0")" && pwd)/lib/src-anchor.sh" || { echo "census gate: FAILED - scripts/lib/src-anchor.sh is missing"; exit 1; }
   report_dir_allowed census "$proj_abs" "$gate_out" || { echo "census gate: FAILED - no record written: its directory is refused (above)"; exit 2; }
   mkdir -p "$gate_out" || { echo "census gate: FAILED - cannot create $gate_out"; exit 2; }
   record="$gate_out/06-census-gate.txt"
@@ -343,6 +349,10 @@ if [ "${1:-}" = "--aggregate" ]; then
   printf '%s\tMIN_PCT=%s\tCORE=%s\tREACH=%s\tresult=%s\tcensus=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$att_pct" "$att_core" "$att_reach" \
     "${verdict%% - *}" "$tsv_abs" >> "$attempts" || echo "census gate: could not append the attempt to $attempts"
   echo "census gate: $verdict" >> "$record"
+  # v0.5.3: the record and the attempts sealed (scripts/lib/src-anchor.sh, report_seal: <report>.sha256 beside each)
+  for g_r in "$record" "$attempts"; do
+    [ ! -f "$g_r" ] || report_seal "$proj_abs" "$g_r" "$0" || echo "census gate: could not write $g_r.sha256 - next.sh does not read it as a record"
+  done
   if [ -z "${3:-}" ] && [ -n "$tsv_dir" ] && case "$tsv_dir/" in "$proj_abs"/*) false ;; *) true ;; esac; then
     echo "census gate: record written to $record (the census is in $tsv_dir; give the project as the third argument to write it there)"
   else
@@ -355,9 +365,11 @@ fi
 [ -z "$floor_error" ] || { echo "census: $floor_error NOTHING MEASURED."; exit 2; }
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
-. "$HERE/lib/parse.sh" || { echo "census: $HERE/lib/parse.sh is missing"; exit 2; }
+. "$HERE/lib/parse.sh" || { echo "census: $HERE/lib/parse.sh is missing"; exit 1; }
 # shellcheck source=lib/forge-env.sh
-. "$HERE/lib/forge-env.sh" || { echo "census: $HERE/lib/forge-env.sh is missing"; exit 2; }
+. "$HERE/lib/forge-env.sh" || { echo "census: $HERE/lib/forge-env.sh is missing"; exit 1; }
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "census: $HERE/lib/src-anchor.sh is missing"; exit 1; }
 # forge reads a test filter, a budget and --allow-failure from the ENVIRONMENT too (FOUNDRY_MATCH_TEST, FOUNDRY_TEST,
 # FORGE_ALLOW_FAILURE, ...; a --match-contract on the command line overrides only FOUNDRY_MATCH_CONTRACT): one exported
 # for another command would narrow this run, or table a failed campaign, in silence (measured, 2026-09-27: with
@@ -370,7 +382,7 @@ FORGE_FLAGS="${FORGE_FLAGS:-}"
 cd "$PROJECT" || { echo "census: cannot enter $PROJECT"; exit 2; }
 OUT_DIR="${OUT_DIR:-.gauntlet/reports}"
 # shellcheck source=lib/owner-tree.sh
-. "$HERE/lib/owner-tree.sh" || { echo "census: $HERE/lib/owner-tree.sh is missing"; exit 2; }
+. "$HERE/lib/owner-tree.sh" || { echo "census: $HERE/lib/owner-tree.sh is missing"; exit 1; }
 # never into a tree without the kit's convention: refused before anything is written (scripts/lib/owner-tree.sh). OUT_DIR
 # moves the reports only: the campaign writes where it runs (forge's out/ and cache/, and census/, which the harness
 # writes) - run it on a bench of someone else's tree to keep those out of it too
@@ -381,7 +393,9 @@ forge_global_config census
 # a cache written at another path: the campaign ran the OLD code over a new source (measured: a planted mutant tabled,
 # rc 0), so its record is removed and the campaign builds from nothing - and so when a source changed that forge's
 # incremental build does not follow, or nothing recorded what the last build read (forge-env.sh, forge_sources_stale)
-forge_cache_rehome census; [ "$?" -ne 2 ] || { echo "census: NOTHING MEASURED."; exit 2; }
+forge_cache_rehome census; [ "$?" -ne 2 ] || { echo "census: NOTHING MEASURED."; exit 1; }   # the environment (v0.5.3: exit 1, as battery.sh)
+# v0.5.3: 06-census.txt sealed where this run writes it (scripts/lib/src-anchor.sh, report_seal) - never an older one
+ce_seal() { report_seal "$(pwd -P)" "$OUT_DIR/06-census.txt" "$HERE/census.sh" || echo "census: could not write $OUT_DIR/06-census.txt.sha256 - next.sh does not read it as a record"; }
 sources_pre="$(forge_sources_snapshot)"
 mkdir -p "$OUT_DIR" census
 # one corpus per manager, for the reason given in battery.sh: this script runs the same campaigns, and a corpus recorded
@@ -430,6 +444,7 @@ if [ "$rc_forge" -ne 0 ]; then
     echo "        shrinks a counterexample, and each wrote a line ($(awk 'END { print NR }' "$failed_file") lines, not one per run). Kept for"
     echo "        reading as $(pwd -P)/${failed_file#./}; the gate refuses it. Fix the failure first."
     echo "census: the campaign FAILED - no census (renamed $failed_file)" > "$OUT_DIR/06-census.txt"
+    ce_seal
     exit "$rc_forge"
   fi
 fi
@@ -438,6 +453,7 @@ aggregate "$GAUNTLET_CENSUS" | tee "$OUT_DIR/06-census.txt"
 rc=${PIPESTATUS[0]}
 [ "$rc" -ne 2 ] && persisted_note "$(pwd -P)" "$GAUNTLET_CENSUS" "$OUT_DIR/06-census-run.txt" | tee -a "$OUT_DIR/06-census.txt"
 [ "$rc" -ne 2 ] && event_note "$(pwd -P)" "$GAUNTLET_CENSUS" | tee -a "$OUT_DIR/06-census.txt"
+ce_seal
 if [ "$rc" -eq 2 ]; then
   echo "census: no census line was written. Call handler.writeCensus(\"<name>\") from afterInvariant() and give foundry.toml"
   echo "        fs_permissions = [{ access = \"read-write\", path = \"./census\" }]. NOTHING MEASURED."

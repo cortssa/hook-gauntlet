@@ -1528,9 +1528,102 @@ NX_NOTICE="next: NEXT_SELFTEST=1 - the kit's selftest marker is NOT checked (the
 # case's: nx takes it out of what a case reads from the kit's own next.sh, and keeps it ($TMP/nx-kitnotes; the K50
 # section says it). A copy of next.sh in a kit copy keeps its note: the K50 cases read it.
 : > "$TMP/nx-kitnotes"
+# v0.5.3 (silence is a refusal): next.sh reads a report only with its seal (<report>.sha256, written by the script that
+# writes the report), and holds last_audit_round, ceiling's M, blackbox and bytecode_changed_since.last_audit_round to the
+# ROUND lines of the LOG.md beside STATE.md. The fixtures here are states of projects whose reports a script wrote and
+# whose rounds round.sh recorded: nx_prepare makes each project so before next.sh runs - the reports a check reads that
+# have no seal, or a seal that does not match them or the src/ there is now, sealed as the script would (report_seal);
+# and, when the LOG.md beside STATE.md has no ROUND line, the ROUND lines its flags claim (fillers first - regression
+# rounds fx-<n>, up to the ceiling's M, black-box or discovery ones when no audit round is claimed -, then the black-box round its blackbox flag claims, then last_audit_round's
+# round with its `src/ at round <id>:` line on the src/ there is now), put BEFORE the LOG.md's own lines and taken out
+# again after the run (nx_undo). The seals and the records are computed on purpose, as a fabricator would compute them:
+# they prove currency, not authorship (doctrine/EVIDENCE.md). The v0.5.3 cases run next.sh with NX_RAW=1 - nothing made -
+# to see each one missing, stale or disagreeing. And every run of next.sh that exits 2 is held to the REFUSED prefix: its
+# last line on stderr starts `next: REFUSED - ` (a run that does not is written down; one is a FAIL at the end of the
+# next.sh section).
+# shellcheck source=lib/state-example.sh
+. "$HERE/lib/state-example.sh" || { echo "selftest: $HERE/lib/state-example.sh is missing"; exit 1; }
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "selftest: $HERE/lib/src-anchor.sh is missing"; exit 1; }
+: > "$TMP/nx-unprefixed"
+nx_state_of() { # nx_state_of [next.sh's arguments]: the STATE.md next.sh would read for them (its rule), or exit 1
+  local a st="" skip=0 c
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$a" in --judge | --table) skip=1 ;; --check-table) return 1 ;; -*) ;; *) st="$a" ;; esac
+  done
+  if [ -z "$st" ]; then for c in .gauntlet/STATE.md STATE.md; do [ -f "$c" ] && { st="$c"; break; }; done; fi
+  if [ -n "$st" ] && [ -d "$st" ]; then
+    if [ -f "${st%/}/.gauntlet/STATE.md" ]; then st="${st%/}/.gauntlet/STATE.md"; elif [ -f "${st%/}/STATE.md" ]; then st="${st%/}/STATE.md"; else return 1; fi
+  fi
+  [ -n "$st" ] && [ -f "$st" ] && printf '%s' "$st"
+}
+NX_UNDO_LOG="" NX_UNDO_N=0 NX_UNDO_NEW=0
+nx_prepare() { # nx_prepare [next.sh's arguments]: the project's report seals and round records, as the scripts leave them
+  local st d proj key r f blk lar lor bb ceil lid lty oid oty bid="" m="" k=0 n i fty gen
+  NX_UNDO_LOG="" NX_UNDO_N=0 NX_UNDO_NEW=0
+  st="$(nx_state_of "$@")" || return 0
+  d="$(cd "$(dirname "$st")" && pwd)" || return 0
+  if [ "$(basename "$d")" = ".gauntlet" ]; then proj="$(dirname "$d")"; else proj="$d"; fi
+  key="$(src_anchor_key "$proj")"
+  for r in 01-build.txt 02-test.txt 06-census.txt 06-census-gate.txt 06-threats.txt; do
+    f="$proj/.gauntlet/reports/$r"; [ -f "$f" ] || continue
+    report_check "$f" "$key" || report_seal "$proj" "$f" "$HERE/selftest.sh"
+  done
+  [ ! -f "$d/LOG.md" ] || ! grep -q '^ROUND ' "$d/LOG.md" || return 0   # the case wrote its own records
+  blk="$(flag_block "$st" 2> /dev/null)" || return 0
+  lar="$(sed -nE 's/^last_audit_round:[[:space:]]*//p' <<< "$blk" | head -1)"; lor="$(sed -nE 's/^last_other_round:[[:space:]]*//p' <<< "$blk" | head -1)"
+  bb="$(sed -nE 's/^blackbox:[[:space:]]*//p' <<< "$blk" | head -1)"; ceil="$(sed -nE 's/^ceiling:[[:space:]]*//p' <<< "$blk" | head -1)"
+  read -r lid lty _ <<< "${lar//,/ }"; [ "$lid" != none ] || lid=""
+  read -r oid oty _ <<< "${lor//,/ }"
+  case "$bb" in
+    current* | stale*) if [ "$oty" = black-box ]; then bid="$oid"; else bid="fx-bb"; fi ;;
+    stopped*) bid="${bb#*(}"; bid="${bid%%[),; ]*}" ;;
+  esac
+  if [[ $ceil =~ \;[[:space:]]*([0-9]+)[[:space:]]+used ]]; then m="${BASH_REMATCH[1]}"; fi
+  [ -z "$lid" ] || k=$((k + 1)); [ -z "$bid" ] || k=$((k + 1))
+  gen=""
+  if [ -n "$m" ] && [ "$m" -gt "$k" ]; then
+    # (no audit round and no black-box round: discovery rounds the case's notes name stopped, row 11b - spent, not delivered)
+    if [ -n "$lid" ]; then fty=regression; elif [ -n "$bid" ]; then fty=black-box; else fty=discovery; fi
+    for ((i = 1; i <= m - k; i++)); do gen="${gen}$(nx_round "fx-$i" "$fty")"$'\n'; done
+  fi
+  [ -z "$bid" ] || gen="${gen}$(nx_round "$bid" black-box)"$'\n'
+  [ -z "$lid" ] || gen="${gen}$(nx_round "$lid" "$lty")"$'\n'"src/ at round $lid: $key"$'\n'
+  [ -n "$gen" ] || return 0
+  NX_UNDO_LOG="$d/LOG.md"; NX_UNDO_N="$(printf '%s' "$gen" | grep -c '')"
+  if [ -f "$d/LOG.md" ]; then { printf '%s' "$gen"; cat "$d/LOG.md"; } > "$TMP/nx-log"; cat "$TMP/nx-log" > "$d/LOG.md"
+  else NX_UNDO_NEW=1; printf '%s' "$gen" > "$d/LOG.md"; fi
+}
+nx_round() { printf 'ROUND %s | phase 4 | %s | fixture/none | bench .gauntlet/bench/fx | 2026-01-05 | 0H 0M 0L 0I reasoned 0 | gate pass | cost not measured | .gauntlet/reports/%s.md' "$1" "$2" "$1"; }
+nx_undo() { # the lines nx_prepare put in LOG.md, taken out (what next.sh appended after them stays)
+  [ -n "$NX_UNDO_LOG" ] && [ -f "$NX_UNDO_LOG" ] || return 0
+  tail -n +"$((NX_UNDO_N + 1))" "$NX_UNDO_LOG" > "$TMP/nx-log"
+  if [ "$NX_UNDO_NEW" = 1 ]; then
+    sed -i '/./,$!d' "$TMP/nx-log"   # a LOG.md made here: the blank line next.sh put before its own paragraph goes too
+    if [ -s "$TMP/nx-log" ]; then cat "$TMP/nx-log" > "$NX_UNDO_LOG"; else rm -f "$NX_UNDO_LOG"; fi
+  else cat "$TMP/nx-log" > "$NX_UNDO_LOG"; fi
+  NX_UNDO_LOG=""
+}
+v53_sealed() { # v53_sealed <label> <proj> <report>...: each report has its seal, matching it and the src/ of <proj> now (v0.5.3)
+  local l="$1" p="$2" r bad="" names=""; shift 2
+  for r in "$@"; do names="$names $(basename "$r")"; report_check "$r" "$(src_anchor_key "$p")" || bad="$bad [$(basename "$r"): ${RA_WHY:-${RA_STATE:-no report_check here}}]"; done
+  if [ -z "$bad" ]; then echo "  ok    $l: each sealed, <report>.sha256 beside it (v0.5.3):$names"; else
+    echo "  FAIL  $l: not sealed:$bad"; fails=$((fails + 1)); fi
+}
+nx_anchor() { # nx_anchor <proj>: a spec (SPEC.md) and a src/ when none, and both recorded as init-state.sh records them
+  [ -f "$1/SPEC.md" ] || printf '# the owner'"'"'s spec (a fixture)\n' > "$1/SPEC.md"
+  [ -n "$(find -L "$1/src" -type f -print -quit 2> /dev/null)" ] || { mkdir -p "$1/src"; printf 'contract FixtureHook {}\n' > "$1/src/FixtureHook.sol"; }
+  mkdir -p "$1/.gauntlet"
+  printf '%s  SPEC.md\n' "$(_sa_sha256 "$1/SPEC.md")" > "$1/.gauntlet/spec.sha256"
+  printf '%s  src/\n' "$(src_anchor_hash "$1")" > "$1/.gauntlet/src.sha256"
+}
 nx() { # nx <next.sh or a copy> [its arguments]: its stdout as printed; its stderr, without the notice line, after it
   local bin="$1" rc; shift
+  [ "${NX_RAW:-0}" = 1 ] || nx_prepare "$@"
   NEXT_SELFTEST=1 "$bin" "$@" 2> "$TMP/nx-stderr" > "$TMP/nx-stdout"; rc=$?
+  [ "${NX_RAW:-0}" = 1 ] || nx_undo
+  if [ "$rc" = 2 ]; then case "$(tail -n 1 "$TMP/nx-stderr")" in "next: REFUSED - "*) ;; *) echo "$bin $*" >> "$TMP/nx-unprefixed" ;; esac; fi
   if [ "$bin" = "$NX" ] && grep -q '^next: note - the kit has ' "$TMP/nx-stdout"; then
     grep '^next: note - the kit has ' "$TMP/nx-stdout" >> "$TMP/nx-kitnotes"
     grep -v '^next: note - the kit has ' "$TMP/nx-stdout" > "$TMP/nx-stdout2"; mv "$TMP/nx-stdout2" "$TMP/nx-stdout"
@@ -1540,6 +1633,9 @@ nx() { # nx <next.sh or a copy> [its arguments]: its stdout as printed; its stde
   else echo "$bin $*" >> "$TMP/nx-silent"; cat "$TMP/nx-stderr" >&2; fi
   return "$rc"
 }
+# v0.5.3: from phase 2 the spec and src/ are anchored (next.sh refuses a missing record): the fixtures' two directories
+# have both, as init-state.sh records them (nx_anchor)
+for d in "$NXFIX" "$TMP"; do nx_anchor "$d"; done
 nx_ids() { # nx_ids <NEXT.md>: the id of every row of the table, in order
   LC_ALL=C awk '{ sub(/\r$/, "") } /^## / { t = ($0 ~ /^## The table/); next }
     t && /^\|/ && !/^\|[-:| ]+$/ { split($0, c, /[|]/); id = c[2]; gsub(/^[ \t]+|[ \t]+$/, "", id); if (id != "#") print id }' "$1"
@@ -1855,9 +1951,9 @@ grep -q '^needs judgement: row 9 - .*from any round' "$TMP/o616" && grep -q '^ne
   || { echo "  FAIL  and rows 9 and 9b do not ask about a finding from any round:"; sed "s/^/        | /" "$TMP/o616"; fails=$((fails + 1)); }
 # ... unless the ceiling is reached before round 1 delivered: round 1 will not run, and row 2 sends every open finding to 9/9b
 nx_variant 622 "a phase-3 pending medium, the ceiling reached before round 1 delivered: row 9 (the owner there)" \
-  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 5=false,9=true 0 "2,9"
+  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/; s/^notes: .*/&; round fx-1 stopped; round fx-2 stopped; round fx-3 stopped; round fx-4 stopped/' 5=false,9=true 0 "2,9"
 nx_variant 623 "the same, the owner away: row 9b writes the skeleton with it" \
-  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/' 5=false,9=false,9b=true 0 "2,9b"
+  state-case-pending-before-round1.md 's/^ceiling: .*/ceiling: 4 model rounds (light mode) agreed; 4 used/; s/^notes: .*/&; round fx-1 stopped; round fx-2 stopped; round fx-3 stopped; round fx-4 stopped/' 5=false,9=false,9b=true 0 "2,9b"
 # blackbox: stopped (<round id>) - a black-box round stopped twice by the environment: rows 12 and 15 do not fire again
 nx_variant 618 "a black-box stopped twice before the loop is over: row 12 does not fire again, 13b does" \
   state-case-closing-blackbox-stopped-twice.md 's/^last_audit_round: .*/last_audit_round: r02 regression 0H 0M 0L/' \
@@ -1876,7 +1972,7 @@ if grep -q '^next: row 11b - .*blackbox: stopped (<round id>).*black-box: stoppe
 sed '/Example file. The project is fictional/d; 1s/BlockCapHook/ExampleHook/; s/^\(last_audit_round\|open_findings\|ceiling\|waiting_on_owner\|notes\): /\1:  /' \
   "$HERE/../state/STATE.md" > "$TMP/state-example-flags.md"
 nx "$NX" "$TMP/state-example-flags.md" > "$TMP/o443" 2>&1; check "next.sh refuses the example state/STATE.md re-spaced, unmarked and retitled: the same values (K49)" 2 $? "$TMP/o443"
-grep -qxF "next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$HERE/../state/STATE.md" | grep -m 1 '^bytecode_changed_since:'))" "$TMP/o443" \
+grep -qxF "next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$HERE/../state/STATE.md" | grep -m 1 '^bytecode_changed_since:'))" "$TMP/o443" \
   || { echo "  FAIL  and not with the FIRST line of the example's values:"; sed "s/^/        | /" "$TMP/o443"; fails=$((fails + 1)); }
 { echo '# STATE - ExampleHook'; echo; LC_ALL=C awk '/^## Installing/ { s = 1 } s && /^```$/ { if (b) exit; b = 1; print; next } b { print }' "$HERE/../state/README.md"; echo '```'; } > "$TMP/state-start-flags.md"
 nx "$NX" "$TMP/state-start-flags.md" > "$TMP/o444" 2>&1; check "next.sh: a project's starting values (state/README.md), no answers: the row" 0 $? "$TMP/o444"
@@ -2157,7 +2253,8 @@ nx_build() { # (K60: with the test record, the census and the invariant suite ph
     && cp "$FIX/summary-real-many-suites.txt" "$1/.gauntlet/reports/02-test.txt" && printf 'census\n' > "$1/.gauntlet/reports/06-census.txt" \
     && printf 'contract Inv { function invariant_fixture() public {} }\n' > "$1/test/Inv.t.sol" \
     && cp "$NXFIX/.gauntlet/THREATS-independent.md" "$NXFIX/.gauntlet/THREATS.md" "$1/.gauntlet/" \
-    && cp "$NXFIX/.gauntlet/reports/06-threats.txt" "$1/.gauntlet/reports/"   # v0.5: the threat diff phase 4 claims, and its report
+    && cp "$NXFIX/.gauntlet/reports/06-threats.txt" "$1/.gauntlet/reports/" \
+    && nx_anchor "$1"   # v0.5: the threat diff phase 4 claims, and its report; v0.5.3: the spec and src/ anchored
 }
 PJ="$TMP/pendp"; mkdir -p "$PJ/.gauntlet" "$PJ/pending/lib"; nx_build "$PJ"
 cp "$NXFIX/state-case-round-end-owner-absent.md" "$PJ/.gauntlet/STATE.md"
@@ -2249,7 +2346,7 @@ grep -qF "| 10 | only documents, comments, scripts or tests changed since the la
 if [ -s "$TMP/nx-silent" ]; then echo "  FAIL  next.sh ran with NEXT_SELFTEST=1 and did not say so:"; sed "s/^/        | /" "$TMP/nx-silent"; fails=$((fails + 1)); else
   echo "  ok    every run with NEXT_SELFTEST=1 said so, on the first line of its stderr"; fi
 
-rm -rf "$TMP/.gauntlet"   # the build record the next.sh section's cases read in $TMP (above): no other section's
+rm -rf "$TMP/.gauntlet" "$TMP/src" "$TMP/SPEC.md"   # the records (and the anchored spec and src/) the next.sh section's cases read in $TMP (above): no other section's
 # ================================================================= skills: gen-skills.sh, skills-check.sh, install-skills.sh (K30; no forge needed)
 # The skills are generated from AGENTS.md and doctrine/NEXT.md; skills-check.sh regenerates and compares. Each way a skill
 # can go wrong is made here, on a copy of the kit, and must be seen red: a hand edit in a SKILL.md, the invariants marker
@@ -2516,6 +2613,7 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
   LABEL=m20 OUT_DIR="$TMP/mut" EXPECT=green TEST_FLAGS="--match-contract AUnit" FOUNDRY_MATCH_TEST=no_test_is_named_this \
     "$HERE/mutate.sh" "$M" "src/A.sol" "x++;" "x += 1;" > "$TMP/o733" 2>&1
   check "mutate.sh with FOUNDRY_MATCH_TEST in the environment runs on TEST_FLAGS alone" 0 $? "$TMP/o733"
+  v53_sealed "the mutant's report (OUT_DIR), on the project's src/" "$M" "$TMP/mut/m20.txt"
   if grep -qx 'mutate: ignoring FOUNDRY_MATCH_TEST from the environment' "$TMP/o733" && grep -qx 'tests: forge test --match-contract AUnit' "$TMP/o733"; then
     echo "  ok    and it says it ignored it, and the mutant's log names the tests it ran"; else
     echo "  FAIL  mutate.sh did not name the ignored variable or its own filter:"; grep -a -e '^mutate:' -e '^tests:' "$TMP/o733" | sed "s/^/        | /"; fails=$((fails + 1)); fi
@@ -2552,6 +2650,7 @@ contract SetUpDep is Test { A a; function setUp() public { a = new A(); a.inc();
     echo "  FAIL  the refusal does not name the resolved path"; fails=$((fails + 1)); fi
 
   "$HERE/battery.sh" "$M" > "$TMP/o26" 2>&1; check "battery on a small green project" 0 $? "$TMP/o26"
+  v53_sealed "the battery's four reports" "$M" "$M"/.gauntlet/reports/0{1-build,2-test,3-sizes,4-freshness}.txt
   # the guard against the REAL forge, on the project the battery just built. The stranger's case: the sources copied in
   # again after the build (new mtime, same bytes) are FRESH. An edit is STALE - and the guard's own build has now compiled
   # it, so the edit UNDONE is a change too: STALE again (it was FRESH while the hash decided and nothing was rebuilt)
@@ -2885,6 +2984,11 @@ EOF
     echo "  ok    and it names the three, and builds and tests nothing"; else
     echo "  FAIL  and it does not name the three, or it ran:"; sed "s/^/        | /" "$TMP/o896" | head -20; fails=$((fails + 1)); fi
   PATH="$NH" "$HERE/assert-fresh-build.sh" "$RK/p" > "$TMP/o897" 2>&1; check "the freshness check with none of the three: nothing decided" 2 $? "$TMP/o897"
+  # v0.5.3 (one convention, doctrine/NEXT.md: 1 the environment): fuzz-long.sh and census.sh exited 2 here, battery.sh 1
+  PATH="$NH" USE_BENCH=0 "$HERE/fuzz-long.sh" "$RK/p" > "$TMP/o8971" 2>&1; check "v0.5.3: fuzz-long with none of the three on PATH: the environment, exit 1 (as battery.sh)" 1 $? "$TMP/o8971"
+  grep -q '^fuzz-long: none of sha256sum, shasum or openssl is on this PATH' "$TMP/o8971" || { echo "  FAIL  and it does not name them"; fails=$((fails + 1)); }
+  PATH="$NH" "$HERE/census.sh" "$RK/p" > "$TMP/o8972" 2>&1; check "v0.5.3: census.sh with none of the three on PATH: the environment, exit 1 (as battery.sh)" 1 $? "$TMP/o8972"
+  grep -q '^census: none of sha256sum, shasum or openssl is on this PATH' "$TMP/o8972" || { echo "  FAIL  and it does not name them"; fails=$((fails + 1)); }
   grep -q '^CANNOT CHECK: none of sha256sum, shasum or openssl' "$TMP/o897" || { echo "  FAIL  and it does not name them"; fails=$((fails + 1)); }
   rm -rf "$RK" "$SD" "$NH" "$TMP"/sha-path-*
   # ~/.foundry/foundry.toml, the machine's configuration forge merges into every project's (a temporary HOME, never the
@@ -2939,6 +3043,7 @@ EOF
   rm -f "$M/test/Skip.t.sol"
 
   USE_BENCH=0 "$HERE/fuzz-long.sh" "$M" > "$TMP/o30" 2>&1; check "long fuzz on a project that has the profile and a campaign" 0 $? "$TMP/o30"
+  v53_sealed "the long fuzz's report" "$M" "$M/.gauntlet/reports/05-fuzz-long.txt"
   # K32 (FR16: four long campaigns of ~10 minutes and a shrink of ~10 more, the cost said only after - "far over my
   # estimate"): the long fuzz says what it will cost BEFORE the campaign - runs x depth, the everyday campaigns' measured
   # time (the battery's last log, just written above) scaled by calls, and what shrinking a failure adds
@@ -3474,6 +3579,7 @@ EOF
   env -u OUT_DIR CORE="deposit" "$HERE/census.sh" --aggregate "$TMP/gbench/census/long.tsv" "$TMP/gproj" > "$TMP/o189" 2>&1
   check "the gate with the project given as the third argument" 0 $? "$TMP/o189"
   gate_ok "the record in the project given" "$TMP/o189" "$TMP/gproj/.gauntlet/reports/06-census-gate.txt"
+  v53_sealed "the gate's record and its attempts" "$TMP/gproj" "$TMP/gproj/.gauntlet/reports/06-census-gate.txt" "$TMP/gproj/.gauntlet/reports/03-census-attempts.txt"
   CORE="deposit" OUT_DIR="rel-reports" "$HERE/census.sh" --aggregate "$TMP/gbench/census/long.tsv" "$TMP/gproj" > "$TMP/o190" 2>&1
   check "the gate with a relative OUT_DIR and a project" 0 $? "$TMP/o190"
   gate_ok "a relative OUT_DIR is under the project, as in run mode" "$TMP/o190" "$TMP/gproj/rel-reports/06-census-gate.txt"
@@ -3488,6 +3594,7 @@ EOF
   # pasted, so the next red is readable without the file.
   MATCH="--match-contract ToyVaultInvariants" CORE="deposit withdraw" MIN_PCT=10 FORGE_FLAGS="--fuzz-seed 0x6b6974" "$HERE/census.sh" "$K" > "$TMP/o62" 2>&1; rc62=$?
   check "end to end: the kit's own vault campaign writes a census, and its core actions are above the floor" 0 $rc62 "$TMP/o62"
+  v53_sealed "census.sh's run mode report" "$K" "$K/.gauntlet/reports/06-census.txt"
   if [ "$rc62" -ne 0 ]; then grep -E "^==|^deposit|^withdraw|floor|FAILED|measured" "$TMP/o62" | head -12 | sed "s/^/        | /"; fi
   if grep -Eq '^== campaign census: ToyVault - [0-9]+ runs ==$' "$TMP/o62"; then echo "  ok    one line per run reached the file"; else
     echo "  FAIL  no census table came out of the kit's own campaign"; tail -5 "$TMP/o62" | sed "s/^/        | /"; fails=$((fails + 1)); fi
@@ -3989,7 +4096,7 @@ echo "== next.sh: the kit's example, pending/ seen red, cited files (K40/K41) ==
 # shellcheck source=lib/pending-record.sh
 . "$HERE/lib/pending-record.sh" || { echo "selftest: $HERE/lib/pending-record.sh is missing"; exit 1; }
 KX_KIT="$(cd "$HERE/.." && pwd)"
-KX_FIRST='next: FIRST - fill STATE.md: it is still the kit'"'"'s example (state/README.md, "empty the examples")'
+KX_FIRST='next: REFUSED - FIRST - fill STATE.md: it is still the kit'"'"'s example (state/README.md, "empty the examples")'
 kx_one() { # kx_one <n> <label> <expected rc> <the exact line it must print, alone> <next.sh args...>
   local n="$1" label="$2" rc="$3" line="$4"; shift 4
   nx "$NX" "$@" > "$TMP/o$n" 2>&1; check "$label" "$rc" $? "$TMP/o$n"
@@ -4026,7 +4133,7 @@ for f in STATE LOG DECISIONS; do
     echo "  ok    the kit's example state/$f.md keeps its marker line"; else echo "  FAIL  state/$f.md has lost its marker line"; fails=$((fails + 1)); fi
 done
 # ---- K41: a file the record cites must exist (the local-model walk's judge: DECISIONS.md cited five pending tests and a fork test that never existed)
-KX_CITE='next: DECISIONS.md cites a file that does not exist: pending/F-2_units.t.sol'
+KX_CITE='next: REFUSED - DECISIONS.md cites a file that does not exist: pending/F-2_units.t.sol'
 kx_cite() { # kx_cite <n> <label> <expected rc> <DECISIONS.md body>: the new project, a DECISIONS.md, next.sh
   local n="$1" label="$2" rc="$3"
   kx_proj "$KX"; mkdir -p "$KX/src" "$KX/test" "$KX/.gauntlet/reports"; echo "contract Hook {}" > "$KX/src/Hook.sol"; echo "contract HookTest {}" > "$KX/test/Hook.t.sol"   # K48: a cited file is a non-empty one
@@ -4057,7 +4164,7 @@ kx_row 4024 "next.sh: a LOG.md naming files deleted or moved since (pending/F-3_
 grep -q 'cites a file' "$TMP/o4024" && { echo "  FAIL  and a cited file was reported: $(grep 'cites a file' "$TMP/o4024")"; fails=$((fails + 1)); }
 printf '# DECISIONS - SomeHook\n\nD-03: F-3 is fixed; its test is `test/F-3_fee.t.sol`.\n' > "$KX/.gauntlet/DECISIONS.md"
 nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o4025" 2>&1; check "... but the DECISIONS.md beside it citing test/F-3_fee.t.sol, which does not exist, still is" 2 $? "$TMP/o4025"
-grep -q '^next: DECISIONS.md cites a file that does not exist: test/F-3_fee.t.sol ' "$TMP/o4025" || { echo "  FAIL  and not naming DECISIONS.md and the path: $(head -1 "$TMP/o4025")"; fails=$((fails + 1)); }
+grep -q '^next: REFUSED - DECISIONS.md cites a file that does not exist: test/F-3_fee.t.sol ' "$TMP/o4025" || { echo "  FAIL  and not naming DECISIONS.md and the path: $(head -1 "$TMP/o4025")"; fails=$((fails + 1)); }
 # K47: next.sh <proj> - the project's directory reads its .gauntlet/STATE.md, then its STATE.md (the entry skill's last line)
 kx_proj "$KX"
 kx_row 4026 "next.sh <proj>: a project directory with .gauntlet/STATE.md - the row" 4 "$KX"
@@ -4072,7 +4179,7 @@ kx_one 4029 "next.sh <proj>: a directory with no STATE.md is refused, naming the
   "next: REFUSED - $KXRA has no .gauntlet/STATE.md and no STATE.md: $KX_KIT/scripts/init-state.sh $KXRA writes one (or give the STATE.md)" "$KXR"
 kx_proj "$KX"; sed 's/^notes: .*/notes:                     pending: F-7 - see test\/Gone.t.sol, owner undecided/' "$FIX/state-new-project.md" > "$KX/.gauntlet/STATE.md"
 nx "$NX" "$KX/.gauntlet/STATE.md" > "$TMP/o4019" 2>&1; check "next.sh refuses a pending: note in the flag block citing test/Gone.t.sol, which does not exist (the fence does not hide the notes)" 2 $? "$TMP/o4019"
-grep -q '^next: STATE.md cites a file that does not exist: test/Gone.t.sol ' "$TMP/o4019" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4019")"; fails=$((fails + 1)); }
+grep -q '^next: REFUSED - STATE.md cites a file that does not exist: test/Gone.t.sol ' "$TMP/o4019" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4019")"; fails=$((fails + 1)); }
 sed 's/^notes: .*/notes:                     see test\/Gone.t.sol/' "$FIX/state-new-project.md" > "$KX/.gauntlet/STATE.md"
 kx_row 4020 "next.sh: another note in the flag block (a fenced block) citing test/Gone.t.sol is not read" 4 "$KX/.gauntlet/STATE.md"
 kx_cite 4021 "next.sh refuses the missing citation again, for the escape's case" 2 'D-02: `pending/F-2_units.t.sol`.'
@@ -4084,10 +4191,10 @@ grep -qF "CITED_FILES='no' is not 0" "$TMP/o4023" || { echo "  FAIL  and not for
 KP="$TMP/kp"; kx_proj "$KP"; mkdir -p "$KP/src" "$KP/pending"; printf 'contract H {}\n' > "$KP/src/H.sol"; printf '// F-1\n' > "$KP/pending/F-1.t.sol"
 sed 's/^notes: .*/notes:                     pending: F-1 - a stranger takes a registered id, owner undecided/' "$FIX/state-new-project.md" > "$KP/.gauntlet/STATE.md"
 KPA="$(cd "$KP" && pwd)"
-KP_LINE="next: pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol"
+KP_LINE="next: REFUSED - pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol"
 # K61: a record made on another key is named stale, with the part that changed when the record says its parts (these
 # handwritten ones do not)
-KP_STALE="next: pending/F-1.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - one of src/, test/, pending/, foundry.toml and remappings.txt changed since; that record does not say which): $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol"
+KP_STALE="next: REFUSED - pending/F-1.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - one of src/, test/, pending/, foundry.toml and remappings.txt changed since; that record does not say which): $KX_KIT/scripts/pending-red.sh $KPA pending/F-1.t.sol"
 kx_one 4030 "next.sh refuses pending/F-1.t.sol with no record of being seen red" 2 "$KP_LINE" "$KP/.gauntlet/STATE.md"
 kp_rec="$(pending_record_path "$KPA" pending/F-1.t.sol)"; mkdir -p "$(dirname "$kp_rec")"; pending_record_head pending/F-1.t.sol "${kp_rec##*.}" > "$kp_rec"
 kx_row 4031 "next.sh: the record for the file and src/ as they stand: the row" 4 "$KP/.gauntlet/STATE.md"
@@ -4126,7 +4233,7 @@ if command -v forge > /dev/null 2>&1 && [ -e "$KPF/lib" ]; then
   kx_row 4042 "next.sh on the small project after it: the row" 4 "$KR/.gauntlet/STATE.md"
   cp "$KR/src/Reg.sol" "$TMP/kr-Reg.sol"; printf '// edited after the red\n' >> "$KR/src/Reg.sol"
   nx "$NX" "$KR/.gauntlet/STATE.md" > "$TMP/o4043" 2>&1; check "next.sh: src/ edited after the red: the record is stale, refused" 2 $? "$TMP/o4043"
-  grep -qF "next: pending/F-1.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - src/ changed since): " "$TMP/o4043" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4043")"; fails=$((fails + 1)); }
+  grep -qF "next: REFUSED - pending/F-1.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - src/ changed since): " "$TMP/o4043" || { echo "  FAIL  and not for that: $(head -1 "$TMP/o4043")"; fails=$((fails + 1)); }
   cp "$TMP/kr-Reg.sol" "$KR/src/Reg.sol"
   kr_red | grep -v 'a_stranger_cannot' > "$KR/pending/F-1.t.sol"
   "$HERE/pending-red.sh" "$KR" pending/F-1.t.sol > "$TMP/o4044" 2>&1; check "pending-red.sh refuses a pending test that PASSES on the code" 2 $? "$TMP/o4044"
@@ -4157,7 +4264,7 @@ if [ -s "$TMP/nx-silent" ]; then echo "  FAIL  next.sh ran with NEXT_SELFTEST=1 
 # a pending-red.sh that builds from nothing, and the harness's permission-bits refusal named as a finding
 echo "== next.sh and pending-red.sh: the example by its values, whole-line markers, records read, builds from nothing (K48) =="
 K8_EX="$HERE/../state/STATE.md"
-K8_FIRST_VAL="next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$K8_EX" | grep -m 1 '^bytecode_changed_since:'))"
+K8_FIRST_VAL="next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$K8_EX" | grep -m 1 '^bytecode_changed_since:'))"
 K8="$TMP/k8"
 # ---- the example by its values (V40: its marker deleted, as the line says, and retitled, as QUICKSTART 5 says: row 13)
 kx_proj "$K8"; sed '/Example file. The project is fictional/d; 1s/BlockCapHook/VolumeRewardsHook/' "$K8_EX" > "$K8/.gauntlet/STATE.md"
@@ -4177,7 +4284,7 @@ k8_with notes
 kx_row 4804 "next.sh: a real project sharing two of the example's non-generic lines (last_other_round: none, and its notes) - not refused: the row" 4 "$K8/.gauntlet/STATE.md"
 k8_with notes waiting_on_owner
 nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4805" 2>&1; check "next.sh refuses three shared lines (last_other_round, waiting_on_owner, notes), naming the first" 2 $? "$TMP/o4805"
-grep -qxF "next: FIRST - fill STATE.md: its values are still the kit's example's ($(grep -m 1 '^last_other_round:' "$K8/.gauntlet/STATE.md"))" "$TMP/o4805" \
+grep -qxF "next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(grep -m 1 '^last_other_round:' "$K8/.gauntlet/STATE.md"))" "$TMP/o4805" \
   && echo "  ok    the line names last_other_round's, the first shared in the file's order" || { echo "  FAIL  not the line: $(cat "$TMP/o4805")"; fails=$((fails + 1)); }
 k8_with open_findings blackbox dossier rehearsal location
 kx_row 4806 "next.sh: the example's generic lines (blackbox, dossier, rehearsal, location) do not count: two non-generic shared (last_other_round, open_findings), the row" 4 "$K8/.gauntlet/STATE.md"
@@ -4197,10 +4304,10 @@ kx_one 4812 "next.sh still refuses a LOG.md that keeps the marker as a line of i
 kx_proj "$K8"; mkdir -p "$K8/test/fork"; : > "$K8/test/fork/Fork.t.sol"
 printf '# DECISIONS - SomeHook\n\n**Test:** `test/fork/Fork.t.sol` written for the hook, run against a fork.\n' > "$K8/.gauntlet/DECISIONS.md"
 nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4820" 2>&1; check "next.sh refuses a cited test/fork/Fork.t.sol of 0 bytes" 2 $? "$TMP/o4820"
-grep -q '^next: DECISIONS.md cites a file that is empty: test/fork/Fork.t.sol (line 3 of ' "$TMP/o4820" && ! grep -q 'CITED_FILES' "$TMP/o4820" || { echo "  FAIL  and not the line (or it names the escape): $(cat "$TMP/o4820")"; fails=$((fails + 1)); }
+grep -q '^next: REFUSED - DECISIONS.md cites a file that is empty: test/fork/Fork.t.sol (line 3 of ' "$TMP/o4820" && ! grep -q 'CITED_FILES' "$TMP/o4820" || { echo "  FAIL  and not the line (or it names the escape): $(cat "$TMP/o4820")"; fails=$((fails + 1)); }
 rm -f "$K8/test/fork/Fork.t.sol"; mkdir -p "$K8/test/fork/Fork.t.sol"
 nx "$NX" "$K8/.gauntlet/STATE.md" > "$TMP/o4821" 2>&1; check "next.sh refuses a cited test/fork/Fork.t.sol that is a directory" 2 $? "$TMP/o4821"
-grep -q '^next: DECISIONS.md cites a file that is a directory: test/fork/Fork.t.sol (line 3 of ' "$TMP/o4821" || { echo "  FAIL  and not the line: $(cat "$TMP/o4821")"; fails=$((fails + 1)); }
+grep -q '^next: REFUSED - DECISIONS.md cites a file that is a directory: test/fork/Fork.t.sol (line 3 of ' "$TMP/o4821" || { echo "  FAIL  and not the line: $(cat "$TMP/o4821")"; fails=$((fails + 1)); }
 rmdir "$K8/test/fork/Fork.t.sol"; echo 'contract ForkTest {}' > "$K8/test/fork/Fork.t.sol"
 kx_row 4822 "next.sh: the same file with content: the row" 4 "$K8/.gauntlet/STATE.md"
 # ---- a directory in pending/ named *.sol is not a test (V40: it passed the walk, which saw files only)
@@ -4216,7 +4323,7 @@ K8PA="$(cd "$K8P" && pwd)"
 k8_rec() { pending_record_path "$K8PA" pending/F-1.t.sol; }
 k8_unread() { # k8_unread <n> <label>: next.sh says the record is unreadable
   nx "$NX" "$K8P/.gauntlet/STATE.md" > "$TMP/o$1" 2>&1; check "$2" 2 $? "$TMP/o$1"
-  grep -q '^next: pending/F-1.t.sol: record unreadable - run scripts/pending-red.sh again' "$TMP/o$1" || { echo "  FAIL  and not 'record unreadable': $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
+  grep -q '^next: REFUSED - pending/F-1.t.sol: record unreadable - run scripts/pending-red.sh again' "$TMP/o$1" || { echo "  FAIL  and not 'record unreadable': $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
 }
 r="$(k8_rec)"; mkdir -p "$(dirname "$r")"; : > "$r"
 k8_unread 4830 "next.sh refuses an EMPTY record at the current key (a handwritten one)"
@@ -4231,7 +4338,7 @@ kx_row 4834 "next.sh: a record with pending-red's first line for that file and k
 # ---- the key covers test/, pending/, foundry.toml and remappings.txt (V40: a helper in test/ edited kept the record current)
 k8_stale() { # k8_stale <n> <label>: the record is not the current one any more
   nx "$NX" "$K8P/.gauntlet/STATE.md" > "$TMP/o$1" 2>&1; check "$2" 2 $? "$TMP/o$1"
-  grep -q '^next: pending/F-1.t.sol - not seen red on the code as it stands (its red record of [0-9-]* is stale - ' "$TMP/o$1" || { echo "  FAIL  and not for that: $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
+  grep -q '^next: REFUSED - pending/F-1.t.sol - not seen red on the code as it stands (its red record of [0-9-]* is stale - ' "$TMP/o$1" || { echo "  FAIL  and not for that: $(cat "$TMP/o$1")"; fails=$((fails + 1)); }
 }
 k8_again() { r="$(k8_rec)"; pending_record_head pending/F-1.t.sol "${r##*.}" > "$r"; }
 echo '// edited' >> "$K8P/test/Helper.sol"; k8_stale 4835 "next.sh: a helper in test/ edited since the record - not current"
@@ -4321,7 +4428,7 @@ k9_with notes
 kx_row 4904 "next.sh: two lines shared with the example, re-spaced (last_other_round, notes): not refused, the row" 4 "$K9/.gauntlet/STATE.md"
 k9_with notes waiting_on_owner
 kx_one 4905 "next.sh refuses three lines shared with the example with other spacing (last_other_round, waiting_on_owner, notes), naming the example's own first line" \
-  2 "next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 '^last_other_round:'))" "$K9/.gauntlet/STATE.md"
+  2 "next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 '^last_other_round:'))" "$K9/.gauntlet/STATE.md"
 grep -qF 'the same values, whatever the spacing' "$HERE/../state/README.md" && echo "  ok    state/README.md says the example's values count whatever the spacing" \
   || { echo "  FAIL  state/README.md does not say \"the same values, whatever the spacing\""; fails=$((fails + 1)); }
 # ---- pending-red.sh: its own build directory emptied each run; the project's cache/fuzz, cache/invariant,
@@ -4540,7 +4647,7 @@ P5="$K5/p5"; k5_proj "$P5"; printf '# SPEC elsewhere\n' > "$K5/outside.md"
 "$K5_IS" "$P5" --spec NOPE.md > "$TMP/o5021" 2>&1; check "init-state.sh refuses a --spec that does not exist" 2 $? "$TMP/o5021"
 [ ! -e "$P5/.gauntlet" ] && echo "  ok    and neither wrote anything" || { echo "  FAIL  a refusal wrote $P5/.gauntlet"; fails=$((fails + 1)); }
 # ---- the phase against its records (D2): phase 2+ needs a green build record, phase 3+ a battery run
-P6="$K5/p6"; kx_proj "$P6"; P6A="$(cd "$P6" && pwd)"
+P6="$K5/p6"; kx_proj "$P6"; nx_anchor "$P6"; P6A="$(cd "$P6" && pwd)"   # (v0.5.3: anchored, as phase 2 needs)
 k5_phase() { sed -E "s/^phase: .*/phase:                     $1/; s/^battery: .*/battery:                   $2/" "$FIX/state-new-project.md" > "$P6/.gauntlet/STATE.md"; }
 K5_BUILD="next: REFUSED - phase 2 is open but there is no green build record (.gauntlet/reports/01-build.txt): run $KX_KIT/scripts/setup-deps.sh $P6A then $KX_KIT/scripts/battery.sh $P6A (they may run at phase 1), or write the phase that is open"
 k5_phase 1 never
@@ -4585,10 +4692,13 @@ k5_kv() { # k5_kv <flag>...: the new project's STATE.md with those flags' lines 
   done
 }
 k5_kv ceiling
+# (v0.5.3: its `5 used` is held to five model rounds on the record - the last of them the audit round named here, not
+# the example's r05; nx records them)
+sed -i -E 's/^last_audit_round: .*/last_audit_round:          r9 regression 0H 0M 0L/' "$P7/.gauntlet/STATE.md"
 kx_row 5051 "next.sh: the example's ceiling alone, written ceiling:8 ... (two lines shared with last_other_round): not refused, the row" 4 "$P7/.gauntlet/STATE.md"
 k5_kv ceiling notes
 kx_one 5052 "next.sh refuses three lines shared with the example, two of them key:value (ceiling:8 ..., notes:static ...)" \
-  2 "next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 '^last_other_round:'))" "$P7/.gauntlet/STATE.md"
+  2 "next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { b = !b; next } b' "$K8_EX" | grep -m 1 '^last_other_round:'))" "$P7/.gauntlet/STATE.md"
 # ---- the MANIFEST note (D6): a kit copy, its MANIFEST, files it does not list
 MK="$K5/kit"; mkdir -p "$MK/scripts/lib" "$MK/doctrine" "$MK/state" "$MK/foundry-kit/v4/test/examples"
 cp "$HERE"/*.sh "$HERE"/*.py "$MK/scripts/"; cp "$HERE"/lib/*.sh "$HERE"/lib/*.py "$MK/scripts/lib/"; cp "$NXT" "$MK/doctrine/"; cp "$K8_EX" "$MK/state/"
@@ -4623,7 +4733,7 @@ NEXT_SELFTEST=1 "$MKN" "$FIX/state-new-project.md" > "$TMP/o5063" 2> /dev/null; 
 [ "$(tail -1 "$TMP/o5063")" = "next: note - the kit has 5 files not in its MANIFEST (.github/stray.yml, a-stray.md, foundry-kit/v4/test/examples/proj/test/Stray.t.sol): the kit is not to be changed; move them out" ] \
   && echo "  ok    the note counts them (scripts/lib/stray.sh with them) and names the first three" || { echo "  FAIL  not the note for five:"; tail -1 "$TMP/o5063" | sed "s/^/        | /"; fails=$((fails + 1)); }
 NEXT_SELFTEST=1 "$MKN" "$K8_EX" > "$TMP/o5064" 2> "$TMP/o5064e"; check "next.sh refusing (the kit's example), the kit copy with files not listed: the refusal's exit code" 2 $? "$TMP/o5064e"
-grep -q '^next: note - the kit has 5 files not in its MANIFEST' "$TMP/o5064" && grep -q "^next: FIRST - fill STATE.md: it is still the kit's example" "$TMP/o5064e" \
+grep -q '^next: note - the kit has 5 files not in its MANIFEST' "$TMP/o5064" && grep -q "^next: REFUSED - FIRST - fill STATE.md: it is still the kit's example" "$TMP/o5064e" \
   && echo "  ok    the refusal on stderr, the note on stdout after it" || { echo "  FAIL  not the refusal and the note:"; cat "$TMP/o5064" "$TMP/o5064e" | sed "s/^/        | /"; fails=$((fails + 1)); }
 nx "$MKN" --check-table > "$TMP/o5065" 2>&1; check "next.sh --check-table on the kit copy: no note (it reads no project)" 0 $? "$TMP/o5065"
 grep -q 'note' "$TMP/o5065" && { echo "  FAIL  and it printed the note"; fails=$((fails + 1)); }
@@ -5101,7 +5211,7 @@ k6_not() { # k6_not <file> <label> <fixed string>: the string is in no line of t
 }
 # ---- the flags against their records (next.sh; the judge's phase walk of round 4: battery: green typed over a battery that
 # had FAILED, phase 4 with no invariant suite, no census and no fork note - each was answered with a row)
-F6="$K6/f"; kx_proj "$F6"; F6A="$(cd "$F6" && pwd)"; mkdir -p "$F6/.gauntlet/reports"; cp "$FIX/build-real-compiled.txt" "$F6/.gauntlet/reports/01-build.txt"
+F6="$K6/f"; kx_proj "$F6"; nx_anchor "$F6"; F6A="$(cd "$F6" && pwd)"; mkdir -p "$F6/.gauntlet/reports"; cp "$FIX/build-real-compiled.txt" "$F6/.gauntlet/reports/01-build.txt"
 k6_state() { # k6_state <phase> <battery> [<notes>]: the new project's STATE.md with those values
   sed -E "s/^phase: .*/phase:                     $1/; s/^battery: .*/battery:                   $2/" "$FIX/state-new-project.md" > "$F6/.gauntlet/STATE.md"
   [ -z "${3:-}" ] || sed -i -E "s|^notes:.*|notes:                     $3|" "$F6/.gauntlet/STATE.md"
@@ -5155,7 +5265,7 @@ E6="$K6/e"; kx_proj "$E6"; E6A="$(cd "$E6" && pwd)"; mkdir -p "$E6/pending"; pri
 sed 's/^notes: .*/notes:                     pending: F-1 - a stranger takes a registered id, owner undecided/' "$FIX/state-new-project.md" > "$E6/.gauntlet/STATE.md"
 printf '# LOG - SomeHook\n\nrules.\n' > "$E6/.gauntlet/LOG.md"
 kx_one 6020 "next.sh refuses pending/F-1.t.sol with no red record - the line names pending-red.sh and no escape" 2 \
-  "next: pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $E6A pending/F-1.t.sol" "$E6"
+  "next: REFUSED - pending/F-1.t.sol - not seen red on the code as it stands: $KX_KIT/scripts/pending-red.sh $E6A pending/F-1.t.sol" "$E6"
 PENDING_RED=0 nx "$NX" "$E6" > "$TMP/o6021" 2>&1; check "next.sh with PENDING_RED=0: the row" 0 $? "$TMP/o6021"
 k5_has "$TMP/o6021" "... it says it was set, and that what it let through was written down" "next: PENDING_RED=0 - the tests in pending/ are NOT checked" \
   "next: PENDING_RED=0 let through pending/F-1.t.sol (not seen red on the code as it stands) - written down in $E6A/.gauntlet/LOG.md"
@@ -5341,7 +5451,7 @@ if command -v forge > /dev/null 2>&1; then
     "battery: test/Base.sol set _skipPermissionCheck UNDER open permission-bits finding F-1 (recorded red on the harness's line; F-1's record current on src/ and pending/F-1.t.sol as recorded" \
     "BATTERY PASSED - green UNDER open permission-bits finding F-1"
   kx_one 6103 "next.sh after that test/ edit: F-1's bits record current, F-3's (an assertion's, the full key) stale - refused, naming the part that changed" 2 \
-    "next: pending/F-3.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - test/ changed since): $KX_KIT/scripts/pending-red.sh $B7N pending/F-3.t.sol" "$B7"
+    "next: REFUSED - pending/F-3.t.sol - not seen red on the code as it stands (its red record of $(date +%F) is stale - test/ changed since): $KX_KIT/scripts/pending-red.sh $B7N pending/F-3.t.sol" "$B7"
   sed -i 's|^// _skipPermissionCheck: F-1 open|// _skipPermissionCheck: F-3 open|' "$B7/test/Base.sol"
   "$HERE/battery.sh" "$B7" > "$TMP/o6104" 2>&1; check "battery.sh: a header naming F-3, whose record keeps the full key - stale after the test/ edit, refused" 2 $? "$TMP/o6104"
   k5_has "$TMP/o6104" "... saying which part changed, and naming the finding's own file and id, not a placeholder" \
@@ -5396,7 +5506,7 @@ k42_has "the v4 README: the order" "$HERE/../foundry-kit/v4/README.md" 'v0.4.2),
 k42_has "QUICKSTART 7b: the order" "$HERE/../QUICKSTART.md" 'its path goes in this order' 'then the battery, which ends `green UNDER open permission-bits'
 k42_has "the battery skill: the order" "$HERE/../skills/hook-gauntlet-battery/SKILL.md" "the finding's red recorded, then the flag and header in the suites, then the battery"
 k42_has "NEXT.md: the selftest's FIRST line goes to stdout, the fill ones and the refusals to stderr" "$HERE/../doctrine/NEXT.md" \
-  'A refusal goes to stderr (`next: REFUSED - ...`, exit 2), and so do the two `FIRST - fill` lines;' 'and so does the selftest'"'"'s `FIRST - prove the kit` line (exit 0)'
+  'A refusal goes to stderr (`next: REFUSED - ...`, exit 2) - every line printed with exit 2 starts so' 'the two `FIRST - fill` lines (`next: REFUSED - FIRST - fill ...`)' 'and so does the selftest'"'"'s `FIRST - prove the kit` line (exit 0)'
 k61_min="$(sed -n 's/^SELFTEST_MINUTES=\([0-9][0-9]*\)$/\1/p' "$NX")"
 [ -n "$k61_min" ] && [ "$k61_min" -ge 8 ] && echo "  ok    next.sh's FIRST line says about $k61_min minutes (measured 371-457 s at 1636 cases: 8)" \
   || { echo "  FAIL  SELFTEST_MINUTES is ${k61_min:-unset}: the selftest measured 371-457 s (8 minutes)"; fails=$((fails + 1)); }
@@ -5485,6 +5595,7 @@ if command -v forge > /dev/null 2>&1; then
 
   # 1. no analyser installed: forge lint only, the report written, the STATE line printed
   st_run "$TMP/o7010" ""; check "static-triage: no Slither, no Aderyn - forge lint only" 0 $? "$TMP/o7010"
+  v53_sealed "static-triage.sh's report" "$STP" "$(st_report)"
   if [ -f "$(st_report)" ] && grep -qx '# slither:    not installed' "$(st_report)" && grep -qx '# aderyn:     not installed' "$(st_report)" \
     && grep -qE '^# forge lint: forge [0-9.]+ - ran$' "$(st_report)" && grep -qE '^forge lint: [1-9][0-9]* lints - ' "$(st_report)" \
     && grep -qF 'warning[tx-origin]' "$(st_report)" && grep -qF 'note[screaming-snake-case-immutable]' "$(st_report)" && grep -qE '^forge lint by severity: high [0-9]+, med [0-9]+, low [0-9]+, info [0-9]+, gas [0-9]+, code-size [0-9]+$' "$(st_report)"; then
@@ -5599,6 +5710,7 @@ td_proj() { # td_proj: a fresh project with the two fixture lists (2 independent
   rm -rf "$TDP"; mkdir -p "$TDP/.gauntlet" "$TDP/test"
   cp "$FIX/threats-independent.md" "$TDP/.gauntlet/THREATS-independent.md"; cp "$FIX/threats-walker.md" "$TDP/.gauntlet/THREATS.md"
   printf 'contract Inv { function invariant_fixture() public {} }\n' > "$TDP/test/Inv.t.sol"
+  nx_anchor "$TDP"   # v0.5.3: from phase 2 the spec and src/ are anchored
 }
 td_run() { "$HERE/threat-diff.sh" "$@"; }
 td_has() { # td_has <output file> <fixed string>: one ok or one FAIL
@@ -5624,6 +5736,7 @@ td_has "$TMP/o7102" "threat_model: not yet - there is no .gauntlet/THREATS.md - 
 td_norep "no walker's list"
 # ---- all matched
 td_proj; td_run "$TDP" > "$TMP/o7103" 2>&1; check "threat-diff: every independent threat matched by the walker's list" 0 $? "$TMP/o7103"
+v53_sealed "threat-diff.sh's report" "$TDP" "$TDP/.gauntlet/reports/06-threats.txt"
 td_last "$TMP/o7103" "threat_model: diffed (2 matched, 0 new, 0 refused, 0 handed)"
 TDR="$TDP/.gauntlet/reports/06-threats.txt"
 if [ -f "$TDR" ] && [ "$(head -1 "$TDR")" = "threat-diff: diffed - every independent threat is matched, an invariant, refused in writing, or handed on by name" ] \
@@ -5844,7 +5957,7 @@ grep -q '^next: row 4b - ' "$TMP/o7146" || { echo "  FAIL  not row 4b:"; sed "s/
 # ---- the kit's example with the new flag in it: still known by its values; the flag counts among the non-generic lines
 TDX="$HERE/../state/STATE.md"
 grep -q '^threat_model:  *diffed (' "$TDX" && echo "  ok    the kit's example STATE.md carries a threat_model: diffed (...) line" || { echo "  FAIL  the kit's example has no threat_model line"; fails=$((fails + 1)); }
-TDXF="next: FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$TDX" | grep -m 1 '^bytecode_changed_since:'))"
+TDXF="next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(LC_ALL=C awk '/^```/ { f = !f; next } f' "$TDX" | grep -m 1 '^bytecode_changed_since:'))"
 rm -rf "$TD/x"; mkdir -p "$TD/x/.gauntlet"; sed '/Example file. The project is fictional/d; 1s/BlockCapHook/VolumeRewardsHook/' "$TDX" > "$TD/x/.gauntlet/STATE.md"
 nx "$NX" "$TD/x/.gauntlet/STATE.md" > "$TMP/o7150" 2>&1; check "next.sh: the example unmarked and retitled, with its threat_model line - refused by its values" 2 $? "$TMP/o7150"
 [ "$(cat "$TMP/o7150")" = "$TDXF" ] && echo "  ok    one line: ${TDXF:0:150}" || { echo "  FAIL  not the one line:"; sed "s/^/        | /" "$TMP/o7150"; fails=$((fails + 1)); }
@@ -5861,7 +5974,7 @@ grep -q "values are still the kit's example's" "$TMP/o7151" && { echo "  FAIL  r
   || echo "  ok    (refused for its own reason - a diffed line with no lists - not as the example)"
 td_with threat_model notes
 nx "$NX" "$TD/x/.gauntlet/STATE.md" > "$TMP/o7152" 2>&1; check "next.sh: three shared, the example's threat_model one of them - refused as the example" 2 $? "$TMP/o7152"
-[ "$(cat "$TMP/o7152")" = "next: FIRST - fill STATE.md: its values are still the kit's example's ($(grep -m 1 '^last_other_round:' "$TDX"))" ] \
+[ "$(cat "$TMP/o7152")" = "next: REFUSED - FIRST - fill STATE.md: its values are still the kit's example's ($(grep -m 1 '^last_other_round:' "$TDX"))" ] \
   && echo "  ok    the FIRST line, naming the first line shared" || { echo "  FAIL  not the FIRST line:"; sed "s/^/        | /" "$TMP/o7152"; fails=$((fails + 1)); }
 grep -q "^## D-[0-9][0-9]* · [0-9-]* · threat T-[0-9][0-9]* refused: " "$HERE/../state/DECISIONS.md" \
   && echo "  ok    the kit's example DECISIONS.md shows a threat refused in the one-line form" || { echo "  FAIL  the example DECISIONS.md has no threat refused in the form"; fails=$((fails + 1)); }
@@ -5924,7 +6037,7 @@ td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 ne
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7502" 2>&1; check "next.sh: phase 4, round r04 has run, T-3 handed to it with no answer - refused" 2 $? "$TMP/o7502"
 td_has "$TMP/o7502" "next: REFUSED - phase 4, round r04 has run, and the independent threat(s) handed to it have no answer: T-3 (T-<n>: handed: round in .gauntlet/THREATS.md). Under each handed line write became: <the finding's id> - the finding the round produced from it - or change it to handed: audit"
 v51_not "$TMP/o7502" "write the phase that is open"
-td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 1 handed)/; s/^last_audit_round: .*/last_audit_round:          none/'
+td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 1 handed)/; s/^last_audit_round: .*/last_audit_round:          none/; s/; 3 used$/; 0 used/'   # (v0.5.3: no round run yet - none used on the record either)
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7503" 2>&1; rc=$?
 if [ "$rc" != 2 ] && ! grep -q 'have no answer' "$TMP/o7503"; then echo "  ok    next.sh: phase 4 with T-3 handed and no round run yet - not refused (rc=$rc): phase 3 closes with a handed threat"; else
   echo "  FAIL  next.sh refused phase 4 with T-3 handed before any round (rc=$rc):"; sed "s/^/        | /" "$TMP/o7503"; fails=$((fails + 1)); fi
@@ -6067,7 +6180,7 @@ td_has "$HERE/../briefs/handoff-dossier.md" "03-census-attempts.txt"
 td_has "$HERE/../briefs/owner-interview.md" "17c. Is anything in this project's environment not as it ships: pinned dependencies swapped, remappings, a renamed type?"
 td_has "$HERE/../briefs/owner-interview.md" "divergence: <what>"
 td_has "$HERE/../briefs/handoff-dossier.md" "environment divergences stated by the owner"
-DV="$S51/dv"; mkdir -p "$DV"; cp -r "$NXFIX/.gauntlet" "$NXFIX/test" "$DV/"; cp "$FIX/state-row-18.md" "$DV/.gauntlet/STATE.md"
+DV="$S51/dv"; mkdir -p "$DV"; cp -r "$NXFIX/.gauntlet" "$NXFIX/test" "$DV/"; cp "$FIX/state-row-18.md" "$DV/.gauntlet/STATE.md"; nx_anchor "$DV"
 nx "$NX" "$DV/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7550" 2>&1; check "next.sh: row 18 (the dossier), no divergence in DECISIONS.md" 0 $? "$TMP/o7550"
 td_has "$TMP/o7550" 'next: note - environment divergences stated by the owner (DECISIONS.md, ## <id> · <date> · divergence: <what>): none stated - the dossier'"'"'s section 8 row "environment divergences stated by the owner" says "none stated"'
 printf '# DECISIONS - SomeHook\n\n## D-12 · 2026-10-07 · divergence: v4-core pinned at another commit than the one the project ships with\n\nsource: owner\n\n## D-13 - 2026-10-07 - divergence: a renamed type\n' > "$DV/.gauntlet/DECISIONS.md"
@@ -6186,6 +6299,194 @@ td_has "$HERE/../QUICKSTART.md" "\`event <E> emitted with the fields it reports\
 td_has "$HERE/../AGENTS.md" "what the code says about itself is tabled from its own text (the spec's section 3b, class 37"
 td_has "$HERE/../skills/hook-gauntlet-spec/SKILL.md" "what the code says about itself is tabled from its own text (the spec's section 3b, class 37"
 rm -rf "$S52"
+
+# ================================================================= v0.5.3: silence is a refusal - a missing record
+# is never a pass. The two anchors from phase 2 (doctrine/NEXT.md row 4b), the reports a check reads sealed by the script
+# that wrote them, the four round flags held to the ROUND lines, one exit-code convention and the REFUSED prefix. Each
+# case below went RED on the kit as it was before v0.5.3 (run on purpose), but those named "control" - the answer the old
+# kit gave too - and "can go red", which shows a control red on a broken copy. Every next.sh run here is raw (NX_RAW=1):
+# nothing is sealed or recorded for it but what the case writes.
+echo "== v0.5.3: silence is a refusal - the anchors, the reports' seals, the round flags against their records, one exit-code convention =="
+S53="$TMP/v53"; rm -rf "$S53"; mkdir -p "$S53"
+Q="$S53/q"; kx_proj "$Q"; nx_anchor "$Q"; QA="$(cd "$Q" && pwd)"
+mkdir -p "$Q/.gauntlet/reports"; cp "$FIX/build-real-compiled.txt" "$Q/.gauntlet/reports/01-build.txt"
+report_seal "$QA" "$Q/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"
+v53_state() { # v53_state <phase> [<sed -E script>]: the new project's STATE.md at that phase, then the script
+  sed -E "s/^phase: .*/phase:                     $1/" "$FIX/state-new-project.md" > "$Q/.gauntlet/STATE.md"
+  [ -z "${2:-}" ] || sed -i -E "$2" "$Q/.gauntlet/STATE.md"
+}
+v53_one() { NX_RAW=1 kx_one "$1" "$2" "$3" "$4" "$Q"; }   # v53_one <n> <label> <rc> <the exact line>: next.sh on Q, raw
+v53_row() { NX_RAW=1 kx_row "$1" "$2" 4b "$Q"; }         # v53_row <n> <label>: rc 0, row 4b (phase 2, nothing else standing)
+V53_BUILD="next: REFUSED - phase 2 is open but there is no green build record (.gauntlet/reports/01-build.txt - report 01-build.txt:"
+V53_BTAIL="): run $KX_KIT/scripts/setup-deps.sh $QA then $KX_KIT/scripts/battery.sh $QA (they may run at phase 1), or write the phase that is open"
+v53_state 2
+v53_row 7301 "control: phase 2, the spec and src/ anchored, the build record sealed by the battery - the row"
+# ---- decision 1: the anchors - from phase 2 a missing record is refused; before it, legitimately absent
+mv "$Q/.gauntlet/spec.sha256" "$S53/spec.keep"
+v53_one 7302 "next.sh refuses phase 2 with .gauntlet/spec.sha256 deleted (it said nothing)" 2 \
+  "next: REFUSED - anchor record missing: $QA/.gauntlet/spec.sha256; re-run scripts/init-state.sh $QA --spec <the owner's spec> --by <owner> - the owner's act, signed, never an agent's: from phase 2 (doctrine/NEXT.md row 4b) the spec is anchored, and phase 2 is open; the owner absent: --by walker, with the note 'owner absent: <why>' in STATE.md's notes (the record then says by: walker (owner absent), and the dossier's section 8 carries it)"
+mv "$S53/spec.keep" "$Q/.gauntlet/spec.sha256"; mv "$Q/.gauntlet/src.sha256" "$S53/src.keep"
+v53_one 7303 "next.sh refuses phase 2 with .gauntlet/src.sha256 deleted" 2 \
+  "next: REFUSED - anchor record missing: $QA/.gauntlet/src.sha256; re-run scripts/init-state.sh $QA --src --by <owner> - the owner's act, signed, never an agent's: from phase 2 (doctrine/NEXT.md row 4b) src/ is anchored, and phase 2 is open; the owner absent: --by walker, with the note 'owner absent: <why>' in STATE.md's notes (the record then says by: walker (owner absent), and the dossier's section 8 carries it)"
+( src_anchor_check battery "$QA"; echo "rc=$?"; echo "$SRC_ANCHOR_LINE" ) > "$TMP/o7304" 2>&1
+if grep -qx 'rc=2' "$TMP/o7304" && grep -qxF "battery: REFUSED - anchor record missing: $QA/.gauntlet/src.sha256; re-run scripts/init-state.sh $QA --src --by <owner> - the owner's act, signed: from phase 2 (doctrine/NEXT.md row 4b) src/ is anchored, and this project is at phase 2; the owner absent: --by walker, with the note 'owner absent: <why>' in STATE.md's notes (the record then says by: walker (owner absent), and the dossier's section 8 carries it). Nothing run." "$TMP/o7304"; then
+  echo "  ok    src_anchor_check (battery.sh's, pending-red.sh's) refuses no src/ record at phase 2: rc 2, the refusal naming the owner's signed re-record"; else
+  echo "  FAIL  src_anchor_check did not refuse a missing src/ record at phase 2 (it returned 0: 'no anchor recorded'):"; sed "s/^/        | /" "$TMP/o7304"; fails=$((fails + 1)); fi
+mv "$Q/.gauntlet/spec.sha256" "$S53/spec.keep"; v53_state 1
+NX_RAW=1 kx_row 7305 "control: phase 1 (before row 4b), both anchors absent - not refused: the row" 4 "$Q"
+( src_anchor_check battery "$QA"; echo "rc=$?" ) > "$TMP/o7305b" 2>&1
+grep -qx 'rc=0' "$TMP/o7305b" && echo "  ok    control: and src_anchor_check does not refuse it at phase 1 (rc 0)" \
+  || { echo "  FAIL  src_anchor_check refused a missing record at phase 1:"; sed "s/^/        | /" "$TMP/o7305b"; fails=$((fails + 1)); }
+# can go red: a copy of next.sh whose anchors start at phase 0 refuses the same phase-1 project
+VK="$S53/kit"; mkdir -p "$VK/scripts/lib" "$VK/doctrine"; cp "$HERE"/lib/*.sh "$VK/scripts/lib/"; cp "$HERE/round.sh" "$VK/scripts/"; cp "$NXT" "$VK/doctrine/"
+LC_ALL=C awk '{ l[NR] = $0 } END { for (i = 1; i <= NR; i++) { if (index(l[i + 1], "[ -f \"$PROJ/.gauntlet/spec.sha256\" ]")) sub(/-ge 2/, "-ge 0", l[i]); print l[i] } }' "$NX" > "$VK/scripts/next.sh"
+chmod +x "$VK/scripts/next.sh"
+NX_RAW=1 nx "$VK/scripts/next.sh" "$Q" > "$TMP/o7306" 2>&1; check "can go red: a next.sh copy whose anchors start at phase 0 refuses that phase-1 project" 2 $? "$TMP/o7306"
+grep -qF "next: REFUSED - anchor record missing: $QA/.gauntlet/spec.sha256" "$TMP/o7306" || { echo "  FAIL  and not for the missing anchor"; sed "s/^/        | /" "$TMP/o7306"; fails=$((fails + 1)); }
+mv "$S53/spec.keep" "$Q/.gauntlet/spec.sha256"; mv "$S53/src.keep" "$Q/.gauntlet/src.sha256"; v53_state 2
+# ---- decision 2: a report with no seal, a stale one, one that does not match: the check reads it as missing, and says why
+rm -f "$Q/.gauntlet/reports/01-build.txt.sha256"
+v53_one 7307 "next.sh: a build record with no seal is no record - phase 2 refused, saying why" 2 \
+  "$V53_BUILD no anchor (no 01-build.txt.sha256 beside it - the script that writes the report writes it)$V53_BTAIL"
+report_seal "$QA" "$Q/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"; v53_k0="$(src_anchor_key "$QA")"
+cp "$Q/src/FixtureHook.sol" "$S53/hook.keep"; printf '// an edit\n' >> "$Q/src/FixtureHook.sol"; v53_k1="$(src_anchor_key "$QA")"
+v53_one 7308 "next.sh: a build record sealed on another src/ than the one there is now - stale" 2 \
+  "$V53_BUILD stale (written on src/ ${v53_k0:0:8}, src/ is ${v53_k1:0:8} now)$V53_BTAIL"
+cp "$S53/hook.keep" "$Q/src/FixtureHook.sol"
+printf 'Compiler run successful!\n' >> "$Q/.gauntlet/reports/01-build.txt"
+NX_RAW=1 nx "$NX" "$Q" > "$TMP/o7309" 2>&1; check "next.sh: a build record edited after its seal - mismatch" 2 $? "$TMP/o7309"
+k5_has "$TMP/o7309" "... saying why" "$V53_BUILD mismatch (it is not the report its 01-build.txt.sha256 sealed: "
+cp "$FIX/build-real-compiled.txt" "$Q/.gauntlet/reports/01-build.txt"; report_seal "$QA" "$Q/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"
+# a cited report with a seal is held to it (history: not for currency)
+printf 'ROUND notes\n' > "$Q/.gauntlet/reports/r00.md"; report_seal "$QA" "$Q/.gauntlet/reports/r00.md" "$HERE/round.sh"; printf 'edited\n' >> "$Q/.gauntlet/reports/r00.md"
+v53_state 2; printf '\nThe first reading is in .gauntlet/reports/r00.md.\n' >> "$Q/.gauntlet/STATE.md"
+NX_RAW=1 nx "$NX" "$Q" > "$TMP/o7310" 2>&1; check "next.sh: STATE.md cites a report whose seal does not match it - refused as not a record" 2 $? "$TMP/o7310"
+k5_has "$TMP/o7310" "... naming it" "next: REFUSED - STATE.md cites a file that is not a record (report r00.md: mismatch (it is not the report its r00.md.sha256 sealed"
+rm -f "$Q/.gauntlet/reports/r00.md" "$Q/.gauntlet/reports/r00.md.sha256"; v53_state 2
+# ---- decision 3: the four flags against the ROUND lines (scripts/round.sh writes them, and the src/ line under each)
+printf '# LOG - q\n\nrules.\n\n---\n' > "$Q/.gauntlet/LOG.md"
+v53_round() { # v53_round <id> <type>: its report, then round.sh's line
+  printf 'the report of %s\nEND OF REPORT %s\n' "$1" "$1" > "$Q/.gauntlet/reports/$1.md"
+  "$HERE/round.sh" "$Q/.gauntlet/LOG.md" --id "$1" --phase 2 --type "$2" --model fixture/none --bench .gauntlet/bench/$1 \
+    --dates 2026-10-10 --high 0 --medium 0 --low 0 --info 0 --reasoned 0 --gate pass --report ".gauntlet/reports/$1.md"
+}
+v53_round r01 discovery > "$TMP/o7311" 2>&1; check "round.sh writes the round's line" 0 $? "$TMP/o7311"
+if [ "$(grep -A1 '^ROUND r01 ' "$Q/.gauntlet/LOG.md" | sed -n 2p)" = "src/ at round r01: $(src_anchor_key "$QA")" ]; then
+  echo "  ok    round.sh writes 'src/ at round r01: <the anchor of src/>' right under its ROUND line"; else
+  echo "  FAIL  no 'src/ at round r01: <anchor>' line under the ROUND line:"; sed "s/^/        | /" "$Q/.gauntlet/LOG.md"; fails=$((fails + 1)); fi
+v53_sealed "round.sh: the round's report" "$QA" "$Q/.gauntlet/reports/r01.md"
+V53_FL='s/^last_audit_round: .*/last_audit_round:          LAR/; s/^ceiling: .*/ceiling:                   8 model rounds (adversarial + black-box) agreed in phase 0; USED used/; s/^blackbox: .*/blackbox:                  BB/; s/last_audit_round=yes/last_audit_round=no/'
+v53_flags() { v53_state 2 "$(printf '%s' "$V53_FL" | sed "s/LAR/$1/; s/USED/$2/; s/BB/$3/")"; }   # v53_flags <last_audit_round> <M used> <blackbox>
+V53_W="the ROUND lines of .gauntlet/LOG.md, scripts/round.sh writes one per round"
+v53_flags "r01 discovery 0H 0M 0L" 1 never_run
+v53_row 7312 "control: last_audit_round, ceiling's M, blackbox and bytecode_changed_since as the ROUND lines say - the row"
+v53_round r02 regression > /dev/null 2>&1; v53_flags "r01 discovery 0H 0M 0L" 2 never_run
+v53_one 7313 "next.sh: last_audit_round r01, the newest audit round on record r02 - refused with both" 2 \
+  "next: REFUSED - STATE says last_audit_round: r01 discovery 0H 0M 0L; the record says r02 (the newest discovery or regression round in $V53_W); if the environment stopped them (row 11b), each attempt needs its own note, and these have none: r02 (notes: round <id> stopped)"
+v53_flags "r02 regression 0H 0M 0L" 1 never_run
+v53_one 7314 "next.sh: ceiling '1 used', two model rounds on record - refused with both" 2 \
+  "next: REFUSED - STATE says ceiling: 8 model rounds (adversarial + black-box) agreed in phase 0; 1 used; the record says 2 used (the discovery, regression and black-box rounds in $V53_W: every model round counts, doctrine/NEXT.md)"
+v53_flags "r02 regression 0H 0M 0L" 2 current
+v53_one 7315 "next.sh: blackbox current, no black-box round on record - refused with both" 2 \
+  "next: REFUSED - STATE says blackbox: current; the record says none (no black-box round in $V53_W)"
+v53_round bb1 black-box > /dev/null 2>&1; v53_flags "r02 regression 0H 0M 0L" 3 never_run
+v53_one 7316 "next.sh: blackbox never_run, a black-box round on record - refused with both" 2 \
+  "next: REFUSED - STATE says blackbox: never_run; the record says bb1 (a black-box round in $V53_W)"
+v53_flags "r02 regression 0H 0M 0L" 3 'stopped (bb9)'
+v53_one 7317 "next.sh: blackbox stopped (bb9), no black-box round bb9 on record - refused with both" 2 \
+  "next: REFUSED - STATE says blackbox: stopped (bb9); the record says bb1 (the black-box rounds in $V53_W: bb9 is not one of them)"
+v53_flags "r02 regression 0H 0M 0L" 3 current; v53_k2="$(src_anchor_key "$QA")"
+printf '// a fix\n' >> "$Q/src/FixtureHook.sol"; v53_k3="$(src_anchor_key "$QA")"; report_seal "$QA" "$Q/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"
+v53_one 7318 "next.sh: bytecode_changed_since last_audit_round=no, src/ changed since round r02 - refused with both" 2 \
+  "next: REFUSED - STATE says bytecode_changed_since.last_audit_round: no; the record says yes (src/ is ${v53_k3:0:8} now, ${v53_k2:0:8} when round r02 was recorded: its line 'src/ at round r02: ...' in .gauntlet/LOG.md)"
+cp "$S53/hook.keep" "$Q/src/FixtureHook.sol"; report_seal "$QA" "$Q/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"
+# a round recorded before v0.5.3 (by hand, no src/ line): the flag taken as written, with one note - never refused for it
+printf '\nROUND r03 | phase 2 | regression | fixture/none | bench .gauntlet/bench/r03 | 2026-10-09 | 0H 0M 0L 0I reasoned 0 | gate pass | cost not measured | .gauntlet/reports/r03.md\n' >> "$Q/.gauntlet/LOG.md"
+v53_flags "r03 regression 0H 0M 0L" 4 current
+v53_row 7319 "next.sh: the newest audit round has no src/ line (recorded before v0.5.3): accepted"
+k5_has "$TMP/o7319" "... with the note" "next: note - round r03 has no 'src/ at round r03: <anchor>' line in .gauntlet/LOG.md (recorded before v0.5.3, or by hand): bytecode_changed_since.last_audit_round=no is taken as written, not checked"
+# a round the environment stopped (row 11b: `round <id> stopped` in notes) is spent - its line counts toward M - and
+# delivered nothing: it is not last_audit_round's
+v53_round r04 discovery > /dev/null 2>&1
+v53_flags "r03 regression 0H 0M 0L" 5 current; sed -i -E 's/^notes:.*/notes:                     round r04 stopped (the provider stopped it twice)/' "$Q/.gauntlet/STATE.md"
+v53_row 7320 "control: a round stopped twice (round r04 stopped, in notes) counts toward M and is not the last audit round"
+sed -i -E 's/^notes:.*/notes:/' "$Q/.gauntlet/STATE.md"
+v53_one 7321 "next.sh: the same round on record with no stopped note is the last audit round - refused" 2 \
+  "next: REFUSED - STATE says last_audit_round: r03 regression 0H 0M 0L; the record says r04 (the newest discovery or regression round in $V53_W); if the environment stopped them (row 11b), each attempt needs its own note, and these have none: r04 (notes: round <id> stopped)"
+# a ROUND line round.sh cannot read back is a refusal naming it, never passed over (it was: a missing record in silence)
+sed -i -E 's/^notes:.*/notes:                     round r04 stopped (the provider stopped it twice)/' "$Q/.gauntlet/STATE.md"
+printf '\nROUND r09 | phase 2 | discovery | garbage\n' >> "$Q/.gauntlet/LOG.md"
+NX_RAW=1 nx "$NX" "$Q" > "$TMP/o7322" 2>&1; check "next.sh: a ROUND line round.sh cannot read back in LOG.md - refused" 2 $? "$TMP/o7322"
+k5_has "$TMP/o7322" "... naming the line" "next: REFUSED - .gauntlet/LOG.md line " " is not a ROUND line of the fixed shape (4 fields, not 10 or 11): ROUND r09 | phase 2 | discovery | garbage - "
+sed -i '/^ROUND r09 /d' "$Q/.gauntlet/LOG.md"
+# row 11b: a died attempt and its retry, stopped again, are two ROUND lines; one note for the retry alone leaves the
+# attempt the newest audit round - still refused, and the refusal names the attempt with no note
+v53_round r05 discovery > /dev/null 2>&1
+v53_flags "r03 regression 0H 0M 0L" 6 current; sed -i -E 's/^notes:.*/notes:                     round r05 stopped (the provider stopped it twice)/' "$Q/.gauntlet/STATE.md"
+v53_one 7323 "next.sh: r04 died and r05 (its retry) stopped, only r05 noted - refused, naming r04 as the attempt with no note" 2 \
+  "next: REFUSED - STATE says last_audit_round: r03 regression 0H 0M 0L; the record says r04 (the newest discovery or regression round in $V53_W); if the environment stopped them (row 11b), each attempt needs its own note, and these have none: r04 (notes: round <id> stopped)"
+sed -i -E 's/^notes:.*/notes:                     round r04 stopped; round r05 stopped (the provider stopped both)/' "$Q/.gauntlet/STATE.md"
+v53_row 7324 "control: each stopped attempt noted - the row"
+# ---- the owner absent: a hook handed over as code, no owner's spec - the walker anchors the route's spec, signed so
+O53="$S53/o"; mkdir -p "$O53/src"; printf 'contract H {}\n' > "$O53/src/H.sol"; "$HERE/init-state.sh" "$O53" > /dev/null 2>&1
+O53A="$(cd "$O53" && pwd)"; printf '# SPEC - o (the route'"'"'s, from the code)\n' > "$O53/.gauntlet/SPEC.md"
+cp "$O53/.gauntlet/STATE.md" "$S53/o-state.keep"
+"$HERE/init-state.sh" "$O53" --spec .gauntlet/SPEC.md --by walker > "$TMP/o7325" 2>&1; check "init-state --by walker with the owner present by the record (no owner absent: note) - refused" 2 $? "$TMP/o7325"
+k5_has "$TMP/o7325" "... saying the owner is present" "init-state: REFUSED - --by walker: the owner is present by the record"
+[ ! -e "$O53/.gauntlet/spec.sha256" ] && echo "  ok    and nothing recorded" || { echo "  FAIL  a spec.sha256 was written"; fails=$((fails + 1)); }
+# the walker's word is exactly `walker`: another spelling of it is not an owner's name either - refused, without the note
+for v53_by in Walker "walker (owner absent)"; do
+  "$HERE/init-state.sh" "$O53" --spec .gauntlet/SPEC.md --by "$v53_by" > "$TMP/o7329" 2>&1
+  check "init-state --by '$v53_by' (not the exact word walker), no owner absent: note - refused" 2 $? "$TMP/o7329"
+  k5_has "$TMP/o7329" "... as neither the owner's name nor the walker's word" "init-state: REFUSED - --by '$v53_by' is neither an owner's name nor the walker's word"
+  [ ! -e "$O53/.gauntlet/spec.sha256" ] || { echo "  FAIL  and a spec.sha256 was written"; fails=$((fails + 1)); rm -f "$O53/.gauntlet/spec.sha256"; }
+done
+td_has "$HERE/../briefs/verifier.md" "7. **The LOG's ROUND lines against the sealed reports.**"
+sed -i -E 's/^notes:.*/notes:                     owner absent: the hook was handed over as code, the owner not reachable/' "$O53/.gauntlet/STATE.md"
+"$HERE/init-state.sh" "$O53" --spec .gauntlet/SPEC.md --by walker > "$TMP/o7326" 2>&1; check "init-state --spec .gauntlet/SPEC.md --by walker, the note owner absent: in STATE.md - recorded" 0 $? "$TMP/o7326"
+if [ "$(sed -n 1p "$O53/.gauntlet/spec.sha256")" = "$(_sa_sha256 "$O53/.gauntlet/SPEC.md")  .gauntlet/SPEC.md" ] \
+  && grep -qE '^re-recorded [0-9-]+ by "walker \(owner absent\)" none -> [0-9a-f]{8}$' "$O53/.gauntlet/spec.sha256" \
+  && [ "$(sed -n 3p "$O53/.gauntlet/spec.sha256")" = "by: walker (owner absent)" ]; then
+  echo "  ok    the record: the route's spec, re-recorded by \"walker (owner absent)\", and the line by: walker (owner absent)"; else
+  echo "  FAIL  the record does not say by: walker (owner absent):"; sed "s/^/        | /" "$O53/.gauntlet/spec.sha256" 2> /dev/null; fails=$((fails + 1)); fi
+sed -i -E 's/^phase: .*/phase:                     2/' "$O53/.gauntlet/STATE.md"; mkdir -p "$O53/.gauntlet/reports"
+cp "$FIX/build-real-compiled.txt" "$O53/.gauntlet/reports/01-build.txt"; report_seal "$O53A" "$O53/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"
+NX_RAW=1 kx_row 7327 "next.sh: phase 2 on the walker's anchor, the owner absent - the route goes on" 4b "$O53"
+# ... and the dossier's rows name it, for section 8
+W53="$S53/w"; mkdir -p "$W53/.gauntlet"; nx_build "$W53"; cp "$FIX/state-row-18.md" "$W53/.gauntlet/STATE.md"
+printf 'by: walker (owner absent)\n' >> "$W53/.gauntlet/spec.sha256"
+nx "$NX" "$W53/.gauntlet/STATE.md" --judge "$(nx_meta "$FIX/state-row-18.md" judge)" > "$TMP/o7328" 2>&1; check "next.sh: row 18 (the dossier), the spec's anchor signed by the walker" 0 $? "$TMP/o7328"
+k5_has "$TMP/o7328" "... a note for the dossier's section 8" "next: note - .gauntlet/spec.sha256 says by: walker (owner absent): the walker signed that anchor, not the owner - the dossier's section 8 carries it as a divergence"
+td_has "$HERE/../doctrine/EVIDENCE.md" "The ROUND lines are"
+td_has "$HERE/../doctrine/EVIDENCE.md" "the verifier who confronts the ROUND lines with the"
+# ---- decision 4: one exit-code convention (doctrine/NEXT.md): 1 the environment - a library of the kit's missing
+VN="$S53/nolib"; mkdir -p "$VN/scripts"; cp "$HERE"/*.sh "$VN/scripts/"
+v53_nolib() { # v53_nolib <n> <script> [args...]: the script, its scripts/lib/ gone - exit 1, naming what is missing
+  local n="$1" sc="$2"; shift 2
+  "$VN/scripts/$sc" "$@" > "$TMP/o$n" 2>&1; check "v0.5.3: $sc with no scripts/lib/: the environment, exit 1" 1 $? "$TMP/o$n"
+  grep -q 'lib/[a-z-]*\.sh is missing' "$TMP/o$n" || { echo "  FAIL  and it does not name the library:"; sed "s/^/        | /" "$TMP/o$n"; fails=$((fails + 1)); }
+}
+v53_nolib 7330 mutate.sh "$Q" src/FixtureHook.sol a b
+v53_nolib 7331 fuzz-long.sh "$Q"
+v53_nolib 7332 pending-red.sh "$Q"
+v53_nolib 7333 battery.sh "$Q"
+v53_nolib 7334 backtest.sh "$Q"
+v53_nolib 7335 census.sh "$Q"
+v53_nolib 7336 static-triage.sh "$Q"
+v53_nolib 7337 threat-diff.sh "$Q"
+v53_nolib 7338 size.sh "$Q"
+v53_nolib 7339 setup-deps.sh "$Q"
+v53_nolib 7340 sim-report.sh "$Q/.gauntlet/STATE.md"
+td_has "$HERE/../doctrine/NEXT.md" "## The kit's exit codes"
+td_has "$HERE/../doctrine/NEXT.md" "0 = done, or yes; 1 = usage or the environment"
+# ---- decision 5: the doctrine says it, and says what the anchors do not prove
+td_has "$HERE/../doctrine/EVIDENCE.md" "**Silence is a refusal.**"
+td_has "$HERE/../doctrine/EVIDENCE.md" "the anchors prove currency, not authorship"
+# ---- the REFUSED prefix: every run of next.sh in this selftest that exited 2 said `next: REFUSED - ` on its last line of
+# stderr (nx holds every run to it: the example's FIRST - fill, a pending/ test's, a cited file's were the ones that did not)
+if [ -s "$TMP/nx-unprefixed" ]; then echo "  FAIL  next.sh exited 2 without 'next: REFUSED - ' on its last stderr line:"; sort -u "$TMP/nx-unprefixed" | head -8 | sed "s/^/        | /"; fails=$((fails + 1)); else
+  echo "  ok    every next.sh run of this selftest that exited 2 ended its stderr with 'next: REFUSED - ...'"; fi
+rm -rf "$S53"
 
 echo
 echo "selftest ran in $((SECONDS - started)) s"

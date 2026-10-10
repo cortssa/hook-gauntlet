@@ -39,6 +39,9 @@ previous round let something through.**
    corrections the previous round asked for present, and are they right?
 6. **An honest wallet that this change now treats differently.** Every new guard refuses someone. Say who, and
    whether that is coherent with the rest of the design.
+7. **The LOG's ROUND lines against the sealed reports.** A ROUND line is text anyone can type (`doctrine/EVIDENCE.md`
+   section 9): confront each with the reports sealed beside it - a round with no report, a report with no round, a count
+   that does not add up - and say which you checked.
 
 ## If there is a competing candidate
 

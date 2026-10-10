@@ -54,14 +54,18 @@
 #          and, last, that the findings are the agent's to triage, like any finding.
 # Exit:    0 forge lint ran (whatever Slither and Aderyn did: the report says); 1 forge is not on the PATH, or forge lint
 #          failed (the report is still written, with its output); 2 nothing run, nothing written: no <proj>, no src/ or no
-#          .sol file under it, OUT_DIR refused, a `.env` that sets a forge variable, bad arguments.
+#          .sol file under it, OUT_DIR refused, a `.env` that sets a forge variable, bad arguments. A library of the kit's
+#          missing is 1 (v0.5.3, the kit's convention: doctrine/NEXT.md - the environment).
+# Seals:   (v0.5.3) 05-static.txt gets 05-static.txt.sha256 beside it (scripts/lib/src-anchor.sh, report_seal).
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/forge-env.sh
-. "$HERE/lib/forge-env.sh" || { echo "static-triage: $HERE/lib/forge-env.sh is missing"; exit 2; }
+. "$HERE/lib/forge-env.sh" || { echo "static-triage: $HERE/lib/forge-env.sh is missing"; exit 1; }
 # shellcheck source=lib/owner-tree.sh
-. "$HERE/lib/owner-tree.sh" || { echo "static-triage: $HERE/lib/owner-tree.sh is missing"; exit 2; }
+. "$HERE/lib/owner-tree.sh" || { echo "static-triage: $HERE/lib/owner-tree.sh is missing"; exit 1; }
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "static-triage: $HERE/lib/src-anchor.sh is missing"; exit 1; }
 
 refuse() { echo "static-triage: REFUSED - $*"; echo "static-triage: nothing run, nothing written."; exit 2; }
 [ "$#" -eq 1 ] || refuse "usage: scripts/static-triage.sh <proj> (one argument, the project's directory)."
@@ -314,6 +318,9 @@ tool_head() { # tool_head <name> <state> <version>
 } > "$TMPD/report.txt"
 mkdir -p "$OUT_DIR" && mv -f "$TMPD/report.txt" "$OUT_DIR/$REPORT_NAME" \
   || { echo "static-triage: the report could not be written to $OUT_DIR/$REPORT_NAME"; exit 1; }
+# v0.5.3: its seal, 05-static.txt.sha256 beside it (scripts/lib/src-anchor.sh, report_seal)
+report_seal "$PROJ_REAL" "$OUT_DIR/$REPORT_NAME" "$HERE/static-triage.sh" \
+  || echo "static-triage: could not write $OUT_DIR/$REPORT_NAME.sha256 - next.sh does not read it as a record"
 
 echo "static-triage: report in $OUT_DIR/$REPORT_NAME"
 echo "static-triage: the line for STATE.md notes: (this script does not edit STATE.md):"

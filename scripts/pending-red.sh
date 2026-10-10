@@ -61,19 +61,20 @@
 #          refused, and so is a filter in ~/.foundry/foundry.toml.
 # Exit:    0 every file named is red on the code, its record written; 2 one is not (the lines above say which and why),
 #          or nothing could be run: no project, no pending/, no [profile.pending], no such file, no forge, src/ not as
-#          its anchor records it.
+#          its anchor records it - or, from phase 2 (v0.5.3), no anchor recorded at all (scripts/lib/src-anchor.sh); 1
+#          when a library of the kit's is missing (the kit's convention, doctrine/NEXT.md: the environment).
 
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/parse.sh
-. "$HERE/lib/parse.sh" || { echo "pending-red: $HERE/lib/parse.sh is missing"; exit 2; }
+. "$HERE/lib/parse.sh" || { echo "pending-red: $HERE/lib/parse.sh is missing"; exit 1; }
 # shellcheck source=lib/forge-env.sh
-. "$HERE/lib/forge-env.sh" || { echo "pending-red: $HERE/lib/forge-env.sh is missing"; exit 2; }
+. "$HERE/lib/forge-env.sh" || { echo "pending-red: $HERE/lib/forge-env.sh is missing"; exit 1; }
 # shellcheck source=lib/pending-record.sh
-. "$HERE/lib/pending-record.sh" || { echo "pending-red: $HERE/lib/pending-record.sh is missing"; exit 2; }
+. "$HERE/lib/pending-record.sh" || { echo "pending-red: $HERE/lib/pending-record.sh is missing"; exit 1; }
 # shellcheck source=lib/src-anchor.sh
-. "$HERE/lib/src-anchor.sh" || { echo "pending-red: $HERE/lib/src-anchor.sh is missing"; exit 2; }
+. "$HERE/lib/src-anchor.sh" || { echo "pending-red: $HERE/lib/src-anchor.sh is missing"; exit 1; }
 forge_env_clean pending-red "" "$0" "$@"
 
 no() { echo "pending-red: $*"; exit 2; }

@@ -66,7 +66,8 @@
 #          `setup-deps: forge build FAILED (rc N) - ...`; then the COPY_ROOT line; then, last (and last in --dry-run, never
 #          in --check or a refusal), a heading line and the import lines.
 # Exit:    0 set up and `forge build` green (--dry-run: printed; --check: already set up); 1 the files are written and the
-#          build failed (--check: not set up); 2 REFUSED, nothing written - the reason on one line, with the way out: the
+#          build failed (--check: not set up), or a library of the kit's is missing (v0.5.3: the environment); 2 REFUSED,
+#          nothing written - the reason on one line, with the way out: the
 #          project's own lib/forge-std or lib/v4-core, no kit in reach, a kit without Uniswap's sources
 #          (scripts/install-v4.sh), a project inside the kit, remappings set in foundry.toml's [profile.default], a .env
 #          that sets a forge variable, bad arguments.
@@ -75,7 +76,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/forge-env.sh
-. "$HERE/lib/forge-env.sh" || { echo "setup-deps: $HERE/lib/forge-env.sh is missing"; exit 2; }
+. "$HERE/lib/forge-env.sh" || { echo "setup-deps: $HERE/lib/forge-env.sh is missing"; exit 1; }
 
 refuse() { echo "setup-deps: REFUSED - $*"; exit 2; }
 

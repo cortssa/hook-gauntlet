@@ -35,14 +35,18 @@
 #            threat-diff: REFUSED - <u> of <t> independent threats neither matched ... : T-3 (...); T-7 (...)  (exit 1),
 #              and that the line for STATE.md stays `threat_model: not yet`
 #            threat_model: not yet - <the file missing, and who writes it>   (exit 1, nothing written)
-#          This script does not edit STATE.md: the agent writes the line it prints.
+#          This script does not edit STATE.md: the agent writes the line it prints. The report gets its seal (v0.5.3),
+#          06-threats.txt.sha256 beside it (scripts/lib/src-anchor.sh, report_seal): next.sh reads it only with that seal.
 # Exit:    0 diffed; 1 not diffed - a list missing, or an independent threat unanswered (each named); 2 REFUSED, nothing
-#          written: no <proj>, bad arguments, or a file not of its form (the file, its line and what is wrong).
+#          written: no <proj>, bad arguments, or a file not of its form (the file, its line and what is wrong). 1 too when a
+#          library of the kit's is missing (v0.5.3, the kit's convention: doctrine/NEXT.md - the environment).
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib/threats.sh
-. "$HERE/lib/threats.sh" || { echo "threat-diff: $HERE/lib/threats.sh is missing"; exit 2; }
+. "$HERE/lib/threats.sh" || { echo "threat-diff: $HERE/lib/threats.sh is missing"; exit 1; }
+# shellcheck source=lib/src-anchor.sh
+. "$HERE/lib/src-anchor.sh" || { echo "threat-diff: $HERE/lib/src-anchor.sh is missing"; exit 1; }
 
 refuse() { echo "threat-diff: REFUSED - $*"; echo "threat-diff: nothing written."; exit 2; }
 [ "$#" -eq 1 ] || refuse "usage: scripts/threat-diff.sh <proj> (one argument, the project's directory)."
@@ -91,6 +95,9 @@ else VERDICT="threat-diff: REFUSED - $TD_WHY"; fi
   if [ "$TD_STATE" = diffed ]; then echo "the line for STATE.md: $TD_LINE"
   else echo "the line for STATE.md stays: threat_model: not yet"; fi
 } > "$REP" || refuse "cannot write $REP."
+# v0.5.3: its seal, 06-threats.txt.sha256 beside it (scripts/lib/src-anchor.sh, report_seal) - next.sh reads a diffed
+# line only against a report its seal matches, made on the src/ there is now
+report_seal "$PROJ" "$REP" "$HERE/threat-diff.sh" || echo "threat-diff: could not write $REP.sha256 - next.sh does not read the report as a record"
 
 echo "threat-diff: $TD_T independent threats ($TD_IND_SHA, model: $TD_MODEL), $TD_W of the walker's ($TD_WAL_SHA; $TD_WOWN its own)"
 echo "threat-diff: $TD_N matched, $TD_M new (now an invariant), $TD_K refused, $TD_H handed, $TD_U unmatched - report: .gauntlet/reports/06-threats.txt"
