@@ -39,9 +39,9 @@ scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on 
 Done looks like this, on forge 1.8.1 (CI also runs 1.8.3):
 
 ```
-SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 1143 cases, about 285 s
+SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 2130 cases, about 530 s
 test      rc=0   (passed 107, failed 0, skipped 0; filter: none)  ...  BATTERY PASSED           # the root kit
-test      rc=0   (passed 271, failed 0, skipped 0; filter: no_match_path = "test/{fork,backtest}/**" (the project's foundry.toml))  suites test=11 test/examples=13 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
+test      rc=0   (passed 288, failed 0, skipped 0; filter: no_match_path = "test/{fork,backtest}/**" (the project's foundry.toml))  suites test=13 test/examples=13 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
 ```
 
 The v4 module on a mainnet fork is two commands more and needs your own endpoint: `FOUNDRY_PROFILE=fork V4_MANAGER=fork
@@ -319,7 +319,8 @@ from all of these:
 
 ## Status
 
-**v0.4, 2026-10-06 (v0.3: 2026-09-29). Measured, not validated; one hook, N = 1 per arm.** Fresh Opus 5.5 walks of
+**main is v0.5.3, unreleased; last tag v0.4, 2026-10-06 (v0.3: 2026-09-29). Measured, not validated; one hook, N = 1
+per arm.** Fresh Opus 5.5 walks of
 the route, each with nothing but the kit and a neutral prompt, on one small hook with four planted defects and a sealed
 answer key, each judged afterwards by a separate agent that re-ran the gates on a copy: 4 of 4 planted defects found in
 rounds 3, 4 and 5 (the v0.3 kit, a v0.4 candidate, the v0.4.2 kit), and no false green in the judges' re-runs. Rounds 3

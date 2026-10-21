@@ -2,6 +2,12 @@
 
 ## Unreleased (v0.5)
 
+- **Known gaps on main (v0.5.3), open:** `blackbox: skipped_by_owner` is not checked against the black-box rounds; the
+  `by: walker (owner absent)` line stays in the anchor record after the owner signs a later re-record; `--by "the
+  walker"` is accepted as an owner's name (only a name that starts with `walker` or contains `owner absent` is
+  refused); a sealed census gate report that says `census gate: FAILED` still satisfies phase 3's census check; a
+  `src/` re-record is not repeated by `next.sh` under each answer, as a spec re-record is.
+
 - **v0.5.3 - silence is a refusal.** A review of the kit's records found four places where a missing or unbacked record
   read as a pass. These are corrections of false greens, not features. (1) **The anchors.** Deleting
   `.gauntlet/spec.sha256` turned the spec check off without a word, and deleting `src.sha256` made the battery's and
