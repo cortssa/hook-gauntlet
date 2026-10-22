@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (v0.5)
+## v0.5.3 - 2026-10-22 - silence is a refusal (carries v0.5.1 and v0.5.2, never tagged)
 
 - **Known gaps on main (v0.5.3), open:** `blackbox: skipped_by_owner` is not checked against the black-box rounds; the
   `by: walker (owner absent)` line stays in the anchor record after the owner signs a later re-record; `--by "the

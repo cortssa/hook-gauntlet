@@ -319,7 +319,7 @@ from all of these:
 
 ## Status
 
-**main is v0.5.3, unreleased; last tag v0.4, 2026-10-06 (v0.3: 2026-09-29). Measured, not validated; one hook, N = 1
+**v0.5.3, 2026-10-22 (v0.4: 2026-10-06; v0.3: 2026-09-29). Measured, not validated; one hook, N = 1
 per arm.** Fresh Opus 5.5 walks of
 the route, each with nothing but the kit and a neutral prompt, on one small hook with four planted defects and a sealed
 answer key, each judged afterwards by a separate agent that re-ran the gates on a copy: 4 of 4 planted defects found in
