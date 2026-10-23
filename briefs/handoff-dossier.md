@@ -130,7 +130,9 @@ that other software will trust.
 Every finding that was accepted rather than fixed: what an attacker achieves, who loses how much, what it costs them,
 why it was not fixed, and who accepted it. -> `SPEC.md` section 6. Refusals with their reasons -> `DECISIONS.md`.
 Every finding carries a status: `accepted` (with the owner's line), `fixed` (with the regression test), or
-`open - owner triage pending`. A dossier with an open finding is a **skeleton** (`doctrine/NEXT.md` row 9b): sections
+`open - owner triage pending`. Its description may also carry `known upstream: <ref> | not found, checked <date>`
+(`doctrine/LESSONS.md` 15: the upstream tracker, the audit reports and the hook's own issues searched before "new" is
+written) - optional text, nothing parses it; "not found" with a date is an answer, an empty field is not. A dossier with an open finding is a **skeleton** (`doctrine/NEXT.md` row 9b): sections
 0, 4, 5, 6, 7, 8, 9 filled honestly, the open ids listed here by id and severity, and the status line above section 0 carrying `skeleton: K findings
 open` (K: high + medium + low still open, informational not counted). Sections 1, 2, 3 and 10 are filled as far as they are known (10 only if a fresh agent can actually run it; else
 `not yet`). In a skeleton, a cell that waits on the owner for something OTHER than triage (a not-run judge's reason in

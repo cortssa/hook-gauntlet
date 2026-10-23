@@ -1,5 +1,7 @@
 # Brief template: verifier (a short round, after fixes)
 
+Two uses, one brief: re-checking corrections after a round (below), and falsifying a round's findings before they reach the owner - the invariant 'nothing becomes a recommendation to the owner without a verifier that is not its author' (`AGENTS.md`; `skills/hook-gauntlet-dossier/SKILL.md:17`). In the second use the sentences to falsify are the round's findings, one by one.
+
 Use this when an audit round voted "ready, with corrections" and the corrections have been applied **after** it
 finished. Nobody has attacked the corrected code. The verifier is not the agent that confirms your work: it is
 the agent that **re-derives** it.

@@ -32,7 +32,8 @@
 #          SEED       replay a specific seed
 #          ESTIMATE_ONLY  any value but empty or 0 (1, true, yes) to print what the campaign will cost (above) and stop
 #                     there: exit 0, no campaign, no bench, nothing written - the refusals before the cost (a profile that
-#                     does not exist, a budget no larger than the everyday one, a campaign whose bench would have no place:
+#                     does not exist, a budget no larger than the everyday one - the profile's, or (v0.5.4) one an inline
+#                     `forge-config:` line gives a test, named by file and line -, a campaign whose bench would have no place:
 #                     BENCH_ROOT unset in a tree without .gauntlet/) still refuse. NEXT.md row 7's "say how long first" is
 #                     this run.
 #          USE_BENCH  1 to run in a bench copy (default: 1). A project whose foundry.toml or remappings.txt reach
@@ -75,7 +76,8 @@
 #          ALLOW_SKIPS  1 to accept a skipped campaign;  ALLOW_SMALL_BUDGET  1 to accept a budget no larger than the default
 # Exit:    0 after the cost alone with ESTIMATE_ONLY=1. Otherwise forge's exit code - 1, never 0, when a test FAILED whatever forge exited with (`--allow-failure` exits 0
 #          over one: a FAIL line or a failed count is a failed campaign); 2 when NOTHING WAS PROVEN (the profile does not exist, its invariant budget is not larger
-#          than the everyday one, no invariant campaign ran - including a build or a setUp that failed before any could,
+#          than the everyday one, or an inline forge-config gives a test one that is not - refused before the campaign
+#          (v0.5.4), or seen after it in what ran -, no invariant campaign ran - including a build or a setUp that failed before any could,
 #          which is never reported as a counterexample - or one skipped itself, or the bench cannot hold the project).
 #          1 too (v0.5.3, the kit's convention: doctrine/NEXT.md) when the environment fails it before any campaign: a
 #          library of the kit's missing, or a build record that cannot be removed (scripts/lib/forge-env.sh).
@@ -251,6 +253,89 @@ if [ "$long_budget" -le "$default_budget" ] && [ "${ALLOW_SMALL_BUDGET:-0}" != "
   echo "           (RUNS / DEPTH, when set, override the profile: unset them. ALLOW_SMALL_BUDGET=1 to replay one seed on purpose.)"
   exit 2
 fi
+# v0.5.4: the inline budgets, read BEFORE the campaign (a long campaign was lost to one found only after it ran, below).
+# forge 1.8.1 honours, on a test function or on its contract, `forge-config: <profile>.invariant.runs = N` (and `.depth`),
+# the `default.` profile's under any profile, and the table form `<profile>.invariant = { runs = N, depth = M }`, in a
+# `///` line or a `/** */` block (measured on forge 1.8.1, 2026-10-22: each ran its own budget under profile long; a line
+# with no profile, or one foundry.toml does not have, is refused by forge itself). These forms are read here, in the
+# .sol files of test/ and of the profile's `test` directory, BY BLOCK: a run of `///` lines - blank lines inside it are
+# part of it, forge joins them (measured) - or a `/**` to its `*/`; any other line ends it. A block counts when it sets
+# one of those keys. In a file with ONE such block, with forge's precedence (measured): runs is the profile's own inline
+# runs, else `default.`'s, else [profile.<p>.invariant]'s; depth likewise; the table form sets the keys it names. The
+# smallest such budget (runs x depth) no larger than the everyday one is refused before any forge run, naming the file,
+# the block's line or lines and its settings - with ESTIMATE_ONLY=1 too. A file with MORE than one such block is not
+# read before the run: forge merges a contract's block with its function's (function over contract, measured), the
+# merge is not modelled here, and a refusal never fires on a doubt - one line names the file, and the check after the
+# run decides there, and for any form not read here.
+il_scan() { # il_scan <profile> <its runs> <its depth> <file>...: per file with one counting block "B\t<budget>\t<file>:<line>[-<line>]\t<settings>"; per file with more "M\t<file>\t<n>"
+  LC_ALL=C awk -v p="$1" -v r="$2" -v d="$3" '
+    function num(t) { sub(/^[^=]*=[ \t]*/, "", t); gsub(/[_ \t]/, "", t); return t + 0 }
+    function start() { inb = 1; bf = FNR; nset = 0; hpr = hpd = hdr = hdd = 0; sets = "" }
+    function flush(   rr, dd2, w) {
+      if (inb && nset) {
+        rr = hpr ? pr : (hdr ? dr : r); dd2 = hpd ? pd : (hdd ? dd : d)
+        w = cur ":" bf; if (bl != bf) w = w "-" bl
+        nblk++; fb = rr * dd2; fw = w; fs = sets
+      }
+      inb = 0; incom = 0
+    }
+    function endfile() {
+      flush()
+      if (nblk == 1) printf "B\t%.0f\t%s\t%s\n", fb, fw, fs
+      else if (nblk > 1) printf "M\t%s\t%d\n", cur, nblk
+      nblk = 0
+    }
+    function take(s,   dot, prof, rest, isp, got, v) {
+      dot = index(s, "."); if (!dot) return
+      prof = substr(s, 1, dot - 1); if (prof != p && prof != "default") return
+      isp = (prof == p); rest = substr(s, dot + 1); got = 0
+      if (rest ~ /^invariant\.runs[ \t]*=[ \t]*[0-9_]+$/) { v = num(rest); if (isp) { pr = v; hpr = 1 } else { dr = v; hdr = 1 }; got = 1 }
+      else if (rest ~ /^invariant\.depth[ \t]*=[ \t]*[0-9_]+$/) { v = num(rest); if (isp) { pd = v; hpd = 1 } else { dd = v; hdd = 1 }; got = 1 }
+      else if (rest ~ /^invariant[ \t]*=[ \t]*\{.*\}$/) {
+        if (match(rest, /[{, \t]runs[ \t]*=[ \t]*[0-9_]+/)) { v = num(substr(rest, RSTART, RLENGTH)); if (isp) { pr = v; hpr = 1 } else { dr = v; hdr = 1 }; got = 1 }
+        if (match(rest, /[{, \t]depth[ \t]*=[ \t]*[0-9_]+/)) { v = num(substr(rest, RSTART, RLENGTH)); if (isp) { pd = v; hpd = 1 } else { dd = v; hdd = 1 }; got = 1 }
+      }
+      if (got) { nset++; sets = sets (sets == "" ? "" : "; ") s }
+    }
+    function scan(t,   s) {
+      if (!match(t, /forge-config:[ \t]*/)) return
+      if (substr(t, 1, RSTART - 1) !~ /^[ \t]*(\/\/\/|\/\*\*|\*)?[ \t]*$/) return
+      s = substr(t, RSTART + RLENGTH); sub(/[ \t]*\*\/[ \t]*$/, "", s); sub(/[ \t]+$/, "", s); take(s)
+    }
+    FNR == 1 { if (cur != "") endfile(); cur = FILENAME }
+    { sub(/\r$/, "") }
+    incom { bl = FNR; scan($0); if ($0 ~ /\*\//) flush(); next }
+    /^[ \t]*\/\/\// { if (!inb) start(); bl = FNR; scan($0); next }
+    /^[ \t]*$/ { next }   # a blank line: inside a `///` run it is part of it (forge joins them); elsewhere nothing
+    /^[ \t]*\/\*\*/ { flush(); start(); incom = 1; bl = FNR; scan($0); if (substr($0, index($0, "/**") + 3) ~ /\*\//) flush(); next }
+    { flush() }
+    END { if (cur != "") endfile() }' "${@:4}"
+}
+il_dirs="test"; il_t="$(printf '%s\n' "$cfg" | awk '/^test = / { v = $3; gsub(/"/, "", v); print v; exit }')"
+[ -z "$il_t" ] || [ "$il_t" = test ] || il_dirs="$il_dirs $il_t"
+il_files=()
+for il_d in $il_dirs; do
+  [ -d "$il_d" ] || continue
+  while IFS= read -r -d '' il_f; do il_files+=("$il_f"); done < <(find -L "$il_d" -type f -name '*.sol' -print0 2> /dev/null | LC_ALL=C sort -z)
+done
+il_out=""
+[ "${#il_files[@]}" -eq 0 ] || il_out="$(il_scan "$FOUNDRY_PROFILE" "$long_runs" "$long_depth" "${il_files[@]}")"
+il_hit=""
+while IFS=$'\t' read -r il_k il_1 il_2 il_3; do
+  case "$il_k" in
+    M) echo "fuzz-long: $il_1 has $il_2 forge-config blocks - forge merges a contract's block with its function's, and that is not modelled here: not refused before the run; the check after the campaign decides." ;;
+    B) if [ -z "$il_hit" ] || [ "$il_1" -lt "${il_hit%%$'\t'*}" ]; then il_hit="$il_1"$'\t'"$il_2"$'\t'"$il_3"; fi ;;
+  esac
+done <<< "$il_out"
+if [ -n "$il_hit" ] && [ "${ALLOW_SMALL_BUDGET:-0}" != "1" ]; then
+  IFS=$'\t' read -r il_b il_where il_what <<< "$il_hit"
+  if [ "$il_b" -le "$default_budget" ]; then
+    echo "fuzz-long: an inline forge-config gives a campaign a budget no larger than the everyday one: $il_where, \`forge-config: $il_what\` - $il_b calls, the everyday $default_runs x $default_depth = $default_budget. NOTHING PROVEN, nothing run."
+    echo "           forge runs that test (or its contract) on it, over [profile.$FOUNDRY_PROFILE.invariant], and says nothing: raise it above the everyday budget, or remove it."
+    echo "           (ALLOW_SMALL_BUDGET=1 to replay one seed on purpose.)"
+    exit 2
+  fi
+fi
 
 # What it will cost, said BEFORE it runs (AGENTS.md section 5: say how long first). FR16 blocked 68 minutes on four long
 # campaigns of about ten minutes each and a shrink of about ten more, and said "far over my estimate" only after. So:
@@ -379,6 +464,7 @@ if [ "$rc" -ne 0 ] && [ "$campaigns" = "0" ]; then
 fi
 # The budget was READ from the profile; this is what RAN. A test with its own inline configuration
 # (`/// forge-config: long.invariant.runs = 1`) runs another number under the profile's label, and forge says nothing.
+# (v0.5.4: the forms read before the campaign, above, are refused there; this catches what they do not cover.)
 if [ "$rc" -eq 0 ] && [ "$smallest" -lt "$long_budget" ] && [ "${ALLOW_SMALL_BUDGET:-0}" != "1" ]; then
   echo "fuzz-long: a campaign RAN $smallest calls, and the budget of '$FOUNDRY_PROFILE' is $long_budget. An inline forge-config on"
   echo "           that test? NOTHING PROVEN for it. (ALLOW_SMALL_BUDGET=1 to accept.)"

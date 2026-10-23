@@ -24,10 +24,11 @@ is replaced in the same step (`replaced the kit's example STATE.md`), and so is 
 in `.gauntlet/` - unless a `STATE.md` of the project's own is there: the STATE wins, and it is refused. The example
 copied to the project's root is named as such: delete it, then run it again. **The spec is the owner's:** with that record, `scripts/next.sh`
 refuses a spec whose hash differs, or that is gone - `next: REFUSED - <spec> changed since init-state recorded it: the
-spec is the owner's. Undo the change (put the owner's text back) and write what you assumed in DECISIONS.md (source:
-assumed, owner absent); the route's own spec - phase 1's rows - is <proj>/.gauntlet/SPEC.md, never the owner's file
-(AGENTS.md section 4). The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an
-agent never does it.` (or `is missing`; exit 2, no escape). On a project that has its `STATE.md`, `--spec` is **refused
+spec is the owner's. Two routes, and the kit cannot tell which applies: (1) the change is not the owner's - undo it (put
+the owner's text back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec
+- phase 1's rows - is <proj>/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4); (2) the owner ordered it
+(a "fix it" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh <proj> --spec <spec> --by
+<owner>. An agent never re-records.` (or `is missing`; exit 2, no escape). On a project that has its `STATE.md`, `--spec` is **refused
 by default** - the kit cannot tell whose hands changed the spec, so it records nothing; the owner's SIGNATURE
 (`--by`, documented in the header of `scripts/init-state.sh`) is the only way through (a signature, not a password). With
 it, line 1 of `.gauntlet/spec.sha256` becomes the new hash and one line is appended, `re-recorded <date> by "<name>"
@@ -43,11 +44,12 @@ from `phase:` 2 (v0.5.3, silence is a refusal: `doctrine/EVIDENCE.md` §9) a mis
 anchor record missing: <proj>/.gauntlet/spec.sha256; re-run scripts/init-state.sh <proj> --spec <the owner's spec> --by
 <owner> - ...` (`src.sha256` the same, `--src`): the owner records it, signed. **`src/` is the owner's too**
 (v0.4.2): with `.gauntlet/src.sha256`, `scripts/pending-red.sh` and `scripts/battery.sh` say on every run whether `src/` is
-as recorded, and refuse before anything runs when it differs or is gone - the spec's refusal, for the code: undo the
-change, write what you assumed in `DECISIONS.md`; a finding's fix is the owner's decision, shown on a copy
-(`scripts/mutate.sh`), never in `src/`; the owner re-records a change of their own, signed (`--src` with `--by`, the
-same act as the spec's: a `re-recorded` line in `src.sha256` and a paragraph `<date> src/ re-recorded: <old 8 hex> ->
-<new 8 hex>, signed ...` in `LOG.md`). No record on a project that has its state (set up before v0.4.2), before phase 2:
+as recorded, and refuse before anything runs when it differs or is gone - the spec's refusal, for the code, naming both
+routes (v0.5.4): the change is not the owner's - undo it, write what you assumed in `DECISIONS.md`; or the owner ordered
+it (a "fix it" in `DECISIONS.md`) - the owner re-records it, signed; a finding's fix is the owner's decision, shown on a
+copy (`scripts/mutate.sh`), never written into `src/` by an agent (`--src` with `--by`, the same act as the spec's: a
+`re-recorded` line in `src.sha256` and a paragraph `<date> src/ re-recorded: <old 8 hex> -> <new 8 hex>, signed ...` in
+`LOG.md`; `next.sh` then repeats it under every answer, as it does a spec's re-record). No record on a project that has its state (set up before v0.4.2), before phase 2:
 one line says how one is made, once per project (the first command leaves `.gauntlet/src-anchor-told`; the battery's
 summary and the records keep saying it), and nothing is refused; from phase 2 (v0.5.3) the battery and `pending-red.sh`
 refuse it too, `<script>: REFUSED - anchor record missing: <proj>/.gauntlet/src.sha256; re-run scripts/init-state.sh <proj>
@@ -89,7 +91,10 @@ notes:
 
 (`location:` is where you put the three files - `.gauntlet/` or `root`; `ceiling:` stays `not agreed (phase 0)` until
 the owner agrees one, then says it as agreed; `threat_model:` stays `not yet` until `scripts/threat-diff.sh` prints its
-line, below; `notes:` starts empty.) A `STATE.md` whose flag block still shares three
+line, below; `notes:` starts empty; `blackbox:` becomes `skipped_by_owner (<YYYY-MM-DD>)` only on the owner's own
+decision, written in `DECISIONS.md` as an entry with `source: owner` that says the owner declined the black-box round,
+on that date, and why - `scripts/next.sh` refuses the flag when a black-box ROUND line is on record, and does not read
+that entry.) A `STATE.md` whose flag block still shares three
 or more lines with the example's - the same values, whatever the spacing (each line trimmed and its runs of spaces and
 tabs made one, on both sides; a line written `key:value`, no space after its first colon, read as `key: value`) - counting `last_audit_round`, `last_other_round`, `open_findings`, `ceiling`,
 `waiting_on_owner`, `notes`, `bytecode_changed_since` and `threat_model`, not the flags a new project can share by chance - is the
@@ -160,9 +165,12 @@ line: no test failed, at least one passed) is `next: REFUSED - battery is green 
 that shows no test ran - the battery failed before its tests, and its green build record is not a battery that ran - is
 refused, naming the battery; `phase:` 4 or higher (phase 3 closed) with no invariant suite under `test/` (no `.sol` file
 with a `function invariant...(`), no census report (`.gauntlet/reports/06-census.txt` or `06-census-gate.txt`, not a
-FAILED campaign's) or no `fork: <what ran against what exists, or n/a - no chain, no manager yet>` note is refused, each
-naming its command (the suite on `InvariantBase` - `QUICKSTART.md` 7b - then the battery; `scripts/census.sh <proj>`;
-the note); so is `threat_model: not yet` there (v0.5, below). Every refusal of `next.sh` goes to stderr, its answers to stdout. And after its answer, whatever it is, when the kit
+FAILED campaign's, nor - v0.5.4 - one whose last line is `census gate: FAILED - ...` or `census gate: NOTHING JUDGED - ...` (`census.sh`'s own verdict: a gate with no floor is not a pass)) or no `fork: <what ran against
+what exists, or n/a - no chain, no manager yet>` note is refused, each naming its command (the suite on `InvariantBase`
+- `QUICKSTART.md` 7b - then the battery; `scripts/census.sh <proj>`; the note); so is `threat_model: not yet` there
+(v0.5, below). v0.5.4: these and the build record are phase 3's gate, read together and refused once - `phase <n> claims
+phase 3 closed; the phase-3 gate (NEXT.md row 4b): build: ok; invariant suite: ok; census: missing (...); fork:
+unanswered (...); threat model: ok (diffed). What closes it: census - ...; fork - ... - or write the phase that is open`. Every refusal of `next.sh` goes to stderr, its answers to stdout. And after its answer, whatever it is, when the kit
 has a `MANIFEST` at its root (one line per file, `<sha256>  <path>`) and a file under the kit is not in it - not
 counting `MANIFEST` itself, `.git`, and any `lib/` (but `scripts/lib/`, the scripts' own), `cache/`, `out/`,
 `corpus/`, `census/`, `broadcast/` or `.gauntlet/` directory (dependencies, builds, and what the kit's own runs
@@ -282,7 +290,7 @@ the id, `test_T7_...` or `invariant_T7_...`, and each such pair - the threat's t
 printed and kept in the report, for a reader to judge the fit), REFUSED (neither, and a heading of `DECISIONS.md` says so in
 one line, in this form and no other: `## <id> · <YYYY-MM-DD> · threat T-<n>[, T-<n>...] refused: <why>` - an id, a real
 date, a middle dot between spaces; a heading with no id or no date, a date that is not one, or hyphens for the dots is
-not a refusal, and the diff names its line), HANDED (v0.5.1: the owner leaves it undecided, and `.gauntlet/THREATS.md`
+not a refusal, and the diff names its line; v0.5.4: a refusal whose entry's `source:` is not `owner` is the walker's proposal, not a refusal: with the owner present it is a question for row 9's triage and the owner's answer replaces it (`source: owner`); absent, `source: assumed, owner absent`, and the dossier's section 8 carries it), HANDED (v0.5.1: the owner leaves it undecided, and `.gauntlet/THREATS.md`
 hands it on by name on a line of its own, `T-<n>: handed: round` - a target the round's brief lists by id and text - or
 `T-<n>: handed: audit` - to the human audit, untested; after the round each `handed: round` gets `became: <the finding's
 id>` right under it, or becomes `handed: audit`) or UNMATCHED. It writes `.gauntlet/reports/06-threats.txt` - the model that
@@ -302,9 +310,9 @@ starts like a threat (`T-`, `W-`, after list markers or a heading) and is not of
 fields or a placeholder in one, an id twice, a matching line in another shape or outside its threat's block, an id named
 that the independent list does not have, `@custom:threat` in another shape, `@threat` at all, a tag that is not right above a
 test or invariant whose name carries its ids, or a threat handed twice, handed and matched, or handed and refused - each is refused, never skipped. `next.sh` refuses `phase:` 4 or higher with `threat_model: not yet` - `next: REFUSED - phase <n>
-claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes
-<proj>/.gauntlet/THREATS-independent.md from <kit>/briefs/threat-model.md, then <kit>/scripts/threat-diff.sh <proj> - or
-write the phase that is open` - and reads a `threat_model: diffed (...)`, at any phase, against the files themselves, by
+claims phase 3 closed; the phase-3 gate (NEXT.md row 4b): ...; threat model: not yet (threat_model: not yet). What
+closes it: threat model - a fresh agent writes <proj>/.gauntlet/THREATS-independent.md from
+<kit>/briefs/threat-model.md, then <kit>/scripts/threat-diff.sh <proj> - or write the phase that is open` - and reads a `threat_model: diffed (...)`, at any phase, against the files themselves, by
 the same library (`scripts/lib/threats.sh`): a list gone or not of its form, an independent threat unanswered (each
 named), or counts other than the line's, is refused (exit 2, no escape: the files are the record). **The lists are
 frozen after the diff:** a `diffed` line with no `06-threats.txt`, a report that does not give that line, or a list
@@ -321,17 +329,18 @@ independently called four state files bureaucracy that an agent maintains instea
 top of the `LOG.md` entry that closes a round, in a fixed shape so that `grep '^ROUND ' LOG.md` is the history:
 
 ```
-ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7
+ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate fail | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7
 ```
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
 `executor`, `promotion`, `rehearsal`, `handoff`, `simulation`, `threat-model` - the independent list of
 `briefs/threat-model.md`: no findings of its own, `0H 0M 0L 0I`, and its gate passes when `scripts/threat-diff.sh` reads
-the file it wrote) · model, as specific as you can be · bench · dates · findings AS THE ROUND
-CLASSIFIED THEM, with REASONED high/medium counted apart · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open; black-box: no divergence left; verifier: every claim held; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - a real state, not a pass with a footnote: the owner was absent, every question has an answer or an explicit "undecided" from their files, and nobody has yet read the scope and the non-goals back to them; the route continues, the pending item is in `waiting_on_owner` (`read-back of scope`), nothing in phases 6-8 closes without it (`briefs/owner-interview.md`), and the dossier says so in section 8; the same for a SPEC written with the owner absent - phase 1's gate also waits on the owner's read (`AGENTS.md` §3): `gate pass (read-back pending)`, `waiting_on_owner: read-back of the spec`. `scripts/round.sh` writes it for `--type interview` and `--type spec` only, and refuses any other wording) · cost AND effort (tokens, wall-clock,
+the file it wrote) · model, as specific as you can be - the model REQUESTED: a harness may substitute another model after a refusal without telling the session (seen: a discovery round requested on one model, written by another). When a hand-back, a transcript or the harness names another model, write the field as `<requested> -> <ran>` and say so in the entry's body · bench · dates · findings AS THE ROUND
+CLASSIFIED THEM, with REASONED high/medium counted apart (the `reasoned` count is the report's; `round.sh` checks the line's form, not the count against the report) · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open - open when the line is written: a finding this round classified is open until the owner triages it (`NEXT.md` row 9), so `gate pass` above `0H 0M` is honest only when each of those findings is a rediscovery of one already closed - fixed, refused in writing, accepted with a number, handed by name; a closing discovery round reads no list of accepted findings - named in the entry's body; `round.sh` checks one thing (v0.5.4): with no earlier ROUND line that classified a high or a medium, nothing was there to be closed, and `gate pass` above `0H 0M` is refused - write `gate fail`; after that it does not check the count. A threat the owner refused in phase 3 (row 4b) is not a closed finding: the finding is the evidence the refusal did not have, and row 9 reads it; black-box: no divergence left; verifier: every claim held - a verifier report with one FALSE claim writes `gate fail`; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - a real state, not a pass with a footnote: the owner was absent, every question has an answer or an explicit "undecided" from their files, and nobody has yet read the scope and the non-goals back to them; the route continues, the pending item is in `waiting_on_owner` (`read-back of scope`), nothing in phases 6-8 closes without it (`briefs/owner-interview.md`), and the dossier says so in section 8; the same for a SPEC written with the owner absent - phase 1's gate also waits on the owner's read (`AGENTS.md` §3): `gate pass (read-back pending)`, `waiting_on_owner: read-back of the spec`. `scripts/round.sh` writes it for `--type interview` and `--type spec` only, and refuses any other wording) · cost AND effort (tokens, wall-clock,
 files read, tests written; leave out what you cannot measure, never guess - an orchestration harness does not always
 return a subagent's usage, and then the field says `cost not measured`, what `scripts/round.sh` writes when no cost
-field is given) · the report · and, optionally,
+field is given) · the report (its own file, `reports/<id>.md`, sealed by `round.sh`; never `DECISIONS.md`, `LOG.md` or
+`STATE.md`, any spelling of its case - v0.5.4: refused, an append-only file's seal stops verifying at its next entry) · and, optionally,
 `conf` - the raw_confidence, 0 to 1: what the round's author would bet on its own verdict. Unused by any policy today;
 it is there so that one day a verdict can be weighed against how often its author was right. The effort fields exist for one
 reason: the loop ends on a discovery round after which zero high and zero medium findings are still open (`NEXT.md` row
@@ -348,7 +357,7 @@ with the script, from named arguments; it checks each one and refuses (exit 2, n
 
 ```sh
 scripts/round.sh .gauntlet/LOG.md --id r05 --phase 4 --type regression --model "vendor-a/large" --bench .gauntlet/bench/a05 \
-  --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate pass \
+  --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate fail \
   --tokens 230k --minutes 95 --files-read 41 --tests-written 6 --report reports/r05.md --conf 0.7
 scripts/round.sh --json .gauntlet/LOG.md      # the history, one JSON object per ROUND line
 ```

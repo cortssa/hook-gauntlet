@@ -19,6 +19,11 @@ code and what the spec promises.
 | scribe | one | mid-tier | keeping `STATE.md`, `DECISIONS.md` and `LOG.md` current is cheap work that must actually happen |
 | judge | **not a model** | - | Foundry |
 
+The model you ask for is not always the model that runs: a harness may substitute another model after a refusal
+without telling the session (seen: a discovery round requested on one model, written by another). The ROUND line's
+model field records the model REQUESTED, `<requested> -> <ran>` when a hand-back, a transcript or the harness names
+another (`state/README.md`, "The ROUND line"); read the model per message in the transcript if you need to know.
+
 Match the model to the difficulty. Do not default everything to the most expensive one; the cost shows up in
 the ROUND lines of `LOG.md` and you will want it to be honest.
 

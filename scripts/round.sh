@@ -12,7 +12,7 @@
 # fourth state file was tried once, nothing read it, and it was cut (state/README.md, "The ROUND line").
 #
 # Usage:   scripts/round.sh <LOG.md> --id r05 --phase 4 --type regression --model "vendor-a/large" --bench .gauntlet/bench/a05 \
-#            --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate pass \
+#            --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate fail \
 #            [--tokens 230k] [--minutes 95] [--files-read 41] [--tests-written 6] --report reports/r05.md [--conf 0.7]
 #          scripts/round.sh --json <LOG.md>      one JSON object per ROUND line, in file order, on stdout
 # Args:    --id          the round's id: letters, digits, . _ - (r05, v2, bb1); refused if LOG.md already has it
@@ -20,11 +20,17 @@
 #          --type        one of: interview spec battery discovery regression black-box verifier executor promotion
 #                        rehearsal handoff simulation threat-model (the independent threat model, briefs/threat-model.md:
 #                        a model's work that is not a round against the ceiling - its line records the model)
-#          --model       as specific as you can be ("Opus 5.5 (1M context)"); --bench, --report: a path
+#          --model       as specific as you can be ("Opus 5.5 (1M context)"): the model REQUESTED - when the harness
+#                        ran another, `<requested> -> <ran>` (state/README.md); --bench, --report: a path. --report is
+#                        never DECISIONS.md, LOG.md or STATE.md, any spelling of its case (v0.5.4: refused - an
+#                        append-only file's seal breaks at its next entry)
 #          --dates       YYYY-MM-DD, or YYYY-MM-DD..YYYY-MM-DD with the end not before the start. Real calendar dates only
 #          --high --medium --low --info   the findings AS THE ROUND CLASSIFIED THEM, whole numbers, all four required
 #          --reasoned    the REASONED high/medium, counted apart (state/README.md), a whole number, required
-#          --gate        pass | fail  (a round that died on a rate limit is `fail`, and it still gets its line)
+#          --gate        pass | fail  (a round that died on a rate limit is `fail`, and it still gets its line; on a
+#                        discovery or regression line, `pass` is zero high and zero medium OPEN, state/README.md);
+#                        refused (v0.5.4) above `0H 0M` when no earlier ROUND line classified a high or a medium -
+#                        nothing was there to be closed
 #                        | "pass (read-back pending)": --type interview or spec only - the interview was played from
 #                        the owner's files with the owner absent, and the owner has not yet read the scope and the
 #                        non-goals back; or the spec was written with the owner absent, and the owner has not yet read
@@ -44,7 +50,9 @@
 #          - the report's seal, <report>.sha256 beside it (scripts/lib/src-anchor.sh, report_seal), when --report names a
 #            file: an absolute path, else one from the project, else from LOG.md's directory (reports/r05.md from
 #            .gauntlet/LOG.md), else from here. No such file: one line says so, and nothing is sealed.
-# Exit:    0 written (or printed); 2 REFUSED - a malformed or missing argument, a duplicate id, or no LOG.md: nothing was
+# Exit:    0 written (or printed); 2 REFUSED - a malformed or missing argument, a duplicate id, no LOG.md,
+#          DECISIONS.md, LOG.md or STATE.md as the report (any spelling of its case), or `gate pass` above 0H 0M with
+#          no earlier classified high or medium (v0.5.4): nothing was
 #          written; 1 a library of the kit's missing (the environment, v0.5.3), nothing written. --json: 0 every ROUND line read; 1 a ROUND line is not of the shape this script writes (named on
 #          stderr, not printed - the others are); 2 no such file.
 
@@ -173,12 +181,42 @@ case "$gate" in
     || refuse "--gate 'pass (read-back pending)' is an interview's or a spec's only (the scope, or the spec, not yet read back by an absent owner); this is a $type round." ;;
   *) refuse "--gate is pass, fail, or 'pass (read-back pending)' for an interview or a spec (got '$gate')." ;;
 esac
+# (`gate pass` on a discovery or regression line above 0H 0M: checked below for ONE thing - the first classified
+# finding: with no earlier ROUND line that classified a high or a medium, nothing was there to be closed, and it is
+# refused. After that the count is not checked: a closing discovery round, which reads no list of accepted findings, may
+# re-report one the owner has accepted - 1H classified, 0 open, the gate passed. state/README.md, "The ROUND line",
+# says when such a line is honest.)
+# v0.5.4: an append-only file is never a round's report - its seal stops verifying at the next entry appended (one was
+# sealed as a round's report, DECISIONS.md, and its seal broke when the next decisions were written)
+# (any spelling of its case: on a case-insensitive filesystem `decisions.md` IS DECISIONS.md; named as given)
+case "$(basename -- "$report" | tr '[:upper:]' '[:lower:]')" in
+  decisions.md | log.md)
+    refuse "REFUSED - $(basename -- "$report") is append-only and is never a round's report: write the report as its own file (reports/<id>.md) and seal that." ;;
+  state.md)
+    refuse "REFUSED - $(basename -- "$report") is the route's state, rewritten as the route moves, and is never a round's report: write the report as its own file (reports/<id>.md) and seal that." ;;
+esac
 if [ -n "$tokens" ]; then printf '%s' "$tokens" | grep -Eq '^[0-9]+[kM]?$' || refuse "--tokens is a whole number, optionally with k or M (got '$tokens')."; fi
 for pair in "minutes:$minutes" "files-read:$files_read" "tests-written:$tests_written"; do
   [ -z "${pair#*:}" ] || is_count "${pair#*:}" || refuse "--${pair%%:*} is a whole number when given (got '${pair#*:}')."
 done
 if [ -n "$conf" ]; then printf '%s' "$conf" | grep -Eq '^(0(\.[0-9]+)?|1(\.0+)?)$' || refuse "--conf is a number from 0 to 1, e.g. 0.7 (got '$conf')."; fi
 if grep -Eq "^ROUND $(printf '%s' "$id" | sed 's/[.]/\\./g') \|" "$LOG"; then refuse "$LOG already has a ROUND line for '$id'."; fi
+# v0.5.4: `gate pass` on a discovery or regression line above 0H 0M, when no earlier ROUND line of this LOG.md classified
+# a high or a medium: nothing was there to be closed (fixed, refused, accepted, handed), so what this round classified is
+# open - refused, --dry-run too. A line whose findings field is not of the shape round.sh writes (a line from before it)
+# counts as one that classified: on a doubt this does not refuse. After the first classified finding the count is not
+# checked (a closing discovery round may honestly re-report one the owner accepted: state/README.md)
+if [ "$gate" = pass ] && { [ "$type" = discovery ] || [ "$type" = regression ]; } \
+  && { [ "$((10#$high))" -gt 0 ] || [ "$((10#$medium))" -gt 0 ]; }; then
+  prior="$(LC_ALL=C awk '/^ROUND / {
+      sub(/\r$/, ""); n = split(substr($0, 7), f, / \| /); fl = (n >= 7) ? f[7] : ""
+      if (fl !~ /^[0-9]+H [0-9]+M [0-9]+L [0-9]+I reasoned [0-9]+$/) { c = 1; exit }
+      split(fl, g, / /); h = g[1]; m = g[2]; sub(/H/, "", h); sub(/M/, "", m)
+      if (h + 0 > 0 || m + 0 > 0) { c = 1; exit } }
+    END { print c + 0 }' "$LOG")"
+  [ "$prior" = 1 ] \
+    || refuse "REFUSED - gate pass on a $type line that classifies ${high}H ${medium}M, and no earlier ROUND line classified a high or a medium: nothing was there to be closed, so these are open - the gate is zero high and zero medium OPEN (state/README.md), and a finding is open until the owner triages it (doctrine/NEXT.md row 9). Write gate fail."
+fi
 
 cost=""
 add() { cost="${cost:+$cost, }$1"; }

@@ -25,9 +25,11 @@
 #                   without it). `--by walker` (v0.5.3): the WALKER signs, the owner absent - accepted only when the
 #                   STATE.md's notes carry an item `owner absent: <why>` (the record of the owner's absence,
 #                   exactly `walker`, case-sensitive - `Walker`, `walker (owner absent)` and the like are refused,
+#                   and (v0.5.4) so is any other name with `walker` in it, any case - `the walker`, `Ana Walker` -
 #                   doctrine/NEXT.md's notes), else refused saying the owner is present by the record; the record then
 #                   carries `by: walker (owner absent)` under its re-recorded line, and next.sh puts it in the dossier's
-#                   section 8 as a divergence. The case it exists for: a hook handed over as code with no owner's spec
+#                   section 8 as a divergence - until an owner's signed re-record of the same record (v0.5.4), which
+#                   drops that line and keeps the walker's `re-recorded` line as history. The case it exists for: a hook handed over as code with no owner's spec
 #                   (briefs/spec-template.md) - from phase 2 next.sh refuses a missing anchor, and the route's spec,
 #                   .gauntlet/SPEC.md, is what the walker anchors (--spec .gauntlet/SPEC.md --by walker).
 # Writes:  <proj>/.gauntlet/
@@ -188,8 +190,9 @@ if [ -n "$HAS" ]; then
     BY_SHOWN="$BY_ARG"
     # the walker's word is exactly `walker`: any other spelling of it (Walker, " walker", "walker (owner absent)"), or a
     # name that claims the owner's absence, is neither the owner's name nor the walker's - refused, never taken as a name
+    # (v0.5.4: `walker` anywhere in the name, any case - "the walker" was taken as an owner's name)
     by_lc="${BY_ARG,,}"
-    if [ "$BY_ARG" != walker ] && { [[ $by_lc =~ ^[[:space:]]*walker ]] || [[ $by_lc == *"owner absent"* ]]; }; then
+    if [ "$BY_ARG" != walker ] && { [[ $by_lc == *walker* ]] || [[ $by_lc == *"owner absent"* ]]; }; then
       refuse "--by '$BY_ARG' is neither an owner's name nor the walker's word: the walker signs as --by walker, exactly (lower case, alone), and only with the note 'owner absent: <why>' in STATE.md's notes; the owner signs with their own name."
     fi
     if [ "$BY_ARG" = walker ]; then
@@ -202,7 +205,13 @@ if [ -n "$HAS" ]; then
       if [ "$kind" = spec ]; then rec="$G/spec.sha256"; what="the spec's hash"; else rec="$G/src.sha256"; what="the anchor of src/"; fi
       old="(none)"; [ -f "$rec" ] && old="$(sed -n '1{s/\r$//;p;}' "$rec")"
       old8="$(printf '%s' "$old" | LC_ALL=C sed -n 's/^\([0-9a-f]\{8\}\)[0-9a-f]\{56\}  .*/\1/p')"; [ -n "$old8" ] || old8=none
-      prior_rr="$([ -f "$rec" ] && sed -n '2,${s/\r$//;/^re-recorded /p;/^by: walker (owner absent)$/p;}' "$rec")"   # earlier re-records are kept, a walker's signature line with its own
+      # earlier re-records are kept, a walker's signature line with its own - until the owner signs (v0.5.4): the history
+      # stays (the `re-recorded ... by "walker (owner absent)"` lines), the standing claim "signed by the walker" does not
+      if [ "$BY_ARG" = walker ]; then
+        prior_rr="$([ -f "$rec" ] && sed -n '2,${s/\r$//;/^re-recorded /p;/^by: walker (owner absent)$/p;}' "$rec")"
+      else
+        prior_rr="$([ -f "$rec" ] && sed -n '2,${s/\r$//;/^re-recorded /p;}' "$rec")"
+      fi
       if [ "$kind" = spec ]; then line="$(record_spec)" || exit 2; else line="$(record_src)" || exit 2; fi   # rewrites line 1 (the new hash and path)
       new8="${line:0:8}"
       # the record keeps line 1 (what next.sh, pending-red.sh and battery.sh parse) and gains one line per re-record,
@@ -234,12 +243,12 @@ if [ -n "$HAS" ]; then
   if [ "$spec_given" = 1 ]; then   # --spec on a project with a STATE.md, unsigned: REFUSED by default (D1b), nothing written
     old="(none)"; [ -f "$G/spec.sha256" ] && old="$(sed -n '1{s/\r$//;p;}' "$G/spec.sha256")"
     old8="$(printf '%s' "$old" | LC_ALL=C sed -n 's/^\([0-9a-f]\{8\}\)[0-9a-f]\{56\}  .*/\1/p')"; [ -n "$old8" ] || old8=none
-    refuse "$HAS exists and the spec is recorded ($SPEC_ARG $old8): the kit cannot tell whose hands changed it, so it records nothing. An agent never re-records: undo the change, write what it assumed in DECISIONS.md (source: assumed, owner absent), and write the route's spec in $PROJ/.gauntlet/SPEC.md (AGENTS.md section 4). The owner, present, re-records a change of their own by signing it (--by; the header of scripts/init-state.sh says how) - the name is written in .gauntlet/spec.sha256 and LOG.md, and next.sh repeats it on every answer."
+    refuse "$HAS exists and the spec is recorded ($SPEC_ARG $old8): the kit cannot tell whose hands changed it, so it records nothing. The spec is the owner's. Two routes, and the kit cannot tell which applies: (1) the change is not the owner's - undo it (put the owner's text back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec is $PROJ/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4); (2) the owner ordered it (a \"fix it\" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh $PROJ --spec $SPEC_ARG --by <owner>. An agent never re-records; the owner's name is written in .gauntlet/spec.sha256 and LOG.md, and next.sh repeats it on every answer."
   fi
   if [ "$src_given" = 1 ]; then   # --src on a project with a STATE.md, unsigned: REFUSED by default, as --spec is, nothing written
     old="(none)"; [ -f "$G/src.sha256" ] && old="$(sed -n '1{s/\r$//;p;}' "$G/src.sha256")"
     old8="$(printf '%s' "$old" | LC_ALL=C sed -n 's/^\([0-9a-f]\{8\}\)[0-9a-f]\{56\}  .*/\1/p')"; [ -n "$old8" ] || old8=none
-    refuse "$HAS exists and src/ is the owner's code (anchor: $old8): the kit cannot tell whose hands changed it, so it records nothing. An agent never re-records: undo the change and write what it assumed in DECISIONS.md (source: assumed, owner absent) - a finding's fix is the owner's decision, shown on a copy (scripts/mutate.sh), never in src/. The owner, present, re-records a change of their own by signing it (--by; the header of scripts/init-state.sh says how) - the name is written in .gauntlet/src.sha256 and LOG.md."
+    refuse "$HAS exists and src/ is the owner's code (anchor: $old8): the kit cannot tell whose hands changed it, so it records nothing. The code under audit is the owner's. Two routes, and the kit cannot tell which applies: (1) the change is not the owner's - undo it (put the owner's code back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); (2) the owner ordered it (a \"fix it\" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh $PROJ --src --by <owner>. A finding's fix is the owner's decision (doctrine/NEXT.md row 6b), shown on a copy (scripts/mutate.sh), never written into src/ by an agent, and an agent never re-records; the owner's name is written in .gauntlet/src.sha256 and LOG.md."
   fi
   if [ "$by_given" = 1 ]; then   # --by with neither --spec nor --src on a project with a STATE.md: nothing to re-record
     refuse "--by signs a re-record of the spec or of src/: give --spec <the spec> or --src too ($usage)."

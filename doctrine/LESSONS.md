@@ -232,3 +232,28 @@ trace of the revert once; it costs a minute.
 
 Mutation testing catches part of this (a test that would pass for any revert kills few mutants). It does not catch
 the case where the code under test is never reached at all - nothing to mutate there changes the outcome.
+
+## 14. A parser is checked against a fixture from the real tool
+
+**The mistake.** A script read another tool's output to decide what had happened, and its test fed it lines typed by
+hand to look like that output. The lines matched what the script's author expected the tool to print, so the test was
+green; the tool, run for real, printed the same fact in another shape - another word, a plural, a field moved, a colour
+code - and the script read the fact as absent, in silence, on the run that mattered. Nothing was wrong with the test
+except that it had never met the tool.
+
+**The rule.** A script that reads another tool's output - forge, slither, `scripts/census.sh`, a report - carries a
+fixture captured from that tool, at a stated version, and its selftest reads the fixture, not a hand-typed imitation.
+The kit does this in `scripts/test/fixtures/`: the `*-real-*` files are captured from forge 1.8.1 on the kit's own
+projects, and the `*-nm-*` files are the near misses, written by hand and named as such. When the tool's version
+changes, capture again before you believe the parser.
+
+## 15. Before a finding is called new
+
+**The mistake.** A finding reached the owner described as new. Nobody had looked for it upstream - in the tracker of
+the code the hook builds on, in the audit reports already published on that code, in the hook's own issues - so
+nobody could say whether it was known there, and "new" was the word that decided how much weight it was given.
+
+**The rule.** A finding's entry carries `known upstream: <ref> | not found, checked <date>`: the upstream tracker, the
+audit reports and the hook's own issues searched before "new" is written. "Not found" with a date is an honest answer;
+an empty field is not. The dossier carries the field in each finding's description in section 4
+(`briefs/handoff-dossier.md`), as text: nothing parses it.

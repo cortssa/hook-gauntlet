@@ -1402,9 +1402,11 @@ rm -rf "$DP" "$TMP/fakehome" "$OT" "$TMP/otb" "$TMP/bbout"
 echo "== round.sh =="
 RL="$TMP/round-LOG.md"; printf '# LOG\n\n## 2026-03-13 - r05 closed\n' > "$RL"
 # rround [--field value]... [-- extra...]: round.sh on $RL with one good round's arguments, some of them overridden
+# (v0.5.4: 0M - this LOG.md has no earlier ROUND line, and `gate pass` above 0H 0M with no earlier classified high or
+# medium is refused: the N1 cases of the v0.5.4 section)
 rround() {
   local -a a=(--id r05 --phase 4 --type regression --model "vendor-a/large (1M)" --bench benches/hg-a05 --dates 2026-03-09..2026-03-12
-    --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate pass --tokens 230k --minutes 95 --files-read 41 --tests-written 6
+    --high 0 --medium 0 --low 4 --info 7 --reasoned 0 --gate pass --tokens 230k --minutes 95 --files-read 41 --tests-written 6
     --report reports/r05.md --conf 0.7)
   local i
   while [ $# -ge 2 ] && [ "$1" != "--" ]; do
@@ -1414,14 +1416,28 @@ rround() {
   [ "${1:-}" = "--" ] && shift
   "$HERE/round.sh" "$RL" "${a[@]}" "$@"
 }
-want_line='ROUND r05 | phase 4 | regression | vendor-a/large (1M) | bench benches/hg-a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7'
-want_json='{"id":"r05","phase":4,"type":"regression","model":"vendor-a/large (1M)","bench":"benches/hg-a05","dates":{"start":"2026-03-09","end":"2026-03-12"},"findings":{"high":0,"medium":1,"low":4,"info":7,"reasoned_high_medium":0},"gate":"pass","cost":{"tokens":230000,"minutes":95,"files_read":41,"tests_written":6},"report":"reports/r05.md","raw_confidence":0.7}'
+want_line='ROUND r05 | phase 4 | regression | vendor-a/large (1M) | bench benches/hg-a05 | 2026-03-09..2026-03-12 | 0H 0M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7'
+want_json='{"id":"r05","phase":4,"type":"regression","model":"vendor-a/large (1M)","bench":"benches/hg-a05","dates":{"start":"2026-03-09","end":"2026-03-12"},"findings":{"high":0,"medium":0,"low":4,"info":7,"reasoned_high_medium":0},"gate":"pass","cost":{"tokens":230000,"minutes":95,"files_read":41,"tests_written":6},"report":"reports/r05.md","raw_confidence":0.7}'
 rround > "$TMP/o140" 2>&1; check "round.sh: a well-formed round is appended (the control)" 0 $? "$TMP/o140"
 if [ "$(grep -c '^ROUND ' "$RL")" = "1" ] && [ "$(grep '^ROUND ' "$RL")" = "$want_line" ]; then echo "  ok    and LOG.md holds exactly that line"; else
   echo "  FAIL  the ROUND line in LOG.md is not the one asked for: $(grep '^ROUND ' "$RL")"; fails=$((fails + 1)); fi
 "$HERE/round.sh" --json "$RL" > "$TMP/o141" 2>&1; check "round.sh --json reads it back" 0 $? "$TMP/o141"
 if [ "$(cat "$TMP/o141")" = "$want_json" ]; then echo "  ok    and every field read back equals the argument it was written from"; else
   echo "  FAIL  the round trip changed a field:"; sed "s/^/        | /" "$TMP/o141"; fails=$((fails + 1)); fi
+# v0.5.4: high and medium written and read back apart (the control above is 0H 0M: a writer and a reader that both swapped
+# them would pass it alone). gate fail: N1 refuses gate pass above 0H 0M with nothing classified before. LOG.md is put
+# back as it was after, byte for byte, so every later case of this section sees the LOG it saw before
+cp "$RL" "$TMP/round-LOG.keep"
+rround --id r06 --high 2 --medium 1 --gate fail > "$TMP/o142" 2>&1; check "round.sh: high and medium written and read back apart (a swap mutant passes the control alone)" 0 $? "$TMP/o142"
+want_line6='ROUND r06 | phase 4 | regression | vendor-a/large (1M) | bench benches/hg-a05 | 2026-03-09..2026-03-12 | 2H 1M 4L 7I reasoned 0 | gate fail | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7'
+if [ "$(grep '^ROUND r06 ' "$RL")" = "$want_line6" ]; then echo "  ok    and its line says 2H 1M"; else
+  echo "  FAIL  the r06 line is not 2H 1M as asked: $(grep '^ROUND r06 ' "$RL")"; fails=$((fails + 1)); fi
+want_json6="$(printf '%s' "$want_json" | sed 's/"id":"r05"/"id":"r06"/; s/"high":0,"medium":0/"high":2,"medium":1/; s/"gate":"pass"/"gate":"fail"/')"
+"$HERE/round.sh" --json "$RL" > "$TMP/o142j" 2>&1; check "round.sh --json reads both lines back" 0 $? "$TMP/o142j"
+if [ "$(sed -n 2p "$TMP/o142j")" = "$want_json6" ]; then echo "  ok    and the second reads back high 2, medium 1"; else
+  echo "  FAIL  the second line read back is not high 2, medium 1:"; sed "s/^/        | /" "$TMP/o142j"; fails=$((fails + 1)); fi
+cp "$TMP/round-LOG.keep" "$RL"
+[ "$(grep -c '^ROUND ' "$RL")" = 1 ] && echo "  ok    and LOG.md is back to its one line" || { echo "  FAIL  LOG.md not put back"; fails=$((fails + 1)); }
 rl_hash="$(hash_of "$RL")"; rn=150
 # refused <label> <the words the refusal must say> <override...>: exit 2, THAT refusal (not some other one: each case
 # gets a fresh id, or every case would be refused as a duplicate of r05 and prove nothing about its own guard - a
@@ -4566,12 +4582,15 @@ k5_has "$TMP/o5076" "... and it says to delete it" "$P2TA/STATE.md exists, and i
 [ ! -e "$P2T/.gauntlet" ] && cmp -s "$P2T/STATE.md" "$HERE/../state/STATE.md" && echo "  ok    and nothing was written" || { echo "  FAIL  the refusal wrote something"; fails=$((fails + 1)); }
 # ---- the spec is the owner's: a re-record is REFUSED by default and SIGNED when taken (D1b); the route's spec is
 # .gauntlet/SPEC.md (D1c). The old K53 --spec re-record path is gone (K54). Numbered to the plan of v0.4.1b.
-K5_TAIL="the spec is the owner's. Undo the change (put the owner's text back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec - phase 1's rows - is $P1A/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4). The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an agent never does it."
+# v0.5.4: the refusal names both routes, every time (undo, or the owner's signed re-record of an ordered change, named
+# with --by <owner> - never a runnable signature)
+K5_TAIL="the spec is the owner's. Two routes, and the kit cannot tell which applies: (1) the change is not the owner's - undo it (put the owner's text back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); the route's own spec - phase 1's rows - is $P1A/.gauntlet/SPEC.md, never the owner's file (AGENTS.md section 4); (2) the owner ordered it (a \"fix it\" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh $P1A --spec SPEC.md --by <owner>. An agent never re-records."
 printf '\n## Decided by the owner\n\n1. The fee is 0.3 percent.\n' >> "$P1/SPEC.md"
 # plan case 6 (changed spec): the new tail, and no escape an agent could run (no --by, no `init-state.sh --spec`)
 kx_one 5010 "next.sh refuses a SPEC.md changed since init-state recorded it (a walker appended owner decisions): the new tail" 2 "next: REFUSED - $P1A/SPEC.md changed since init-state recorded it: $K5_TAIL" "$P1"
 PENDING_RED=0 CITED_FILES=0 nx "$NX" "$P1" > "$TMP/o5011" 2>&1; check "... and no escape turns it off (PENDING_RED=0 CITED_FILES=0)" 2 $? "$TMP/o5011"
-if grep -qE -- '--by|init-state\.sh --spec' "$TMP/o5011"; then echo "  FAIL  the changed-spec refusal printed an escape an agent could run:"; grep -nE -- '--by|init-state\.sh --spec' "$TMP/o5011" | sed "s/^/        | /"; fails=$((fails + 1)); else echo "  ok    the refusal names neither --by nor an init-state.sh --spec command"; fi
+# v0.5.4: the refusal names the owner's re-record (route 2) as --by <owner>, never a runnable signature (--by and a quoted name)
+k5_no_by "$TMP/o5011" "... and the refusal hands over no runnable signature (--by <owner>, not --by and a quoted name)"
 # plan case 1 (--spec, unsigned): REFUSED by default - nothing written (spec.sha256, LOG.md, STATE.md byte-identical)
 k5_before="$(k5_sum "$P1")"; k5_spec_before="$(cat "$P1/.gauntlet/spec.sha256" 2> /dev/null)"; cp "$P1/.gauntlet/LOG.md" "$TMP/k5-log0"; cp "$P1/.gauntlet/STATE.md" "$TMP/k5-state0"
 (cd "$K5" && "$K5_IS" --spec SPEC.md "$P1A") > "$TMP/o5012" 2>&1; check "init-state.sh --spec SPEC.md <proj> on a project with a STATE.md, UNSIGNED: REFUSED by default (D1b), run from elsewhere" 2 $? "$TMP/o5012"
@@ -5237,23 +5256,32 @@ kx_row 6007 "next.sh: phase 3, battery: red, a test record with a failed test: t
 cp "$FIX/summary-real-many-suites.txt" "$F6/.gauntlet/reports/02-test.txt"; k6_state 3 green
 kx_row 6008 "next.sh: phase 3, battery: green, a green test record: the row" 4b "$F6"
 k6_state 4 green
-kx_one 6009 "next.sh refuses phase 4 with no invariant suite under test/, naming QUICKSTART 7b and the battery" 2 \
-  "next: REFUSED - phase 4 claims phase 3 closed and there is no invariant suite under $F6A/test (no .sol file with a function invariant...()): write it on the kit's InvariantBase (QUICKSTART.md 7b), then $K6_BAT - or write the phase that is open" "$F6"
+# v0.5.4: phase 3's gate is read whole and refused once - each item `ok` or what is missing, then each missing item's
+# command (the refusals below were one per item, learned one attempt at a time)
+K6_GB="build: ok"; K6_GS="invariant suite: missing (no .sol file with a function invariant...() under $F6A/test)"
+K6_GC="census: missing (no .gauntlet/reports/06-census.txt or 06-census-gate.txt)"; K6_GF="fork: unanswered (no 'fork:' note in STATE.md notes)"
+K6_GT="threat model: not yet (threat_model: not yet)"
+K6_FS="invariant suite - write it on the kit's InvariantBase (QUICKSTART.md 7b), then $K6_BAT"; K6_FC="census - $KX_KIT/scripts/census.sh $F6A"
+K6_FF="fork - write the note 'fork: <what ran against what exists, or n/a - no chain, no manager yet>' in STATE.md notes (NEXT.md row 4b)"
+K6_FT="threat model - a fresh agent writes $F6A/.gauntlet/THREATS-independent.md from $KX_KIT/briefs/threat-model.md, then $KX_KIT/scripts/threat-diff.sh $F6A"
+k6_gate() { printf 'next: REFUSED - phase 4 claims phase 3 closed; the phase-3 gate (NEXT.md row 4b): %s. What closes it: %s - or write the phase that is open' "$1" "$2"; }
+kx_one 6009 "next.sh refuses phase 4 with no invariant suite under test/, naming QUICKSTART 7b and the battery (and the rest of the gate)" 2 \
+  "$(k6_gate "$K6_GB; $K6_GS; $K6_GC; $K6_GF; $K6_GT" "$K6_FS; $K6_FC; $K6_FF; $K6_FT")" "$F6"
 mkdir -p "$F6/test"
 printf 'contract I { function invariant_balance_covers_claims() public view {} }\n' > "$F6/test/I.t.sol"
-K6_CEN="next: REFUSED - phase 4 claims phase 3 closed and there is no census report (.gauntlet/reports/06-census.txt or 06-census-gate.txt): $KX_KIT/scripts/census.sh $F6A - or write the phase that is open"
+K6_CEN="$(k6_gate "$K6_GB; invariant suite: ok; $K6_GC; $K6_GF; $K6_GT" "$K6_FC; $K6_FF; $K6_FT")"
 kx_one 6010 "next.sh refuses phase 4 with an invariant suite and no census report, naming census.sh" 2 "$K6_CEN" "$F6"
 printf 'census: the campaign FAILED - no census (renamed x)\n' > "$F6/.gauntlet/reports/06-census.txt"
 kx_one 6011 "... and with a FAILED campaign's census report" 2 "$K6_CEN" "$F6"
 printf 'census gate: PASSED - 2 CORE actions\n' > "$F6/.gauntlet/reports/06-census.txt"
-K6_FORK="next: REFUSED - phase 4 claims phase 3 closed and the fork question is unanswered: write the note 'fork: <what ran against what exists, or n/a - no chain, no manager yet>' in STATE.md notes (NEXT.md row 4b) - or write the phase that is open"
+K6_FORK="$(k6_gate "$K6_GB; invariant suite: ok; census: ok; $K6_GF; $K6_GT" "$K6_FF; $K6_FT")"
 kx_one 6012 "next.sh refuses phase 4 with no fork: note" 2 "$K6_FORK" "$F6"
 k6_state 4 green "the fork: question is open"
 kx_one 6013 "... and with fork: inside a note, not at its start" 2 "$K6_FORK" "$F6"
 k6_state 4 green "static triage: forge lint only; - fork: n/a - no chain, no manager yet"
 # v0.5: and the independent threat model diffed (threat_model: not yet is refused here; the lists and the line, the row)
 kx_one 6016 "next.sh refuses phase 4 with every record above and threat_model: not yet, naming the brief and threat-diff.sh" 2 \
-  "next: REFUSED - phase 4 claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes $F6A/.gauntlet/THREATS-independent.md from $KX_KIT/briefs/threat-model.md, then $KX_KIT/scripts/threat-diff.sh $F6A - or write the phase that is open" "$F6"
+  "$(k6_gate "$K6_GB; invariant suite: ok; census: ok; fork: ok; $K6_GT" "$K6_FT")" "$F6"
 cp "$FIX/threats-independent.md" "$F6/.gauntlet/THREATS-independent.md"; cp "$FIX/threats-walker.md" "$F6/.gauntlet/THREATS.md"
 "$HERE/threat-diff.sh" "$F6" > /dev/null 2>&1   # (v0.5) the report, with the lists' sha256 next.sh reads a diffed line against
 sed -i 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 0 handed)/' "$F6/.gauntlet/STATE.md"
@@ -5299,7 +5327,7 @@ if [ -e "$S6N/.gauntlet/src.sha256" ]; then echo "  FAIL  and it wrote src.sha25
   k5_has "$TMP/o6031" "... nothing anchored, and it says so - the owner's act once the hook exists" "init-state: no file under " "nothing anchored"; fi
 k5_no_by "$TMP/o6031" "... and no line of it hands over the runnable form"
 "$K6_IS" "$S6" --src > "$TMP/o6032" 2>&1; check "init-state.sh --src on a project that has its state, unsigned: refused" 2 $? "$TMP/o6032"
-k5_has "$TMP/o6032" "... naming the act, the owner's, signed" "src/ is the owner's code (anchor: ${k6_h:0:8})" "(--by; the header of scripts/init-state.sh says how)"
+k5_has "$TMP/o6032" "... naming the act, the owner's, signed (v0.5.4: both routes)" "src/ is the owner's code (anchor: ${k6_h:0:8})" "(1) the change is not the owner's - undo it (put the owner's code back)" "(2) the owner ordered it (a \"fix it\" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh " " --src --by <owner>."
 k5_no_by "$TMP/o6032" "... and no line of it hands over the runnable form"
 "$K6_IS" "$S6" --by "Pat Owner" > "$TMP/o6033" 2>&1; check "init-state.sh --by alone: refused" 2 $? "$TMP/o6033"
 k5_has "$TMP/o6033" "... saying what it signs" "--by signs a re-record of the spec or of src/: give --spec <the spec> or --src too"
@@ -5327,7 +5355,7 @@ if command -v forge > /dev/null 2>&1 && [ -e "$HERE/../foundry-kit/lib" ]; then
   printf 'pragma solidity ^0.8.26;\nimport "../test/Base.sol";\ncontract F1 is Base { function test_F1_x_is_never_one() public { h.set(1); assertTrue(h.x() != 1, "x is one"); } }\n' > "$A6/pending/F-1.t.sol"
   "$K6_IS" "$A6" > /dev/null 2>&1; A6A="$(cd "$A6" && pwd -P)"; a6_h="$(src_anchor_hash "$A6A")"
   printf '// edited in place\n' >> "$A6/src/H.sol"; a6_h2="$(src_anchor_hash "$A6A")"
-  K6_SRC="the code under audit is the owner's. Undo the change (put the owner's code back) and write what you assumed in DECISIONS.md (source: assumed, owner absent): a finding's fix is the owner's decision (doctrine/NEXT.md row 6b), shown on a copy (scripts/mutate.sh), never written into src/. The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an agent never does it. Nothing run."
+  K6_SRC="the code under audit is the owner's. Two routes, and the kit cannot tell which applies: (1) the change is not the owner's - undo it (put the owner's code back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); (2) the owner ordered it (a \"fix it\" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh $A6A --src --by <owner>. A finding's fix is the owner's decision (doctrine/NEXT.md row 6b), shown on a copy (scripts/mutate.sh), never written into src/ by an agent, and an agent never re-records. Nothing run."   # v0.5.4: both routes
   "$HERE/pending-red.sh" "$A6" > "$TMP/o6040" 2>&1; check "pending-red.sh refuses src/ changed since init-state anchored it (the local model's edit)" 2 $? "$TMP/o6040"
   k5_has "$TMP/o6040" "... the spec's refusal, for the code" "pending-red: REFUSED - $A6A/src changed since init-state recorded it (.gauntlet/src.sha256 ${a6_h:0:8}, now ${a6_h2:0:8}): $K6_SRC"
   k5_no_by "$TMP/o6040" "... no runnable --by in it"; k6_not "$TMP/o6040" "... no escape in it" "PENDING_RED"
@@ -5884,7 +5912,7 @@ TDJ="5=false,8=false,10=false,11b=false"
 td_state 's/^threat_model: .*/threat_model:              not yet/'
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7130" 2>&1; check "next.sh: phase 4 with threat_model: not yet - refused (phase 3 is not closed)" 2 $? "$TMP/o7130"
 TDPA="$(cd "$TDP" && pwd)"; TDK="$(cd "$HERE/.." && pwd)"
-td_has "$TMP/o7130" "next: REFUSED - phase 4 claims phase 3 closed and the independent threat model is not diffed (threat_model: not yet): a fresh agent writes $TDPA/.gauntlet/THREATS-independent.md from $TDK/briefs/threat-model.md, then $TDK/scripts/threat-diff.sh $TDPA - or write the phase that is open"
+td_has "$TMP/o7130" "threat model: not yet (threat_model: not yet). What closes it: threat model - a fresh agent writes $TDPA/.gauntlet/THREATS-independent.md from $TDK/briefs/threat-model.md, then $TDK/scripts/threat-diff.sh $TDPA - or write the phase that is open"
 td_state 's/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 0 handed)/'
 nx "$NX" "$TDP/.gauntlet/STATE.md" --judge "$TDJ" > "$TMP/o7131" 2>&1; check "next.sh: phase 4, the line these files give, and threat-diff.sh never ran (no report) - refused" 2 $? "$TMP/o7131"
 td_has "$TMP/o7131" "next: REFUSED - phase 4 claims phase 3 closed, threat_model is diffed (2 matched, 0 new, 0 refused, 0 handed) and there is no .gauntlet/reports/06-threats.txt"
@@ -6482,11 +6510,305 @@ td_has "$HERE/../doctrine/NEXT.md" "0 = done, or yes; 1 = usage or the environme
 # ---- decision 5: the doctrine says it, and says what the anchors do not prove
 td_has "$HERE/../doctrine/EVIDENCE.md" "**Silence is a refusal.**"
 td_has "$HERE/../doctrine/EVIDENCE.md" "the anchors prove currency, not authorship"
+rm -rf "$S53"
+
+# ================================================================= v0.5.4: the owner present
+# The Known gaps of v0.5.3 closed (1.1-1.5), the kit findings of the first owner-present walk (2a-2h), two lessons (3).
+# One case or more per item, its label starting with the item; each was seen to FAIL on the kit of v0.5.3 (a09ee49),
+# but those labelled control. What is text only is held by td_has. No forge needed but for 2f (fuzz-long.sh reads
+# forge config before it refuses).
+echo "== v0.5.4: the owner present - the Known gaps of v0.5.3, both routes of the anchor, the round records, phase 3's gate whole, the inline budget, the doctrine =="
+S54="$TMP/v54"; rm -rf "$S54"; mkdir -p "$S54"
+v54_proj() { # v54_proj <dir> <phase>: a project at that phase - spec and src/ anchored, a sealed green build record, a LOG.md
+  kx_proj "$1"; nx_anchor "$1"; mkdir -p "$1/.gauntlet/reports"; cp "$FIX/build-real-compiled.txt" "$1/.gauntlet/reports/01-build.txt"
+  report_seal "$(cd "$1" && pwd)" "$1/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"
+  sed -i -E "s/^phase: .*/phase:                     $2/" "$1/.gauntlet/STATE.md"
+  printf '# LOG - p\n\nrules.\n\n---\n' > "$1/.gauntlet/LOG.md"
+}
+v54_round() { # v54_round <proj> <id> <type> [<round.sh args>...]: its report, then round.sh's line
+  local p="$1" id="$2" ty="$3"; shift 3
+  printf 'the report of %s\n' "$id" > "$p/.gauntlet/reports/$id.md"
+  "$HERE/round.sh" "$p/.gauntlet/LOG.md" --id "$id" --phase 2 --type "$ty" --model fixture/none --bench ".gauntlet/bench/$id" \
+    --dates 2026-10-21 --high 0 --medium 0 --low 0 --info 0 --reasoned 0 --gate pass --report ".gauntlet/reports/$id.md" "$@"
+}
+# ---- 1.1: blackbox: skipped_by_owner against the round records (it was taken as written, a black-box round on record)
+echo "  -- 1.1"
+B54="$S54/bb"; v54_proj "$B54" 2
+sed -i -E 's/^blackbox: .*/blackbox:                  skipped_by_owner (2026-10-22)/' "$B54/.gauntlet/STATE.md"
+NX_RAW=1 kx_row 7401 "control (1.1): blackbox: skipped_by_owner (2026-10-22), no black-box round on record - the row" 4b "$B54"
+v54_round "$B54" bb1 black-box > "$TMP/o7402a" 2>&1; check "control (1.1): round.sh writes a black-box round's line" 0 $? "$TMP/o7402a"
+NX_RAW=1 kx_one 7402 "1.1: next.sh refuses blackbox: skipped_by_owner with a black-box ROUND line on record, naming both" 2 \
+  "next: REFUSED - STATE says blackbox: skipped_by_owner (2026-10-22); the record says a black-box round ran: bb1 (the ROUND lines of .gauntlet/LOG.md, scripts/round.sh writes one per round)" "$B54"
+td_has "$HERE/../state/README.md" "\`blackbox:\` becomes \`skipped_by_owner (<YYYY-MM-DD>)\` only on the owner's own"
+# ---- 1.2: the walker's signature line leaves the record when the owner signs (the history stays)
+echo "  -- 1.2"
+W54="$S54/w"; mkdir -p "$W54/src"; printf 'contract H {}\n' > "$W54/src/H.sol"; "$HERE/init-state.sh" "$W54" > /dev/null 2>&1
+sed -i -E 's/^notes:.*/notes:                     owner absent: the hook was handed over as code, the owner not reachable/' "$W54/.gauntlet/STATE.md"
+"$HERE/init-state.sh" "$W54" --src --by walker > "$TMP/o7403" 2>&1; check "control (1.2): init-state --src --by walker, the owner absent by the record - recorded" 0 $? "$TMP/o7403"
+grep -qx 'by: walker (owner absent)' "$W54/.gauntlet/src.sha256" && echo "  ok    and the record says by: walker (owner absent)" \
+  || { echo "  FAIL  the walker's record has no by: walker (owner absent) line:"; sed "s/^/        | /" "$W54/.gauntlet/src.sha256"; fails=$((fails + 1)); }
+"$HERE/init-state.sh" "$W54" --src --by "Ana" > "$TMP/o7404" 2>&1; check "1.2: then the owner signs a re-record of src/, --by Ana" 0 $? "$TMP/o7404"
+W54R="$W54/.gauntlet/src.sha256"
+if ! grep -q '^by: walker (owner absent)' "$W54R" && [ "$(grep -c '^re-recorded ' "$W54R")" = 2 ] \
+  && grep -q '^re-recorded [0-9-]* by "walker (owner absent)" ' "$W54R" && grep -q '^re-recorded [0-9-]* by "Ana" ' "$W54R"; then
+  echo "  ok    1.2: the record has no by: walker (owner absent) line, and both re-recorded lines (the walker's kept as history)"; else
+  echo "  FAIL  1.2: the owner's re-record left the walker's signature standing, or lost the history:"; sed "s/^/        | /" "$W54R"; fails=$((fails + 1)); fi
+# ---- 1.3: --by refuses any name with `walker` in it, any case; `walker` alone stays the walker's word
+echo "  -- 1.3"
+v54_n=7405
+for v54_by in "the walker" "Ana Walker" "Walker Smith"; do
+  cp "$W54R" "$S54/rec.keep"; cp "$W54/.gauntlet/LOG.md" "$S54/log.keep"
+  "$HERE/init-state.sh" "$W54" --src --by "$v54_by" > "$TMP/o$v54_n" 2>&1; v54_rc=$?
+  if [ "$v54_by" = "Walker Smith" ]; then v54_l="control (1.3; refused before v0.5.4 too: it starts with walker)"; else v54_l="1.3"; fi
+  check "$v54_l: init-state --src --by '$v54_by' (walker in the name) - refused" 2 "$v54_rc" "$TMP/o$v54_n"
+  k5_has "$TMP/o$v54_n" "... as neither the owner's name nor the walker's word" "init-state: REFUSED - --by '$v54_by' is neither an owner's name nor the walker's word"
+  cmp -s "$W54R" "$S54/rec.keep" && cmp -s "$W54/.gauntlet/LOG.md" "$S54/log.keep" && echo "  ok    and nothing written (the record and LOG.md byte-identical)" \
+    || { echo "  FAIL  the refusal wrote something"; fails=$((fails + 1)); cp "$S54/rec.keep" "$W54R"; cp "$S54/log.keep" "$W54/.gauntlet/LOG.md"; }
+  v54_n=$((v54_n + 1))
+done
+# ---- 1.4: a sealed census gate report whose last line is `census gate: FAILED - ...` is no census
+echo "  -- 1.4"
+F54="$S54/f"; kx_proj "$F54"; nx_anchor "$F54"; F54A="$(cd "$F54" && pwd)"; mkdir -p "$F54/.gauntlet/reports" "$F54/test"
+cp "$FIX/build-real-compiled.txt" "$F54/.gauntlet/reports/01-build.txt"; cp "$FIX/summary-real-many-suites.txt" "$F54/.gauntlet/reports/02-test.txt"
+printf 'contract I { function invariant_balance_covers_claims() public view {} }\n' > "$F54/test/I.t.sol"
+cp "$FIX/threats-independent.md" "$F54/.gauntlet/THREATS-independent.md"; cp "$FIX/threats-walker.md" "$F54/.gauntlet/THREATS.md"
+"$HERE/threat-diff.sh" "$F54" > /dev/null 2>&1
+v54_f_state() { # v54_f_state <notes>: phase 4, battery green, the threat model diffed, those notes
+  sed -E "s/^phase: .*/phase:                     4/; s/^battery: .*/battery:                   green/; s|^notes:.*|notes:                     $1|; s/^threat_model: .*/threat_model:              diffed (2 matched, 0 new, 0 refused, 0 handed)/" \
+    "$FIX/state-new-project.md" > "$F54/.gauntlet/STATE.md"
+}
+v54_f_state "fork: n/a - no chain, no manager yet"
+v54_gate() { # v54_gate <last line>: the gate's record, in the shape census.sh --aggregate writes it, sealed
+  printf 'census gate over %s/census/long.tsv: CORE="deposit withdraw" REACH="" MIN_PCT=50 (2026-10-22T10:00:00Z)\n\naction  runs  pct\n\nattempts: 1 (the first)\n%s\n' "$F54A" "$1" \
+    > "$F54/.gauntlet/reports/06-census-gate.txt"
+  report_seal "$F54A" "$F54/.gauntlet/reports/06-census-gate.txt" "$HERE/census.sh"
+}
+v54_gate "census gate: PASSED - 2 CORE actions and 0 REACH boundaries at or above 50%"
+kx_row 7408 "control (1.4): phase 4, every record of phase 3's gate there, the census gate PASSED - the row" 6 "$F54" --judge 5=false
+v54_gate "census gate: FAILED - 3 of 12 variants undecided"
+nx "$NX" "$F54" --judge 5=false > "$TMP/o7409" 2>&1; check "1.4: next.sh refuses phase 4 over a sealed census gate report that says FAILED" 2 $? "$TMP/o7409"
+td_has "$TMP/o7409" "census: missing (no .gauntlet/reports/06-census.txt or 06-census-gate.txt - 06-census-gate.txt: census gate FAILED)"
+# ---- 2e: phase 3's gate read whole: every missing item in one refusal, `ok` for the others, each missing item's command
+echo "  -- 2e"
+rm -f "$F54/.gauntlet/reports/06-census-gate.txt" "$F54/.gauntlet/reports/06-census-gate.txt.sha256"; v54_f_state ""
+nx "$NX" "$F54" --judge 5=false > "$TMP/o7410" 2>&1; check "2e: next.sh, phase 4 with no census and no fork: note - refused once" 2 $? "$TMP/o7410"
+td_has "$TMP/o7410" "next: REFUSED - phase 4 claims phase 3 closed; the phase-3 gate (NEXT.md row 4b): build: ok; invariant suite: ok; census: missing (no .gauntlet/reports/06-census.txt or 06-census-gate.txt); fork: unanswered (no 'fork:' note in STATE.md notes); threat model: ok (diffed). What closes it: census - $KX_KIT/scripts/census.sh $F54A; fork - write the note 'fork: <what ran against what exists, or n/a - no chain, no manager yet>' in STATE.md notes (NEXT.md row 4b) - or write the phase that is open"
+[ "$(grep -c '^next: REFUSED' "$TMP/o7410")" = 1 ] && echo "  ok    2e: one refusal line" || { echo "  FAIL  2e: not one refusal line"; fails=$((fails + 1)); }
+mv "$F54/.gauntlet/reports/01-build.txt" "$S54/build.keep"
+nx "$NX" "$F54" --judge 5=false > "$TMP/o7411" 2>&1; check "2e: the same with no build record - the build is the gate's first item at phase 4" 2 $? "$TMP/o7411"
+td_has "$TMP/o7411" "the phase-3 gate (NEXT.md row 4b): build: missing (no green build record, .gauntlet/reports/01-build.txt); invariant suite: ok; census: missing"
+td_has "$TMP/o7411" "What closes it: build - run $KX_KIT/scripts/setup-deps.sh $F54A then $KX_KIT/scripts/battery.sh $F54A; census - "
+mv "$S54/build.keep" "$F54/.gauntlet/reports/01-build.txt"
+# ---- 1.5: a src/ re-record is repeated under every answer but the FIRST, as the spec's is
+echo "  -- 1.5"
+R54="$S54/r"; v54_proj "$R54" 2; R54A="$(cd "$R54" && pwd)"; r54_old="$(src_anchor_hash "$R54A")"
+printf '// the owner changed it\n' >> "$R54/src/FixtureHook.sol"; r54_new="$(src_anchor_hash "$R54A")"
+"$HERE/init-state.sh" "$R54" --src --by "Ana" > "$TMP/o7412" 2>&1; check "control (1.5): the owner re-records src/, --by Ana" 0 $? "$TMP/o7412"
+report_seal "$R54A" "$R54/.gauntlet/reports/01-build.txt" "$HERE/battery.sh"   # the battery, run again on the code in force
+V54_SRCN="next: note - src/ was re-recorded on $(date +%F), signed --by \"Ana\" (${r54_old:0:8} -> ${r54_new:0:8}; .gauntlet/src.sha256): the owner confirms that signature is theirs, or the code in force is not the owner's"
+"$NX" "$R54" > "$TMP/o7413" 2>&1; check "control (1.5): next.sh before the kit is proven here - the FIRST" 0 $? "$TMP/o7413"
+if grep -q '^next: FIRST - ' "$TMP/o7413" && ! grep -qF 'src/ was re-recorded' "$TMP/o7413"; then echo "  ok    and the FIRST carries no re-record note"; else
+  echo "  FAIL  the FIRST is not one, or carries the note:"; sed "s/^/        | /" "$TMP/o7413"; fails=$((fails + 1)); fi
+for v54_n in 7414 7415; do
+  NX_RAW=1 nx "$NX" "$R54" > "$TMP/o$v54_n" 2>&1; check "1.5: next.sh's answer (run $((v54_n - 7413)) of two) on a project whose src/ the owner re-recorded" 0 $? "$TMP/o$v54_n"
+  if grep -q '^next: row 4b - ' "$TMP/o$v54_n" && grep -qxF "$V54_SRCN" "$TMP/o$v54_n"; then echo "  ok    1.5: row 4b, and under it: ${V54_SRCN:0:120}"; else
+    echo "  FAIL  1.5: no src/ re-record note under the answer:"; sed "s/^/        | /" "$TMP/o$v54_n"; fails=$((fails + 1)); fi
+done
+X54="$S54/x"; v54_proj "$X54" 2
+sed -i -E 's/^notes:.*/notes:                     owner absent: the hook was handed over as code, the owner not reachable/' "$X54/.gauntlet/STATE.md"
+"$HERE/init-state.sh" "$X54" --src --by walker > /dev/null 2>&1
+NX_RAW=1 nx "$NX" "$X54" > "$TMP/o7416" 2>&1; check "1.5: next.sh's answer on a project whose src/ the walker re-recorded, the owner absent" 0 $? "$TMP/o7416"
+td_has "$TMP/o7416" "signed --by \"walker (owner absent)\""
+td_has "$TMP/o7416" "; .gauntlet/src.sha256): the record says by: walker (owner absent) - the walker signed it, not the owner (the dossier's section 8)"
+# ---- 2a: the anchor refusal names both routes, every time - the pins K5_TAIL (cases 5010, 5014), 6032 and K6_SRC (6040,
+echo "  -- 2a"
+# 6041) above; and the README's copy of next.sh's
+td_has "$HERE/../state/README.md" "(a \"fix it\" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh <proj> --spec <spec> --by"
+# ---- 2b: owner-reserved decisions with the owner present - text only (no timed owner answer is recorded)
+echo "  -- 2b"
+td_has "$HERE/../doctrine/NEXT.md" "With the owner answering, row 9 comes first: \`true\` here only after a wait you have recorded in \`STATE.md\` \`notes:\` (\`owner unavailable since <date/time>\`)."
+td_has "$HERE/next.sh" "9b=true is the owner's absence, recorded, never a shortcut past row 9"
+V54_REF="refusal whose entry's \`source:\` is not \`owner\` is the walker's proposal, not a refusal: with the owner present it is a question for row 9's triage and the owner's answer replaces it (\`source: owner\`); absent, \`source: assumed, owner absent\`, and the dossier's section 8 carries it"
+td_has "$HERE/../briefs/threat-model.md" "$V54_REF"
+td_has "$HERE/../state/README.md" "$V54_REF"
+# ---- 2c: the ROUND line's model is the model requested
+echo "  -- 2c"
+td_has "$HERE/../state/README.md" "the model REQUESTED: a harness may substitute another model after a refusal without telling the session"
+td_has "$HERE/../adapters/claude-code/README.md" "read the model per message in the transcript if you need to know"
+"$HERE/round.sh" "$B54/.gauntlet/LOG.md" --dry-run --id r99 --phase 2 --type discovery --model "Opus 5.5 -> Opus 4.8" --bench .gauntlet/bench/r99 \
+  --dates 2026-10-21 --high 0 --medium 0 --low 0 --info 0 --reasoned 0 --gate pass --report .gauntlet/reports/r99.md > "$TMP/o7420" 2>&1
+check "control (2c; accepted before v0.5.4 too): round.sh --dry-run takes --model \"Opus 5.5 -> Opus 4.8\"" 0 $? "$TMP/o7420"
+# ---- 2d: an append-only file is never sealed as a round's report
+echo "  -- 2d"
+D54="$S54/d"; v54_proj "$D54" 2; printf '# DECISIONS - d\n\nrules.\n\n---\n' > "$D54/.gauntlet/DECISIONS.md"
+v54_n=7421
+for v54_r in .gauntlet/DECISIONS.md .gauntlet/LOG.md .gauntlet/STATE.md; do
+  cp "$D54/.gauntlet/LOG.md" "$S54/dlog.keep"
+  "$HERE/round.sh" "$D54/.gauntlet/LOG.md" --id "r$v54_n" --phase 2 --type discovery --model fixture/none --bench .gauntlet/bench/r0 \
+    --dates 2026-10-21 --high 0 --medium 0 --low 0 --info 0 --reasoned 0 --gate pass --report "$v54_r" > "$TMP/o$v54_n" 2>&1
+  check "2d: round.sh --report $v54_r - refused" 2 $? "$TMP/o$v54_n"
+  if [ "$(basename "$v54_r")" = STATE.md ]; then v54_w="round: REFUSED - STATE.md is the route's state, rewritten as the route moves, and is never a round's report"
+  else v54_w="round: REFUSED - $(basename "$v54_r") is append-only and is never a round's report: write the report as its own file (reports/<id>.md) and seal that. NOTHING WRITTEN."; fi
+  k5_has "$TMP/o$v54_n" "... saying why" "$v54_w"
+  if cmp -s "$D54/.gauntlet/LOG.md" "$S54/dlog.keep" && [ ! -e "$D54/$v54_r.sha256" ]; then echo "  ok    and nothing written: LOG.md unchanged, no $(basename "$v54_r").sha256"; else
+    echo "  FAIL  the refusal wrote something"; ls -la "$D54/.gauntlet" | sed "s/^/        | /"; fails=$((fails + 1)); cp "$S54/dlog.keep" "$D54/.gauntlet/LOG.md"; fi
+  v54_n=$((v54_n + 1))
+done
+# ---- 2f: fuzz-long.sh refuses an inline budget no larger than the everyday one BEFORE the campaign; `reasoned` is a doc line
+echo "  -- 2f"
+if command -v forge > /dev/null 2>&1; then
+  FL54="$S54/fl"; mkdir -p "$FL54/src" "$FL54/test" "$FL54/.gauntlet"
+  [ ! -e "$HERE/../foundry-kit/lib" ] || ln -s "$(cd "$HERE/../foundry-kit/lib" && pwd -P)" "$FL54/lib"   # (the kit before v0.5.4 runs the campaign)
+  printf '[profile.default]\nsrc = "src"\ntest = "test"\nlibs = ["lib"]\n[invariant]\nruns = 64\ndepth = 64\nfail_on_revert = true\n[profile.long.invariant]\nruns = 1000\ndepth = 128\nfail_on_revert = true\n' > "$FL54/foundry.toml"
+  printf 'pragma solidity ^0.8.26;\ncontract A { uint256 public x; function inc() external { x++; } }\n' > "$FL54/src/A.sol"
+  printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/A.sol";\ncontract AInvariant is Test { A a; function setUp() public { a = new A(); targetContract(address(a)); }\n/// forge-config: long.invariant.runs = 5\nfunction invariant_x() public view { assertGe(a.x(), 0); } }\n' > "$FL54/test/A.t.sol"
+  USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7430" 2>&1; check "2f: fuzz-long.sh, a test with /// forge-config: long.invariant.runs = 5 - refused" 2 $? "$TMP/o7430"
+  k5_has "$TMP/o7430" "2f: ... before the campaign, naming the file and the line" "fuzz-long: an inline forge-config gives a campaign a budget no larger than the everyday one: test/A.t.sol:5, \`forge-config: long.invariant.runs = 5\` - 640 calls, the everyday 64 x 64 = 4096. NOTHING PROVEN, nothing run."
+  if [ ! -e "$FL54/out" ] && ! grep -q '^Ran [0-9]* test' "$TMP/o7430"; then echo "  ok    2f: and no campaign ran (no out/, no forge test output)"; else
+    echo "  FAIL  2f: the campaign ran before the refusal (out/ $([ -e "$FL54/out" ] && echo exists || echo absent)):"; tail -n 8 "$TMP/o7430" | sed "s/^/        | /"; fails=$((fails + 1)); fi
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7431" 2>&1; check "2f: ... and ESTIMATE_ONLY=1 says the same (refused, not priced)" 2 $? "$TMP/o7431"
+  k5_has "$TMP/o7431" "... naming the file and the line" "test/A.t.sol:5, \`forge-config: long.invariant.runs = 5\`"
+  sed -i 's|^/// forge-config: long.invariant.runs = 5$|/** forge-config: default.invariant = { runs = 2, depth = 2 } */|' "$FL54/test/A.t.sol"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7432" 2>&1; check "2f: the default profile's table form in a /** */ block (forge honours it under long) - refused" 2 $? "$TMP/o7432"
+  k5_has "$TMP/o7432" "... naming it" "test/A.t.sol:5, \`forge-config: default.invariant = { runs = 2, depth = 2 }\` - 4 calls"
+  ALLOW_SMALL_BUDGET=1 ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7433" 2>&1
+  check "control (2f): ALLOW_SMALL_BUDGET=1 lets it through (the cost, exit 0)" 0 $? "$TMP/o7433"
+else
+  echo "  SKIP  2f: fuzz-long.sh's inline budget (no forge)"; skipped=1
+fi
+td_has "$HERE/../state/README.md" "the \`reasoned\` count is the report's; \`round.sh\` checks the line's form, not the count against the report"
+# ---- 2g: briefs/verifier.md serves two uses
+echo "  -- 2g"
+td_has "$HERE/../briefs/verifier.md" "Two uses, one brief: re-checking corrections after a round (below), and falsifying a round's findings before they reach the owner"
+# ---- 2h: dropped to a doc line - a closing discovery round may honestly re-report an accepted finding (1H classified, 0
+echo "  -- 2h"
+# open, the gate passed), so round.sh does not refuse gate pass above the line's counts; the README says when it is honest
+td_has "$HERE/../state/README.md" "so \`gate pass\` above \`0H 0M\` is honest only when each of those findings is a rediscovery of one already closed"
+td_has "$HERE/../state/README.md" "verifier: every claim held - a verifier report with one FALSE claim writes \`gate fail\`"
+# ---- 3: two lessons, and the dossier's field
+echo "  -- 3"
+td_has "$HERE/../doctrine/LESSONS.md" "## 14. A parser is checked against a fixture from the real tool"
+td_has "$HERE/../doctrine/LESSONS.md" "## 15. Before a finding is called new"
+td_has "$HERE/../briefs/handoff-dossier.md" "\`known upstream: <ref> | not found, checked <date>\`"
+# ---- N1: round.sh refuses gate pass above 0H 0M when no earlier ROUND line classified a high or a medium (nothing was
+# there to be closed); after the first classified finding the count is not checked (a closing discovery round)
+echo "  -- N1"
+N54="$S54/n"; v54_proj "$N54" 2
+v54_round "$N54" i01 interview > /dev/null 2>&1   # the LOG's only ROUND line: an interview's, 0H 0M
+n54_rnd() { # n54_rnd <LOG.md> <id> <type> <round.sh args>...: one round.sh call on N54, its report a file that exists
+  local log="$1" id="$2" ty="$3"; shift 3
+  printf 'the report of %s\n' "$id" > "$N54/.gauntlet/reports/$id.md"
+  "$HERE/round.sh" "$log" --id "$id" --phase 4 --type "$ty" --model fixture/none --bench ".gauntlet/bench/$id" --dates 2026-10-22 \
+    --reasoned 0 --report ".gauntlet/reports/$id.md" "$@"
+}
+N54_W=", and no earlier ROUND line classified a high or a medium: nothing was there to be closed, so these are open - the gate is zero high and zero medium OPEN (state/README.md), and a finding is open until the owner triages it (doctrine/NEXT.md row 9). Write gate fail. NOTHING WRITTEN."
+n54_none() { # n54_none <label> <id>: LOG.md unchanged, no <id>.md.sha256
+  if cmp -s "$N54/.gauntlet/LOG.md" "$S54/nlog.keep" && [ ! -e "$N54/.gauntlet/reports/$2.md.sha256" ]; then echo "  ok    $1: nothing written (LOG.md unchanged, no $2.md.sha256)"; else
+    echo "  FAIL  $1: the refusal wrote something"; fails=$((fails + 1)); cp "$S54/nlog.keep" "$N54/.gauntlet/LOG.md"; fi
+}
+cp "$N54/.gauntlet/LOG.md" "$S54/nlog.keep"
+n54_rnd "$N54/.gauntlet/LOG.md" r01 discovery --high 1 --medium 6 --low 1 --info 1 --gate pass > "$TMP/o7440" 2>&1
+check "N1: round.sh, a discovery line 1H 6M gate pass, no earlier ROUND line classified anything - refused" 2 $? "$TMP/o7440"
+k5_has "$TMP/o7440" "N1: ... saying why" "round: REFUSED - gate pass on a discovery line that classifies 1H 6M$N54_W"
+n54_none "N1" r01
+n54_rnd "$N54/.gauntlet/LOG.md" r02 regression --high 0 --medium 2 --low 0 --info 0 --gate pass > "$TMP/o7441" 2>&1
+check "N1: round.sh, a regression line 0H 2M gate pass, nothing classified before - refused" 2 $? "$TMP/o7441"
+k5_has "$TMP/o7441" "N1: ... saying why" "round: REFUSED - gate pass on a regression line that classifies 0H 2M$N54_W"
+n54_none "N1" r02
+n54_rnd "$N54/.gauntlet/LOG.md" r03 discovery --high 1 --medium 6 --low 1 --info 1 --gate pass --dry-run > "$TMP/o7442" 2> "$TMP/o7442e"
+check "N1: the same with --dry-run - refused too" 2 $? "$TMP/o7442e"
+[ ! -s "$TMP/o7442" ] && echo "  ok    N1: and nothing printed on stdout" || { echo "  FAIL  N1: --dry-run printed the line:"; sed "s/^/        | /" "$TMP/o7442"; fails=$((fails + 1)); }
+n54_rnd "$N54/.gauntlet/LOG.md" r04 discovery --high 0 --medium 0 --low 3 --info 0 --gate pass > "$TMP/o7443" 2>&1
+check "control (N1; green on a09ee49 too): a discovery line 0H 0M 3L gate pass - written" 0 $? "$TMP/o7443"
+grep -q '^ROUND r04 ' "$N54/.gauntlet/LOG.md" && echo "  ok    and the line is in LOG.md" || { echo "  FAIL  no ROUND r04 line"; fails=$((fails + 1)); }
+n54_rnd "$N54/.gauntlet/LOG.md" r05 discovery --high 1 --medium 0 --low 0 --info 0 --gate fail > "$TMP/o7444a" 2>&1
+check "control (N1; green on a09ee49 too): r05 discovery 1H gate fail - written" 0 $? "$TMP/o7444a"
+n54_rnd "$N54/.gauntlet/LOG.md" r07 discovery --high 1 --medium 0 --low 0 --info 0 --gate pass > "$TMP/o7444" 2>&1
+check "control (N1; green on a09ee49 too): then r07 discovery 1H gate pass - the closing round re-reports an accepted finding: written" 0 $? "$TMP/o7444"
+printf '# LOG - n\n\nROUND r00 | phase 2 | discovery | fixture/none | bench .gauntlet/bench/r00 | 2026-10-20 | 2 findings | gate pass | cost not measured | .gauntlet/reports/r00.md\n' > "$S54/nlog-old.md"
+n54_rnd "$S54/nlog-old.md" r08 discovery --high 1 --medium 0 --low 0 --info 0 --gate pass > "$TMP/o7445" 2>&1
+check "control (N1; green on a09ee49 too): the only earlier line's findings field not of round.sh's shape ('2 findings') - a doubt never refuses" 0 $? "$TMP/o7445"
+"$HERE/round.sh" --json "$N54/.gauntlet/LOG.md" > "$TMP/o7446" 2>&1; check "N1: round.sh --json reads every line of that LOG.md (the reader unchanged)" 0 $? "$TMP/o7446"
+[ "$(grep -c '^{"id"' "$TMP/o7446")" = 4 ] && echo "  ok    N1: four ROUND lines read (i01, r04, r05, r07)" || { echo "  FAIL  N1: not four lines read:"; sed "s/^/        | /" "$TMP/o7446"; fails=$((fails + 1)); }
+td_has "$HERE/../state/README.md" "with no earlier ROUND line that classified a high or a medium, nothing was there to be closed, and \`gate pass\` above \`0H 0M\` is refused - write \`gate fail\`"
+td_has "$HERE/../state/README.md" "A threat the owner refused in phase 3 (row 4b) is not a closed finding: the finding is the evidence the refusal did not have, and row 9 reads it"
+# ---- N2: a census gate report ending `census gate: NOTHING JUDGED - ...` is no census (the PASSED control is 7408)
+echo "  -- N2"
+v54_f_state "fork: n/a - no chain, no manager yet"
+v54_gate "census gate: NOTHING JUDGED - CORE and REACH are both empty; only unexplained reverts were checked. Name the actions and boundaries that matter (doctrine/JUDGES.md row 4)"
+nx "$NX" "$F54" --judge 5=false > "$TMP/o7450" 2>&1; check "N2: next.sh refuses phase 4 over a sealed census gate report that judged nothing" 2 $? "$TMP/o7450"
+td_has "$TMP/o7450" "06-census-gate.txt: census gate NOTHING JUDGED"
+# ---- N3: fuzz-long.sh reads the inline budget by block, with forge's precedence (forge 1.8.1, measured)
+echo "  -- N3b"
+if command -v forge > /dev/null 2>&1; then
+  n3_test() { # n3_test <lines between the contract line and the function>: FL54's test, the contract on line 4
+    { printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/A.sol";\n'
+      printf '%s\n' "${N3_BEFORE:-}" | sed '/^$/d'
+      printf 'contract AInvariant is Test { A a; function setUp() public { a = new A(); targetContract(address(a)); }\n'
+      printf '%s\n' "$@"
+      printf 'function invariant_x() public view { assertGe(a.x(), 0); } }\n'; } > "$FL54/test/A.t.sol"
+  }
+  N3_BEFORE=""; n3_test "/// forge-config: default.invariant.runs = 2" "/// forge-config: long.invariant.runs = 40"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7455" 2>&1
+  check "N3 (red against the pre-fix branch, which read it per line; a09ee49 had no scan): one block, default runs 2 then long runs 40 - forge runs 40 x 128, not refused" 0 $? "$TMP/o7455"
+  k5_has "$TMP/o7455" "N3: ... the cost printed" "fuzz-long: what it will cost, said before it runs"
+  n3_test "/// forge-config: long.invariant.runs = 64" "/// forge-config: long.invariant.depth = 64"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7456" 2>&1
+  check "N3: one block, long runs 64 then long depth 64 - 4096 calls, refused before any forge run" 2 $? "$TMP/o7456"
+  k5_has "$TMP/o7456" "N3: ... naming the block's lines and both settings" "test/A.t.sol:5-6, \`forge-config: long.invariant.runs = 64; long.invariant.depth = 64\` - 4096 calls"
+  # (N3b: a blank line inside a `///` run is part of it - forge joins them; a file with two or more forge-config blocks
+  # is not read before the run - forge merges a contract's block with its function's, not modelled here)
+  N3B_M="has 2 forge-config blocks - forge merges a contract's block with its function's, and that is not modelled here: not refused before the run; the check after the campaign decides."
+  n3_test "/// forge-config: long.invariant.runs = 64" "" "/// forge-config: long.invariant.depth = 64"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7457" 2>&1
+  check "N3b (red against the tree before this fix; a09ee49 had no scan): one block across a blank line (forge joins them) - 4096 calls, refused before any run" 2 $? "$TMP/o7457"
+  k5_has "$TMP/o7457" "N3b: ... naming the block by its two /// lines and both settings" "test/A.t.sol:5-7, \`forge-config: long.invariant.runs = 64; long.invariant.depth = 64\` - 4096 calls"
+  N3_BEFORE="/** forge-config: default.invariant = { runs = 2, depth = 2 } */"; n3_test "/// forge-config: long.invariant.runs = 40"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7458" 2>&1
+  check "control (N3b, the Known gap's wording; red against the tree before this fix): the contract's /** */ block and the function's - two blocks, not read before the run" 0 $? "$TMP/o7458"
+  k5_has "$TMP/o7458" "N3b: ... the line that says so" "fuzz-long: test/A.t.sol $N3B_M"
+  N3_BEFORE="/// forge-config: default.invariant.runs = 2"; n3_test "/// forge-config: long.invariant.runs = 40"
+  n3b_before="$(cd "$FL54" && find . -path ./lib -prune -o -print | LC_ALL=C sort | cksum)"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7459" 2>&1
+  check "N3b (red against the tree before this fix, the false refusal; green on a09ee49, no scan): contract /// default runs 2, function /// long runs 40 - not refused before the run" 0 $? "$TMP/o7459"
+  k5_has "$TMP/o7459" "N3b: ... the line that says so" "fuzz-long: test/A.t.sol $N3B_M"
+  [ "$(cd "$FL54" && find . -path ./lib -prune -o -print | LC_ALL=C sort | cksum)" = "$n3b_before" ] && echo "  ok    N3b: and the project untouched (ESTIMATE_ONLY)" \
+    || { echo "  FAIL  N3b: the project changed"; fails=$((fails + 1)); }
+  N3_BEFORE=""; n3_test "/// forge-config: default.invariant.runs = 2" "" "/// forge-config: long.invariant.runs = 40"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7462" 2>&1
+  check "N3b (red against the tree before this fix): one function, default runs 2, a blank line, long runs 40 - one joined block, 40 x 128, not refused" 0 $? "$TMP/o7462"
+  grep -q 'forge-config blocks - forge merges' "$TMP/o7462" && { echo "  FAIL  N3b: one block read as two:"; sed "s/^/        | /" "$TMP/o7462"; fails=$((fails + 1)); } \
+    || echo "  ok    N3b: and no 'blocks' line (one block)"
+  { printf 'pragma solidity ^0.8.26;\nimport "forge-std/Test.sol";\nimport "../src/A.sol";\n'
+    printf 'contract AInvariant is Test { A a; function setUp() public { a = new A(); targetContract(address(a)); }\n'
+    printf '/// forge-config: long.invariant.runs = 1\nfunction invariant_x() public view { assertGe(a.x(), 0); }\n'
+    printf '/// forge-config: long.invariant.runs = 1\nfunction invariant_y() public view { assertGe(a.x(), 0); } }\n'; } > "$FL54/test/A.t.sol"
+  ESTIMATE_ONLY=1 USE_BENCH=0 "$HERE/fuzz-long.sh" "$FL54" > "$TMP/o7463" 2>&1
+  check "control (N3b, the Known gap: red against the tree before this fix): two functions with their own small block - not refused before the run, caught only after the campaign" 0 $? "$TMP/o7463"
+  k5_has "$TMP/o7463" "N3b: ... the line that says so" "fuzz-long: test/A.t.sol $N3B_M"
+  N3_BEFORE=""
+else
+  echo "  SKIP  N3: fuzz-long.sh's inline budget by block (no forge)"; skipped=1
+fi
+# ---- N4: the append-only refusal matches the basename in any case
+echo "  -- N4"
+v54_n=7460
+for v54_r in .gauntlet/decisions.md .gauntlet/State.md; do
+  cp "$N54/.gauntlet/LOG.md" "$S54/nlog.keep"
+  n54_rnd "$N54/.gauntlet/LOG.md" "r$v54_n" discovery --high 0 --medium 0 --low 0 --info 0 --gate pass --report "$v54_r" > "$TMP/o$v54_n" 2>&1
+  check "N4: round.sh --report $v54_r (another spelling of its case) - refused" 2 $? "$TMP/o$v54_n"
+  if [ "$(basename "$v54_r")" = State.md ]; then v54_w="round: REFUSED - State.md is the route's state, rewritten as the route moves, and is never a round's report"
+  else v54_w="round: REFUSED - decisions.md is append-only and is never a round's report"; fi
+  k5_has "$TMP/o$v54_n" "N4: ... named as given" "$v54_w"
+  if cmp -s "$N54/.gauntlet/LOG.md" "$S54/nlog.keep" && [ ! -e "$N54/$v54_r.sha256" ]; then echo "  ok    N4: nothing written (LOG.md unchanged, no $(basename "$v54_r").sha256)"; else
+    echo "  FAIL  N4: the refusal wrote something"; fails=$((fails + 1)); cp "$S54/nlog.keep" "$N54/.gauntlet/LOG.md"; fi
+  v54_n=$((v54_n + 1))
+done
+rm -rf "$S54"
 # ---- the REFUSED prefix: every run of next.sh in this selftest that exited 2 said `next: REFUSED - ` on its last line of
 # stderr (nx holds every run to it: the example's FIRST - fill, a pending/ test's, a cited file's were the ones that did not)
 if [ -s "$TMP/nx-unprefixed" ]; then echo "  FAIL  next.sh exited 2 without 'next: REFUSED - ' on its last stderr line:"; sort -u "$TMP/nx-unprefixed" | head -8 | sed "s/^/        | /"; fails=$((fails + 1)); else
   echo "  ok    every next.sh run of this selftest that exited 2 ended its stderr with 'next: REFUSED - ...'"; fi
-rm -rf "$S53"
 
 echo
 echo "selftest ran in $((SECONDS - started)) s"

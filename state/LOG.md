@@ -16,7 +16,7 @@ not checked yet**.
   the capped swap 149 302.
 - Not checked yet: that the auditor's bench reproduces the baseline. That is its first task and its report must say so.
 
-ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min | reports/r05.md
+ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate fail | 230k tokens, 95 min | reports/r05.md
 
 ## 2026-03-13 (executor) - r05 findings applied
 

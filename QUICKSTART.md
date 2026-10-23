@@ -132,7 +132,8 @@ and `next.sh` repeats it under every answer). The route's own spec is `.gauntlet
 also anchors `src/` (`.gauntlet/src.sha256`, the hash of its file list and contents; nothing when there is no hook
 yet): `scripts/pending-red.sh` and `scripts/battery.sh` refuse to run on a `src/` that changed since - a finding's fix is
 the owner's, shown on a copy, never written into `src/` - until the owner re-records it, signed (`--src`, the same
-act). It refuses a project that already has a `STATE.md` of its own. Silence is a refusal (v0.5.3): from `phase: 2` a
+act, and `next.sh` repeats it under every answer too); the refusal names both routes, since the kit cannot tell an
+owner-ordered fix from an agent's edit. It refuses a project that already has a `STATE.md` of its own. Silence is a refusal (v0.5.3): from `phase: 2` a
 missing `spec.sha256` or `src.sha256` is refused by `next.sh` (and `src.sha256` by the battery and `pending-red.sh`) until
 the owner records it, signed (`init-state.sh <proj> --spec <spec> --by "<name>"`, `--src` likewise); and the reports the
 scripts write carry a seal, `<report>.sha256` beside each, without which `next.sh` reads the report as missing - what

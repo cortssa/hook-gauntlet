@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased (v0.5.4)
+
+- **v0.5.4 - the owner present.** Closes the five Known gaps of v0.5.3: `blackbox: skipped_by_owner` refused beside a
+  black-box round; the walker's signature line leaves at the owner's re-record; `--by` refuses any name containing
+  `walker`; a census gate that FAILED, or that judged nothing, is no census; `next.sh` repeats a `src/` re-record under
+  each answer. From the first owner-present walk of v0.5.3: the anchor refusal names both routes - undo the change, or
+  the owner re-records an ordered fix, named `--by <owner>`, never a runnable signature; an append-only file
+  (`DECISIONS.md`, `LOG.md`) or `STATE.md` is never sealed as a round's report, whatever the case of its name; the
+  phase-3 gate is listed whole, every missing item in one refusal with its command; `fuzz-long.sh` refuses a small
+  inline budget before running when the file holds one `forge-config:` block (read with forge's precedence, the forms
+  forge 1.8.1 honours; a file with more blocks is left to the check after the campaign - a refusal never fires on a
+  doubt); row 9b's `true` is the owner's recorded absence; the model field is the model requested; `briefs/verifier.md`
+  serves two uses; two lessons (14, 15); the owner interview asks each question plainly, with its canonical sentence
+  kept. A ROUND line's `gate pass` above its own counts is refused when no earlier ROUND line classified a high or a
+  medium - nothing was there to be closed; after that it is not checked: a closing discovery round reads no list of
+  accepted findings and may honestly re-report one the owner accepted, and `state/README.md` says when such a line is
+  honest.
+
+- **Known gaps on main (v0.5.4), open:** the owner's `DECISIONS.md` entry behind `blackbox: skipped_by_owner` is not
+  read (only the black-box rounds are); `gate pass` above a ROUND line's own counts is checked only before the first
+  classified finding, not after; an inline budget in a file with two or more `forge-config:` blocks is not read before
+  the run - forge merges a contract's block with its function's (function over contract, measured) and the kit does not
+  model the merge - so a small one there is caught only after the campaign; row 9b's `true` and a threat refusal written
+  without `source: owner` while the owner is present are text, not checks (the kit records no time on an owner's
+  answer).
+
 ## v0.5.3 - 2026-10-22 - silence is a refusal (carries v0.5.1 and v0.5.2, never tagged)
 
 - **Known gaps on main (v0.5.3), open:** `blackbox: skipped_by_owner` is not checked against the black-box rounds; the

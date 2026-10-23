@@ -109,7 +109,8 @@ It reads each independent threat, in this order, as:
 
   the reason a predicate someone can check (the hook holds no balance; the entry point does not exist), the entry's
   body saying more and its `source:` (`assumed, owner absent` when the owner is not there to read it) - a refusal is a
-  claim, like "does not apply" (`doctrine/EVIDENCE.md` 6);
+  claim, like "does not apply" (`doctrine/EVIDENCE.md` 6). A refusal whose entry's `source:` is not `owner` is the walker's proposal, not a refusal: with the owner present it is a question for row 9's triage and the owner's answer replaces it (`source: owner`); absent, `source: assumed, owner absent`, and the dossier's section 8 carries it. (`scripts/threat-diff.sh` does not
+  read `source:`: this is the walker's to keep.)
 - **handed** - none of those, and the owner leaves it undecided (or, absent, cannot decide it): it is handed on by name,
   on a line of its own in `.gauntlet/THREATS.md` - an answer, not a walker's threat:
 

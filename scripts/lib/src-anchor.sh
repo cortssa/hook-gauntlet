@@ -107,7 +107,8 @@ report_check() {
 #      a tree that is not a project of the route - no STATE.md: the kit's own module, a bench, someone else's - is
 #      named as not anchored);
 #   2  REFUSED: src/ differs from the record, or is gone, or the record is not of its shape - SRC_ANCHOR_LINE is the
-#      refusal, the spec's in next.sh for src/: no escape, and no command an agent could run; or (v0.5.3) there is no
+#      refusal, the spec's in next.sh for src/: no escape; it names both routes (v0.5.4: undo the change, or the owner
+#      re-records an ordered fix, `--by <owner>` - never a runnable signature); or (v0.5.3) there is no
 #      record and the project's phase is 2 or higher - the refusal names the owner's signed re-record, `--by <owner>`.
 #   SRC_ANCHOR_SHORT is the same in a few words, for a summary line or a record.
 # shellcheck disable=SC2034   # read by the scripts that source this
@@ -116,7 +117,9 @@ SRC_ANCHOR_LINE="" SRC_ANCHOR_SHORT=""
 src_anchor_check() {
   local who="$1" proj="$2" rec line want now rr last tail
   rec="$proj/.gauntlet/src.sha256"
-  tail="the code under audit is the owner's. Undo the change (put the owner's code back) and write what you assumed in DECISIONS.md (source: assumed, owner absent): a finding's fix is the owner's decision (doctrine/NEXT.md row 6b), shown on a copy (scripts/mutate.sh), never written into src/. The owner, present, re-records a change of their own with scripts/init-state.sh, signed; an agent never does it. Nothing run."
+  # v0.5.4: both routes, every time - the kit cannot tell an owner-ordered fix ("fix it" in DECISIONS.md, which carries
+  # dates, not times) from an agent's edit. The re-record's command names `--by <owner>`, never a runnable signature
+  tail="the code under audit is the owner's. Two routes, and the kit cannot tell which applies: (1) the change is not the owner's - undo it (put the owner's code back) and write what you assumed in DECISIONS.md (source: assumed, owner absent); (2) the owner ordered it (a \"fix it\" in DECISIONS.md) - the owner re-records it, signed: scripts/init-state.sh $proj --src --by <owner>. A finding's fix is the owner's decision (doctrine/NEXT.md row 6b), shown on a copy (scripts/mutate.sh), never written into src/ by an agent, and an agent never re-records. Nothing run."
   if [ ! -f "$rec" ]; then
     # v0.5.3: from phase 2 a missing record is a refusal, never a pass (the header)
     if src_anchor_required "$proj"; then
