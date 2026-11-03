@@ -112,6 +112,11 @@ spec as the sources the answers are read from. Write it in `DECISIONS.md` as one
         open: no list.
     Why the kit asks: anyone can create a pool that names your hook, so the kit checks that state and balances are kept
         per pool (`doctrine/HOOK-ATTACKS.md` classes 3 and 4) and the dossier's scope sheet has a row on pool admission.
+        If you answer "a factory": a launcher, factory, locker or periphery contract shipped with the hook that creates
+        or configures its pools, positions, orders or tokens is in the files in scope; leaving one out is an owner
+        decision, written in the dossier's scope sheet with its reason. A setup step that one way of creating a pool
+        performs and another way skips lives in that contract, not in a hook callback, so a review of the hook alone
+        never sees it.
 5. Does it hold funds? Whose? For how long? Can they be stuck?
     Ask it as: Does your hook ever keep tokens or ETH in its own account, even briefly? If so, whose are they, how long
         do they stay, and could they ever get stuck with no way out?
@@ -161,7 +166,11 @@ spec as the sources the answers are read from. Write it in `DECISIONS.md` as one
         unusual decimals - not the usual 18 decimal places (for instance 6 or 8)
     Why the kit asks: "rejected at the door" goes into the spec's out-of-scope section with the rule that refuses it,
         "undefined" becomes a target for the rounds, and the hostile-token actions (a test token that misbehaves on
-        purpose) are wired into the fuzz campaign whatever you answer (`doctrine/FUZZ-ACTIONS.md` question 3).
+        purpose) are wired into the fuzz campaign whatever you answer (`doctrine/FUZZ-ACTIONS.md` question 3) - for
+        the behaviours that test token has a switch for: fee on transfer, no return value (and a transfer that returns
+        `false`), revert on zero, a blocklist (a recipient that refuses), callbacks on transfer. Unusual decimals are
+        set when the test token is made, not switched mid-campaign. Rebasing is modelled only as a balance that lies
+        when it is read, not as a supply that changes: for a rebasing token the test is yours to write.
 
 9. Can a counterparty be a contract rather than a wallet? Can a recipient refuse to receive?
     Ask it as: Can the other side of a trade or payment be a smart contract rather than a person's wallet? Can someone

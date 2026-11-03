@@ -272,6 +272,33 @@ contract InRangeDonateHookTest is V4Harness {
         _honestPaidInFull(x);
     }
 
+    /// @notice path parity (`doctrine/HOOK-ATTACKS.md` class 30, "the same end state by another path"): the set of
+    /// liquidity in range changes by three paths - a swap moves the price, an LP adds, an LP removes - and each runs D4's
+    /// setup first: the pot paid to the set as it stood. Whichever path is taken, the pot that stood before it is donated
+    /// in full and the honest LPs are paid in full. Seen red on a mutant that drops the setup from the remove path alone
+    /// (`beforeRemoveLiquidity` without `_payThePot`), on which the swap path's own test above stays green
+    function test_path_parity_every_way_the_set_in_range_changes_pays_the_pot_first() public {
+        address carol = address(0xCA401);
+        _fundAndApprove(carol, 1e30);
+        World memory x = _world(address(hook));
+        _honestTrading(x);
+        uint256 before = vm.snapshotState(); // the same world, a pot standing, before each path
+        for (uint256 path = 0; path < 3; path++) {
+            vm.revertToState(before);
+            (uint256 p0, uint256 p1) = hook.potOf(x.key.toId());
+            assertGt(p0 + p1, 0, "setup: no pot stands before the path");
+            uint256 d0 = hook.donated(currency0);
+            uint256 d1 = hook.donated(currency1);
+            if (path == 0) x.w.swapAs(trader, _in(false, 1e18, 600), 0); // the price moves
+            else if (path == 1) x.w.modifyAs(carol, -600, 600, 1e20, 0); // an LP arrives
+            else x.w.modifyAs(bob, 0, 2400, -5e19, 0); // an LP leaves
+            assertEq(hook.donated(currency0) - d0, p0, "this path changed the set before the pot was paid (currency0)");
+            assertEq(hook.donated(currency1) - d1, p1, "this path changed the set before the pot was paid (currency1)");
+            assertEq(_excess(x, carol), 0, "the newcomer was paid for fees taken before it arrived");
+            _honestPaidInFull(x);
+        }
+    }
+
     // ------------------------------------------------------------------ the JIT-recipient actor, on both hooks
     /// @notice a position as large as alice's, placed just before a sweep and removed right after, in ONE transaction.
     /// Naive: it takes its liquidity's share of every fee taken before it arrived. Defended: its arrival pays the pot

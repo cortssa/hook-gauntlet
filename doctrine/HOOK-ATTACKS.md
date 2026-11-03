@@ -41,7 +41,7 @@ Two public incidents are worth knowing before you read the table, because both w
 | 5 | **Delta accounting and return deltas** | If the hook returns a delta, is it the amount that actually moved, with the right sign, in the right currency (specified vs unspecified)? | conservation across hook + manager + users per action; exact-in and exact-out, both directions |
 | 6 | **Rounding direction, over sequences** | Which way does every division round, who pays the dust, and can one party push it the same way N times? | invariant "nobody gains what nobody lost" checked per action, with a dust-splitting action (many tiny operations) |
 | 7 | **Unsettled deltas / forgotten sync** | Does every path end with deltas at zero? Is `sync` called before a transfer that `settle` will measure? | run on the real manager: it reverts `CurrencyNotSettled`; include the failure paths, not only the happy one |
-| 8 | **Re-entrancy through `unlock` and through tokens** | What runs attacker code in the middle of your action: a token callback, a recipient, a nested `unlock`? What state is half-written at that moment? | hostile token with callbacks that re-enter every entry point; assert the re-entry never succeeded - and point them at the MANAGER in the middle of a payment (sync, settle, take, mint, swap), where a door that "succeeds" can still kill or rob the payer (`foundry-kit/v4/test/TokenReentry.t.sol`, `test_P12_a_currency_that_moves_the_checkpoint_mid_rebate_is_refused`) |
+| 8 | **Re-entrancy through `unlock` and through tokens** | What runs attacker code in the middle of your action: a token callback, a recipient, a nested `unlock`? What state is half-written at that moment? | hostile token with callbacks that re-enter every entry point; assert the re-entry never succeeded - and point them at the MANAGER in the middle of a payment (sync, settle, take, mint, swap), where a door that "succeeds" can still kill or rob the payer (`foundry-kit/v4/test/TokenReentry.t.sol`; `test_P12_a_currency_that_moves_the_checkpoint_mid_rebate_is_refused`, in `foundry-kit/v4/test/examples/DeltaFeeHook.t.sol`) |
 | 9 | **`hookData` and `sender` as attacker input** | Does the hook decode and TRUST bytes the swapper chose - a recipient, a fee, a price, an identity? Does it treat `sender` as the user, when it is the ROUTER (`V4-ACCOUNTING.md` hazard 10)? | empty, enormous and crafted `hookData`; anything decoded from it is treated as hostile |
 | 10 | **Return-data encoding** | Right selector, right length, right flag bits (the fee-override flag, for instance)? | covered by running on the real manager, which rejects a bad return; do not mock this away |
 | 11 | **Callback timing** | Code that is right against pre-swap state in `beforeSwap` - is it still right in `afterSwap`, or for the other direction? | the same scenario through every callback the hook declares, both swap directions |
@@ -71,6 +71,7 @@ Two public incidents are worth knowing before you read the table, because both w
 | 35 | **Custom curves / the hook takes the whole swap** | If the hook returns a delta equal to the whole specified amount (the pool's own curve does nothing): who guarantees the price, the solvency of the hook's reserves, and the behaviour at zero liquidity? | the reference model of `EVIDENCE.md` 5 is mandatory here; conservation of the hook's own reserves per action |
 | 36 | **Gate unit-confusion** | Does any `beforeSwap`/`afterSwap` gate compare a raw amount or a raw price to a fixed constant without asking which currency and which decimals it is looking at on THIS call? Two shapes: (a) a cap compared straight against raw `amountSpecified` - exact-in vs exact-out AND direction choose which currency is "specified", so one constant silently governs BOTH tokens, and on a sub-18-decimal specified token the cap fails OPEN; (b) a balance / skew / heavier-side gate on the two virtual reserves - `StateLibrary` gives `amount0 = L*2^96/sqrtP` and `amount1 = L*sqrtP/2^96`, so `amount0/amount1 = 1/price` (`L` cancels): an unanchored gate is really comparing the pool's raw price to an implicit `1.0`, permanently one-directional on any pair that is not a same-decimals pool near parity. | Fix: anchor to the pool's OWN reference - `sqrtPriceX96` captured at `afterInitialize` (flag `0x1000`) or an explicit target ratio - never a bare constant compared to a raw amount or a raw price. Test to write: exercise the gate at a price away from 1:1 and confirm BOTH legs can bind; repeat with a sub-18-decimal specified token and confirm the cap still holds. Goes red the moment either check only passes at parity, or only fires in one direction. |
 | 37 | **Self-claims not kept** | Does the code keep its own word? Its events, its NatSpec and the owner's documents, its errors and limits, and the interfaces and bases it declares are claims that readers, indexers and integrators act on - and none of them is a question about an attacker, so a route that only asks about attackers never checks them. Four questions: **(a)** every event's fields equal what the function actually moved or set - the amount paid, not the amount asked; the currency and the party that moved, not the ones the call named; emitted on every path that changes what it reports and on none that does not (class 22 asks whether the log rebuilds the state; this asks whether each line of it is true); **(b)** every NatSpec `@notice`, `@dev` and `@return`, and every sentence of the owner's documents about behaviour, is true of the code - each one a row of the spec's section 3b, "said" beside "does"; **(c)** every revert, custom error and bound fires exactly where its name and its documentation say, and nowhere else: a valid input that reverts is a finding, and so is an error named for one cause raised by another; **(d)** what an interface or an inherited base promises - a return value, a struct field, an event, a behaviour its documentation states - the implementation keeps, and fills. **Does not apply** only when the code says nothing about itself, checkable by grep over the files in scope: no `emit`, no NatSpec (`///`, `/**`) and no owner document about behaviour, no `error` declaration, `revert` or `require`, no named limit (a constant or immutable used as a bound) - write the command and its empty output; almost no hook qualifies | (a) in the handler, `vm.recordLogs()` around each action, the hook's own events decoded and each field compared with what the action measured (balances, the manager's deltas, the stored state), then one census boundary per event, `"event <E> emitted with the fields it reports"`, noted only after the comparison held - `scripts/census.sh` lists every `emit` in `src/` that no boundary names; (b) one unit test per row of section 3b, or the row says REASONED or not checked; (c) per error and bound: the input that must trip it, asserting WHICH error (`vm.expectRevert(E.selector)`), and the input just inside it, which must not revert; (d) per function of the interface or base: its documented return and fields asserted on the implementation |
+| 38 | **Signed messages and nonces** | Does any entry point accept a signature or a nonce - a signed quote, a permit, an off-chain order? Does the signed digest bind the chain id, this contract, the version, the pool and a deadline? Is the nonce unique per signer, and is zero never read as "unused"? Is a cached domain separator rebuilt when the chain id changes (a fork)? Who may submit a stranger's signed message, and through which router (class 9: the router is the `sender`, not the signer)? Is anything used as a nonce that two transactions can share (`block.number`, a timestamp)? | replay the same signed message on a fork with another chain id; a message with nonce 0; the same signed message submitted twice; a stranger submits the user's signed quote through the public router before the user does; two calls that use the identifier in one block |
 
 *Source of class 36: a third-party public checklist (aeon, `hook-checklist.md`, their class 10), read 2026-09-22.
 A harness that silently does nothing (an unchecked `.call`, a `view` callee reached through `STATICCALL`) is a different
@@ -105,6 +106,36 @@ than a class of its own. Source: aeon's public `hook-checklist.md`, classes 4 an
   Goes red the moment a pool or token can be deployed against a look-alike hook address and this hook's own
   admission rules never run.
 
+Four more, from a later read of public audit reports (2026-11-02; "Where this list comes from", below), in the same
+form - each a sub-bullet on a class the list already has:
+
+- **Class 30, construction and initialisation - the same end state by another path.** A second path that creates,
+  registers, clones or configures a pool, a position, an order or a token can skip a setup step or a guard that the
+  first path performs: a configuration call one creation path never makes, a clone that never ran the constructor's
+  checks, a dust-sized add that collects fees before the removal it should have been penalised on. Test to write: list
+  the end states the code can reach, list every path to each, diff the setup each path performs, and write one
+  invariant per end state that holds "whichever way it was reached". The class 24 sub-bullet above is the same check on
+  the deploy paths alone. In the kit: `foundry-kit/v4/test/examples/InRangeDonateHook.t.sol`,
+  `test_path_parity_every_way_the_set_in_range_changes_pays_the_pot_first` - the set of liquidity in range changes by a
+  swap, an add or a remove, and each path pays the pot first; it goes red the moment one path skips that step.
+  No shipped example has a creation or clone path of its own; where one records a pool (`CappedDynamicFeeHook`, in
+  `afterInitialize`) it does so on the manager's single `initialize` path and by no path of its own, so the test shows
+  the method on a state change, not on a created thing; the creation shape above is exercised by no file.
+- **Class 27, approvals - every record keyed by someone else.** The class's test, widened from allowances to every
+  record an entry point writes under another party's address: a referrer, a recipient, a delegate, the owner of an
+  order or of a position. Test to write: every entry point called by a stranger naming a victim in each address
+  argument; the victim's record changes only where the spec says a stranger may change it. Goes red the moment a
+  stranger's call moves what a victim owns, is owed or is credited with.
+- **Class 28, the hook as liquidity owner - the user's minimums and deadline.** An add or a remove the hook performs on
+  a user's behalf carries that user's minimum amounts and deadline into the pool; the minimum is measured on the
+  principal, not on a delta that already includes accrued fees; and a remove has a minimum too. (Class 29 asks the
+  same of the hook's own internal swaps.) Test to write: a swap moves the price between the user's quote and the
+  execution of the add; the user's minimum binds on both currencies, and on the remove.
+- **Class 37 (b), self-claims - a `memory-safe` assembly block.** The `memory-safe` annotation is a claim the code makes
+  about itself, and the compiler acts on it without checking it. Each annotated block in scope is listed, its writes
+  are checked against the scratch space and the memory it allocated, and the static triage's output on that block
+  (`scripts/static-triage.sh`) is named beside it.
+
 ## Where this list comes from, and how far to trust it
 
 It was merged from the attack list this kit's v4 harness was written against, public write-ups and audits of v4 hooks
@@ -124,5 +155,19 @@ one was of this kind - documentation that leaves the code's parameters out - and
 list already names or does not yet name. The class is written because the route asked about attackers and never asked
 the code to keep its own word: its events, its documentation, its errors, its limits, its interfaces.
 
-Of these, this kit's three example hooks (`CappedDynamicFeeHook`, `DeltaFeeHook`, `ClaimsFeeHook`, `foundry-kit/v4/`) exercise 1, 2, 3, 4, 5, 8, 9, 14, 18, 21 and 25 as of 2026-09-24; each class's test cell names the file, and a class with no file named is not exercised by the kit. The rest have no code in
-this repository: the list tells you what to ask, the tests are yours to write.
+Class 38, and the four sub-bullets on classes 27, 28, 30 and 37, came from a 2026-11-02 read of public audit reports of
+v4 hooks and of token launchers built around them - OpenZeppelin's rounds on its hooks library and its token-launcher
+report, Pashov's reports on Bunni, Spearbit's pages on Kyber and on Semantic Layer, and Kann's page on Wild Protocol -
+measured against this list for the shapes it did not ask about. They were read as summaries, not line by line, no PDF
+among them, and nothing of their wording is carried over; as with aeon and SCSVS, the reports themselves are worth
+reading for the classes that apply to you. Class 38 is the one shape they raised that had no neighbour here: a hook
+that executes signed quotes or orders is a design, not a one-off.
+
+Of the classes above, this table names a test of the kit in six cells, those of 3, 4, 8, 18, 20 and 25, and in one
+sub-bullet, the one on class 30; it names a kit test nowhere else. The kit's four example hooks (`CappedDynamicFeeHook`,
+`DeltaFeeHook`, `ClaimsFeeHook`, `InRangeDonateHook`) are in `foundry-kit/v4/src/examples/`, their suites in
+`foundry-kit/v4/test/examples/`. The fourth's invariants file is named in class 20's cell, with the WHO invariant, the
+JIT-recipient actor and the reference model; its path-parity test is named in the class 30 sub-bullet above and not in
+that class's cell, whose own question (parameters, initialisation, bricking) the test does not ask. This table is not an
+index of the kit's tests: `foundry-kit/v4/test/` holds suites it does not name, and `foundry-kit/v4/README.md` has a
+table of them. The list tells you what to ask; the tests for your hook are yours to write.

@@ -11,23 +11,30 @@ questions below.** Write the list in `SPEC.md` before you write the code.
 
 1. **Every external function, from every kind of caller.** One action per entry point: the ones users call, the
    ones only the owner calls, and the ones "anyone" can call (sweeps, evictions, pokes). Include the calls that
-   should be refused - the refusal is behaviour too.
+   should be refused - the refusal is behaviour too. Then group the entry points by the end state each one reaches
+   (a pool configured, a position open, an order placed) and make the handler reach each end state by every path to it,
+   not only by the first one you wrote (`HOOK-ATTACKS.md` class 30, "the same end state by another path").
 2. **Time.** If anything in the hook depends on a timestamp or a block number - expiry, idleness, decay, TWAP
    windows, epochs - you need an action that moves the clock, by amounts that land **on both sides of every
    boundary**. A seven-day rule is tested at six days, seven, eight, and at the wrap-around if the counter is small.
 3. **The token misbehaving, mid-campaign.** Wire the `HostileERC20` switches into actions, so that a token can
-   start lying about a balance, charging a fee, short-delivering or burning gas **between** two honest actions,
-   for one wallet or for all. A hostile mode that is only ever set in `setUp` tests one ordering out of millions.
+   start lying about a balance, charging a fee, short-delivering, refusing a transfer of zero (`setRevertOnZero`) or
+   burning gas **between** two honest actions, for one wallet or for all. A hostile mode that is only ever set in
+   `setUp` tests one ordering out of millions.
    Wire them even when the owner has not decided which token behaviours the hook must survive: a promise that breaks
    under one of them is a FINDING (`NEXT.md` 6b says where the failing invariant waits), not a reason to leave the
    action out - two of a blind round's findings, one high, sat exactly where a reader had left the switches out.
 4. **The strange actors.** Someone who donates tokens straight to the hook, to the router, to the pool manager.
    Someone who is a contract, not a wallet. Someone who re-enters from inside a transfer callback. Someone who
-   is both sides of the same trade. Two operations inside one `unlock`. And, for any hook that pays "whoever is in
-   range" (a donation, a sweep, a reward streamed to the active tick) or pays traders by volume: **the just-in-time
-   recipient** - it places a position exactly around the price just before the payout and removes it right after, in
-   ONE transaction; a variant that first moves the price to where nobody else is in range (then even dust is alone and
-   takes everything); a variant that is also the TRADER inside its own window (it pays the fee or earns the volume, and
+   is both sides of the same trade. Two operations inside one `unlock`. A stranger who names a victim in each address
+   argument of every entry point (a recipient, a referrer, an owner: `HOOK-ATTACKS.md` class 27). For a hook that pays
+   rewards, referrals or streams over a share base: the one who changes that base between two accruals - transfers
+   shares, changes its referrer, drains the supply to zero - and claims after (`INVARIANTS.md`, "Who was paid"). For a
+   hook with states of its own: cancel and pause between every pair of transitions (`INVARIANTS.md`, "Your own state
+   machine"). And, for any hook that pays "whoever is in range" (a donation, a sweep, a reward streamed to the active
+   tick) or pays traders by volume: **the just-in-time recipient** - it places a position exactly around the price
+   just before the payout and removes it right after, in ONE transaction; a variant that first moves the price to
+   where nobody else is in range (then even dust is alone and takes everything); a variant that is also the TRADER inside its own window (it pays the fee or earns the volume, and
    is in range to be paid back); and one that enters and stays across other actors' actions. The v4 module has it as
    a contract with hook points for any payout (`foundry-kit/v4/src/JitRecipient.sol`); it is useless without an
    invariant on WHO was paid (`INVARIANTS.md`, "Who was paid, not only how much"). That invariant checks conformance

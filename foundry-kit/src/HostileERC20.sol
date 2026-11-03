@@ -52,6 +52,7 @@ contract HostileERC20 {
     error TransfersPaused();
     error InsufficientBalance(address wallet);
     error InsufficientAllowance(address owner, address spender);
+    error ZeroTransferRefused(address from, address to);
     error Unreachable();
 
     // ------------------------------------------------------------------ switch storage
@@ -97,6 +98,10 @@ contract HostileERC20 {
 
     /// @notice per sender: `transfer` and `transferFrom` return `false`, revert nothing and change nothing.
     mapping(address => bool) public returnsFalse;
+
+    /// @notice per wallet, either side: a move of zero tokens from it or to it reverts. Its own mapping, like
+    /// `returnsFalse`, so that the `moveSwitch` getter keeps the shape tests destructure.
+    mapping(address => bool) public revertsOnZero;
 
     /// @notice global: basis points taken out of every delivery and parked at FEE_SINK.
     uint256 public feeBps;
@@ -259,6 +264,19 @@ contract HostileERC20 {
     /// unknown token, and decide what "it ate my frame" means before it happens.
     function setGasHogTransfer(address w, bool on) external {
         moveSwitch[w].gasHog = on;
+    }
+
+    /// @notice a `transfer` or `transferFrom` of ZERO tokens reverts `ZeroTransferRefused` when `w` is the sender OR
+    /// the recipient; a move of one token or more is untouched. Either side, unlike the switches keyed to one side:
+    /// the real tokens refuse a zero amount whoever the parties are, and one switch on the hook's own address then
+    /// reaches both a payout of zero (the hook sends) and a pull of zero (the hook receives). Checked right after the
+    /// global pause, before every other move switch; `setReturnsFalse` on the sender still wins (it never moves).
+    /// Imitates: the tokens that revert on a zero-value transfer (the "weird ERC-20" catalogues list them).
+    /// A naive contract gets this wrong by settling every share in a loop, rounding included: one share that rounds
+    /// to zero - a fee, a rebate, a claim of dust - reverts the whole action, and a payout that could not happen
+    /// denies service to everyone in the same call. Skip a zero, or refuse the token in writing.
+    function setRevertOnZero(address w, bool on) external {
+        revertsOnZero[w] = on;
     }
 
     /// @notice global fee in basis points, taken out of every delivery and parked at FEE_SINK. The sender
@@ -424,6 +442,7 @@ contract HostileERC20 {
     // ------------------------------------------------------------------ the move itself
     function _move(address from, address to, uint256 value) internal virtual {
         if (paused) revert TransfersPaused();
+        if (value == 0 && (revertsOnZero[from] || revertsOnZero[to])) revert ZeroTransferRefused(from, to);
 
         MoveSwitch storage mf = moveSwitch[from];
         if (mf.gasHog) {

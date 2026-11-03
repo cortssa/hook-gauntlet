@@ -28,7 +28,7 @@ and installs only on the owner's yes.
 - Slither and Aderyn only for the static-analysis judge - an install your agent must ask you for (the interview asks, question 17b); without them `scripts/static-triage.sh` runs `forge lint` alone and says so.
 - Network only for three things: cloning forge-std (step 1; offline: `mkdir -p foundry-kit/lib` and copy a forge-std checkout to
   `foundry-kit/lib/forge-std` - the pinned v1.16.2, or the v1.9.3 that v4-core carries as `lib/forge-std` once step 3
-  has run, which the root kit's 107 tests pass on and the doctor accepts as "nothing is claimed outside the pin"; the
+  has run, which the root kit's 108 tests pass on and the doctor accepts as "nothing is claimed outside the pin"; the
   battery checks nothing about where it came from), fetching Uniswap's sources at pinned
   commits (step 3, offline route there) and the real pool manager's bytecode (step 8). Everything else runs offline.
 

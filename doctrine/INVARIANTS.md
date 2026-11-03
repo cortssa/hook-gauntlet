@@ -30,6 +30,9 @@ Do not start from the code. Start from the harm, and reason backwards to the rul
 4. **Ask what must be TRUE for each promise in the spec to hold.** Every necessary condition is either enforced
    by the code (then assert it) or is an assumption about the outside world (then it belongs in the spec as an
    admission rule, and in the runbook as a check somebody actually performs). A condition that is neither is a hole.
+   An invariant about a thing the code creates - a pool, a position, an order, a token - is phrased over every path
+   that creates it, not over the one path you had in mind (`HOOK-ATTACKS.md` class 30, "the same end state by another
+   path").
 
 ## Starting points by kind of hook
 
@@ -39,12 +42,13 @@ These are prompts, not a checklist. Your hook will need rules that are not here.
 |---|---|
 | **dynamic fees** | the fee never exceeds its cap; fees collected equal the sum of what each swap was charged; the fee cannot be moved by the swapper inside their own transaction |
 | **limit orders** | an order fills at most once; the filled amount never exceeds the order size; a cancelled order never fills; whoever placed it is who gets paid |
+| **auctions, queues, order books** | a transition never skips its wait; a cancel leaves no field that the next transition trusts; the last party out is paid what the first was - below, "Your own state machine" |
 | **custody outside the pool** | the hook never ends an action holding tokens; each provider loses only what was delivered on their behalf; a provider that cannot deliver is skipped, never charged |
 | **oracle / TWAP** | the reported price cannot move more than X within one block; an observation cannot be written twice for one timestamp |
 | **vault / rehypothecation** | shares times price never exceeds assets; nobody can withdraw more than they deposited plus their share of yield |
 | **any hook that quotes** | the quote equals the execution when nothing changed in between; under a hostile token the execution is never MORE than the quote |
 | **any hook that emits events** | the state rebuilt from the events alone equals the state on chain |
-| **pays in-range LPs, or traders by volume** | per party, what it RECEIVED never exceeds what it was ENTITLED to by the spec's rule, plus a stated tolerance - below |
+| **pays in-range LPs, traders by volume, or rewards, referrals or streams** | per party, what it RECEIVED never exceeds what it was ENTITLED to by the spec's rule, plus a stated tolerance - below |
 
 The last two rows are there because they are the ones most often forgotten. A fuzz suite that checks where the
 money went and never checks what the contract **said** about it will pass while the quote and the event log lie.
@@ -59,7 +63,13 @@ amount invariant and the census gate green (`HOOK-ATTACKS.md` class 20). The inv
 
 1. **Write the rule of entitlement in the spec, with its clock.** Who earns a payout, and WHEN is it earned: the
    liquidity in range when each fee was taken (the fee is the clock), liquidity x seconds over an interval, volume
-   traded in an epoch. "The LPs" is not a rule.
+   traded in an epoch. "The LPs" is not a rule. For a reward, a referral fee or a stream that accrues to a share
+   base, the clock has four more questions, each one a rule in the spec:
+   - what has accrued is settled BEFORE the share base changes - a transfer of shares, a change of referrer, a
+     transfer to or from the zero address - never after, or the next holder is paid for time it did not hold;
+   - a period with zero supply still accounts for its rewards: they stay claimable or go back, they never vanish;
+   - a new rate is added to what is still streaming, or the spec says in writing that it replaces it;
+   - a claim after the end date is paid what had accrued by the end date, no more and no less.
 2. **Feed a reference model at the moment the spec says a payout is earned**, not when it is paid: after each swap,
    after each interval, at the end of each epoch. It splits what was earned over the parties that qualified THEN, read
    from the manager (the tick, each position's liquidity) or from the swap events - never from the hook's own books.
@@ -85,7 +95,27 @@ The v4 module has all six on a worked example: `foundry-kit/v4/src/examples/InRa
 amount invariant stays green, and step 6's example: its residual R3 - dust parked beyond every honest range, before
 anything happens, is alone in range where a stranger's swap ends, and the rule owes it that whole fee while the WHO
 invariant stays green (pinned as it is by a unit test). A volume rule needs a model of its own (traders, epochs); the
-pattern is the same.
+pattern is the same. So does a stream: the shipped ledger accrues whenever it is told to, and no shipped example feeds
+it per second - it models donations, not per-second streams (`foundry-kit/v4/README.md`, the item on what is left of
+payouts to whoever is in range), so a reward streamed over time needs a model of its own.
+
+## Your own state machine
+
+An auction, a queue, an order book, a vesting schedule: if the hook keeps states and moves between them, the states
+are yours, and no class of `HOOK-ATTACKS.md` knows them. Write them down and ask, for each transition:
+
+- **its guard, its wait, and who may trigger it** - every transition has all three in the spec, and the invariant is
+  that none happens without them: a transition never skips its wait, and nobody but the named party triggers it;
+- **what a cancel or a pause leaves behind** - the fields it does not reset, and whether the next transition reads one
+  of them as if it were current;
+- **flags computed before the write they test, or after it** - a check that reads a value the same call is about to
+  change tests the old state, not the new one;
+- **the last party out** - the last canceller, the last claimant, the last bidder refunded: paid what the first was,
+  with nothing left stuck and nothing taken from what others are owed;
+- **the same wallet in a row** - create and cancel, then create again, in one transaction and across several: the
+  states a fresh wallet never reaches.
+
+The fuzz side is `FUZZ-ACTIONS.md` question 4: cancel and pause between every pair of transitions.
 
 ## Two kinds of check, and you need both
 

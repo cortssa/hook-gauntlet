@@ -329,6 +329,27 @@ contract HostileERC20Test is Test {
         assertEq(t.trueBalanceOf(carol), 1 * E, "other recipients are fine");
     }
 
+    /// A move of zero reverts when the switched wallet is the sender or the recipient; one wei moves; a zero between two
+    /// other wallets moves; and it can be turned off.
+    function test_switch_revertOnZero() public {
+        t.setRevertOnZero(bob, true);
+
+        vm.expectRevert(abi.encodeWithSelector(HostileERC20.ZeroTransferRefused.selector, alice, bob));
+        t.transferFrom(alice, bob, 0);
+        vm.expectRevert(abi.encodeWithSelector(HostileERC20.ZeroTransferRefused.selector, bob, alice));
+        t.transferFrom(bob, alice, 0);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(HostileERC20.ZeroTransferRefused.selector, bob, carol));
+        t.transfer(carol, 0);
+
+        t.transferFrom(alice, bob, 1);
+        assertEq(t.trueBalanceOf(bob), 100 * E + 1, "one wei moves");
+        assertTrue(t.transferFrom(alice, carol, 0), "a zero between two other wallets moves");
+
+        t.setRevertOnZero(bob, false);
+        assertTrue(t.transferFrom(alice, bob, 0), "and it can be turned off");
+    }
+
     function test_switch_paused() public {
         t.setPaused(true);
         vm.expectRevert(HostileERC20.TransfersPaused.selector);

@@ -1417,13 +1417,15 @@ rround() {
   "$HERE/round.sh" "$RL" "${a[@]}" "$@"
 }
 want_line='ROUND r05 | phase 4 | regression | vendor-a/large (1M) | bench benches/hg-a05 | 2026-03-09..2026-03-12 | 0H 0M 4L 7I reasoned 0 | gate pass | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7'
-want_json='{"id":"r05","phase":4,"type":"regression","model":"vendor-a/large (1M)","bench":"benches/hg-a05","dates":{"start":"2026-03-09","end":"2026-03-12"},"findings":{"high":0,"medium":0,"low":4,"info":7,"reasoned_high_medium":0},"gate":"pass","cost":{"tokens":230000,"minutes":95,"files_read":41,"tests_written":6},"report":"reports/r05.md","raw_confidence":0.7}'
+want_json='{"id":"r05","phase":4,"type":"regression","model":"vendor-a/large (1M)","bench":"benches/hg-a05","dates":{"start":"2026-03-09","end":"2026-03-12"},"findings":{"high":0,"medium":0,"low":4,"info":7,"reasoned_high_medium":0},"gate":"pass","cost":{"tokens":230000,"tokens_in":null,"tokens_out":null,"tokens_cached":null,"minutes":95,"files_read":41,"tests_written":6},"report":"reports/r05.md","raw_confidence":0.7}'
 rround > "$TMP/o140" 2>&1; check "round.sh: a well-formed round is appended (the control)" 0 $? "$TMP/o140"
 if [ "$(grep -c '^ROUND ' "$RL")" = "1" ] && [ "$(grep '^ROUND ' "$RL")" = "$want_line" ]; then echo "  ok    and LOG.md holds exactly that line"; else
   echo "  FAIL  the ROUND line in LOG.md is not the one asked for: $(grep '^ROUND ' "$RL")"; fails=$((fails + 1)); fi
 "$HERE/round.sh" --json "$RL" > "$TMP/o141" 2>&1; check "round.sh --json reads it back" 0 $? "$TMP/o141"
 if [ "$(cat "$TMP/o141")" = "$want_json" ]; then echo "  ok    and every field read back equals the argument it was written from"; else
   echo "  FAIL  the round trip changed a field:"; sed "s/^/        | /" "$TMP/o141"; fails=$((fails + 1)); fi
+# (v0.5.5: the JSON's cost gains tokens_in, tokens_out and tokens_cached, null when the line does not give them - never 0;
+# every other field of this old line reads back as before)
 # v0.5.4: high and medium written and read back apart (the control above is 0H 0M: a writer and a reader that both swapped
 # them would pass it alone). gate fail: N1 refuses gate pass above 0H 0M with nothing classified before. LOG.md is put
 # back as it was after, byte for byte, so every later case of this section sees the LOG it saw before
@@ -1463,6 +1465,21 @@ refused "a text field with a newline in it" "--report contains a newline" --repo
 refused "an id already in LOG.md" "already has a ROUND line for 'r05'" --id r05
 refused "a required field left empty" "--model is required" --model ""
 refused "an argument it does not know" "unknown argument '--frobnicate'" -- --frobnicate 1
+# v0.5.5: tokens in, out and cached, beside the total or without it (state/README.md, "The ROUND line"). Red on the kit
+# of v0.5.4: its round.sh knew no --tokens-in, and its reader refused the parts (bad cost)
+rn=7700
+refused "input tokens that are not a number" "--tokens-in is a whole number, optionally with k or M (got 'lots')" -- --tokens-in lots
+RT="$TMP/round-LOG-tokens.md"; printf '# LOG\n' > "$RT"
+"$HERE/round.sh" "$RT" --id t01 --phase 4 --type regression --model "vendor-a/large (1M)" --bench benches/hg-a05 \
+  --dates 2026-03-09..2026-03-12 --high 0 --medium 0 --low 4 --info 7 --reasoned 0 --gate pass \
+  --tokens-in 180k --tokens-out 12k --tokens-cached 3M --minutes 95 --report reports/t01.md > "$TMP/o7705" 2>&1
+check "round.sh: tokens in, out and cached written apart, with no total (--tokens-in 180k --tokens-out 12k --tokens-cached 3M)" 0 $? "$TMP/o7705"
+want_t='ROUND t01 | phase 4 | regression | vendor-a/large (1M) | bench benches/hg-a05 | 2026-03-09..2026-03-12 | 0H 0M 4L 7I reasoned 0 | gate pass | 180k in, 12k out, 3M cached, 95 min | reports/t01.md'
+want_tj='{"id":"t01","phase":4,"type":"regression","model":"vendor-a/large (1M)","bench":"benches/hg-a05","dates":{"start":"2026-03-09","end":"2026-03-12"},"findings":{"high":0,"medium":0,"low":4,"info":7,"reasoned_high_medium":0},"gate":"pass","cost":{"tokens":null,"tokens_in":180000,"tokens_out":12000,"tokens_cached":3000000,"minutes":95,"files_read":null,"tests_written":null},"report":"reports/t01.md","raw_confidence":null}'
+"$HERE/round.sh" --json "$RT" > "$TMP/o7706" 2>&1; rc7706=$?
+if [ "$(grep '^ROUND ' "$RT")" = "$want_t" ] && [ "$rc7706" = 0 ] && [ "$(cat "$TMP/o7706")" = "$want_tj" ]; then
+  echo "  ok    and the line is exactly that, and --json reads it back: tokens null, tokens_in 180000, tokens_out 12000, tokens_cached 3000000"; else
+  echo "  FAIL  the line, or its read-back (rc $rc7706), is not the one asked for:"; { grep '^ROUND ' "$RT"; cat "$TMP/o7706"; } | sed "s/^/        | /"; fails=$((fails + 1)); fi
 # `gate pass (read-back pending)` (state/README.md): an interview played from an absent owner's files, the scope not yet
 # read back - a real state, written for an interview only, in those words only ... and for a SPEC (K32, FR16): phase 1's
 # gate also waits on the owner's read (AGENTS.md section 3), the owner absent the same way
@@ -1501,8 +1518,11 @@ if grep -q "line $(grep -n '^ROUND r09' "$RL" | cut -d: -f1) is not a ROUND line
   echo "  FAIL  --json did not name the bad line, or dropped the good one:"; sed "s/^/        | /" "$TMP/o147e"; fails=$((fails + 1)); fi
 "$HERE/round.sh" --json "$HERE/../state/LOG.md" > "$TMP/o148" 2>&1; check "round.sh --json reads the ROUND line of the kit's example LOG.md" 0 $? "$TMP/o148"
 "$HERE/round.sh" --json "$HERE/../state/README.md" > "$TMP/o149" 2>&1; check "round.sh --json reads the ROUND line documented in state/README.md" 0 $? "$TMP/o149"
-if [ "$(wc -l < "$TMP/o148" | tr -d ' ')" = "1" ] && [ "$(wc -l < "$TMP/o149" | tr -d ' ')" = "1" ]; then echo "  ok    one JSON line from each"; else
-  echo "  FAIL  the example files did not give one JSON line each"; fails=$((fails + 1)); fi
+sed -n 2p "$TMP/o149" > "$TMP/o149b"
+if [ "$(wc -l < "$TMP/o148" | tr -d ' ')" = "1" ] && [ "$(wc -l < "$TMP/o149" | tr -d ' ')" = "2" ] \
+  && grep -qF '"cost":{"tokens":null,"tokens_in":180000,"tokens_out":12000,"tokens_cached":3000000,' "$TMP/o149b"; then
+  echo "  ok    one JSON line from the example LOG.md; two from state/README.md - the old form, and the same round with tokens in, out and cached (v0.5.5)"; else
+  echo "  FAIL  the example LOG.md did not give one JSON line, or state/README.md not its two:"; sed "s/^/        | /" "$TMP/o148" "$TMP/o149"; fails=$((fails + 1)); fi
 
 # ================================================================= next.sh (STATE.md's flags -> the row of doctrine/NEXT.md; no forge needed)
 # One fixture per row of the table (scripts/test/fixtures/state-row-<id>.md) whose FIRST line says how it is run and what
@@ -6301,11 +6321,11 @@ P52n="$S52/n"; v52_proj "$P52n" src 'src = "src"'; printf 'contract Q { uint256 
 CORE=deposit "$HERE/census.sh" --aggregate "$P52n/census/long.tsv" "$P52n" > "$TMP/o7605" 2>&1
 check "a source that emits nothing" 0 $? "$TMP/o7605"
 v52_not "$TMP/o7605" "events the hook emits"
-# ---- the doctrine: class 37, its predicate and its four questions; the classes run 1..37 with no gap
+# ---- the doctrine: class 37, its predicate and its four questions; the classes run 1..38 with no gap (v0.5.5: class 38)
 HA="$HERE/../doctrine/HOOK-ATTACKS.md"
 ha_nums="$(awk -F '|' '/^\| [0-9]+ \| \*\*/ { gsub(/ /, "", $2); printf "%s ", $2 }' "$HA")"
-if [ "$ha_nums" = "$(seq 1 37 | tr '\n' ' ')" ]; then echo "  ok    doctrine/HOOK-ATTACKS.md: the classes run 1..37, no gap, no repeat"; else
-  echo "  FAIL  doctrine/HOOK-ATTACKS.md: the class numbers are '$ha_nums', not 1..37"; fails=$((fails + 1)); fi
+if [ "$ha_nums" = "$(seq 1 38 | tr '\n' ' ')" ]; then echo "  ok    doctrine/HOOK-ATTACKS.md: the classes run 1..38, no gap, no repeat"; else
+  echo "  FAIL  doctrine/HOOK-ATTACKS.md: the class numbers are '$ha_nums', not 1..38"; fails=$((fails + 1)); fi
 ha37="$(grep -E '^\| 37 \| \*\*Self-claims not kept\*\* \|' "$HA")"
 ha37_miss=""
 for q in '**(a)** every event' '**(b)** every NatSpec' '**(c)** every revert, custom error and bound fires exactly where' \
@@ -6805,6 +6825,15 @@ for v54_r in .gauntlet/decisions.md .gauntlet/State.md; do
   v54_n=$((v54_n + 1))
 done
 rm -rf "$S54"
+# ================================================================= v0.5.5: tokens in, out and cached on the ROUND line
+# next.sh refuses a LOG.md whose ROUND line round.sh --json cannot read back; a line with the new cost parts must pass it.
+# Red on the kit of v0.5.4 (its reader refused the parts, and next.sh with it). The round.sh cases are in its section
+echo "== v0.5.5: tokens in, out and cached on the ROUND line, read by next.sh =="
+S55="$TMP/v55"; rm -rf "$S55"; mkdir -p "$S55"; T55="$S55/t"; v54_proj "$T55" 2
+printf '\nROUND i01 | phase 0 | interview | fixture/none | bench .gauntlet/bench/i01 | 2026-11-03 | 0H 0M 0L 0I reasoned 0 | gate pass | 180k in, 12k out, 3M cached | .gauntlet/reports/i01.md\n' >> "$T55/.gauntlet/LOG.md"
+# 7703 sits inside the round.sh cases' rn=7700 range (see rn=7700 above); no file collides today - a new case here takes a number of its own, not 77xx.
+NX_RAW=1 kx_row 7703 "tokens: next.sh on a LOG.md whose ROUND line gives tokens in, out and cached, no total - the row" 4b "$T55"
+rm -rf "$S55"
 # ---- the REFUSED prefix: every run of next.sh in this selftest that exited 2 said `next: REFUSED - ` on its last line of
 # stderr (nx holds every run to it: the example's FIRST - fill, a pending/ test's, a cited file's were the ones that did not)
 if [ -s "$TMP/nx-unprefixed" ]; then echo "  FAIL  next.sh exited 2 without 'next: REFUSED - ' on its last stderr line:"; sort -u "$TMP/nx-unprefixed" | head -8 | sed "s/^/        | /"; fails=$((fails + 1)); else

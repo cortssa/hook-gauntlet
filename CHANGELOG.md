@@ -1,5 +1,50 @@
 # Changelog
 
+## Unreleased (v0.5.5)
+
+- **v0.5.5 - what the market finds.** Doctrine and the dossier's template, from a read of public audit reports of v4
+  hooks and the launchers around them; no new route step, `STATE.md` flag, record file or heading form. The scope: a
+  launcher, factory, locker or periphery contract shipped with the hook that creates or configures its pools,
+  positions, orders or tokens is in the files in scope unless the owner leaves it out in writing, with the reason - the
+  dossier's scope sheet, interview question 4 and the README's scope line say so. `doctrine/HOOK-ATTACKS.md`: class 38,
+  signed messages and nonces; four sub-bullets - class 30, the same end state by another path; class 27, a stranger
+  writes a record keyed by a victim; class 28, the user's minimums and deadline on liquidity the hook owns; class 37
+  (b), a `memory-safe` annotation is a claim the code makes about itself - and where they came from; the selftest's
+  class count runs 1..38. `doctrine/INVARIANTS.md`: four rules for the clock of rewards, referrals and streams, the
+  starting-points row widened to them, a line that the shipped ledger models donations, not per-second streams; a new
+  section, "Your own state machine", with a starting-points row for auctions, queues and order books; an invariant
+  about a created thing is phrased over every path that creates it. `doctrine/FUZZ-ACTIONS.md`: the entry points grouped
+  by the end state they reach, the new token switch, and three actors - a stranger naming a victim in each address
+  argument, the one who changes the share base between two accruals and claims after, cancel and pause between every
+  pair of transitions. `doctrine/SEVERITY.md`: a firm's "critical" is this scale's high with `difficulty` low; the
+  scale stays four levels. The dossier: the Start here page gets a `when` row and a `findings` row
+  (`nH / nM / nL / nI, fixed x, accepted y, open z`); a new section 4b, the findings index - every finding with its
+  severity, status, fixing commit, regression test and target; the scale on section 4's header, with the "critical"
+  mapping and `severity` and `difficulty` kept apart; "not a guarantee" in its first lines; each file in scope reviewed
+  whole or as a diff against a named commit; and the fix-review addendum in section 10b. **Tokens in and out, by model,
+  in the dossier.** The ROUND line's cost field takes `<n> in`, `<n> out` and `<n> cached` beside the total
+  (`scripts/round.sh --tokens-in --tokens-out --tokens-cached`; the old `<n> tokens` form stays valid and every old line
+  reads back, its JSON gaining `tokens_in`, `tokens_out`, `tokens_cached`, null when not given); the dossier's Start-here
+  page gets a `cost` row and section 7 a totals block by the model that ran, with the orchestrator's own spend outside
+  any round beside it, each part `not measured` when the harness showed none; README "Honest costs" says so in one
+  clause. `HostileERC20.setRevertOnZero(w, on)`: a transfer of zero from or to `w` reverts (`ZeroTransferRefused`) - the
+  interview listed the behaviour and the kit had no switch for it; its test was seen red on a mutant that ignores the
+  switch, and the interview's question 8 now says which behaviours have a switch and that rebasing is modelled only as
+  a balance that lies when read. A path-parity test on the `InRangeDonateHook` example
+  (`test_path_parity_every_way_the_set_in_range_changes_pays_the_pot_first`): the set of liquidity in range changes by a
+  swap, an add or a remove, and each pays the pot first - seen red on a mutant that drops that step from the remove
+  path; the class 30 sub-bullet names it. `doctrine/NEXT.md` row 9b's skeleton keeps section 4b honest with the others (the generated dossier skill follows); `QUICKSTART.md`'s root-kit count on forge-std v1.9.3 re-measured (108). Selftest 2244 -> 2248 cases; root battery 107 -> 108 tests; v4 battery
+  288 -> 289.
+
+- **Known gaps on main (v0.5.5), open:** class 38 and the sub-bullets on classes 27, 28 and 37 are exercised by no file
+  in the kit (30's is, by the path-parity test, on one example and one end state - a state change; no shipped example has a
+  creation path of its own, so that shape is exercised by no file); the dossier's section 4b totals are
+  not checked against the status line by any script; rebasing has no real switch, and the approve-race and
+  codeless-address token cases are not modelled; no script sums the ROUND lines or checks the dossier's section 7 totals
+  against them; `round.sh` does not check that in + out (+ cached) agrees with `tokens` - a harness's total may or may
+  not include cache reads; the orchestrator's spend outside any round is a hand-read of the harness, not a record the kit
+  can verify.
+
 ## v0.5.4 - 2026-11-03 - the owner present
 
 - **v0.5.4 - the owner present.** Closes the five Known gaps of v0.5.3: `blackbox: skipped_by_owner` refused beside a

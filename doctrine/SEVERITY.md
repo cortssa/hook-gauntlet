@@ -51,7 +51,10 @@ finished - get it to MUTATION-TESTED, or write the argument and call it REASONED
 **On vocabularies.** Audit firms do not share one scale: some publish impact x likelihood matrices, some two prose
 scales, one says "Major" where another says "High", and contest platforms pay only for high and medium. Keeping
 impact (`severity`) and `difficulty` as separate fields is what lets an auditor paste a finding into their own tracker
-without translating it. Do not merge them into one word.
+without translating it. Do not merge them into one word. Many firms rate a level above high, "critical": on this scale
+that is a **high** whose `difficulty` is low (little or nothing stands in the attacker's way; the field has no
+"none") - written so an auditor can translate, and shown to the reader in the dossier's section 4. The scale stays
+four levels: a fifth label would reopen the argument this file exists to close.
 
 ## Two further rules
 

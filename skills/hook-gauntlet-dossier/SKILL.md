@@ -26,7 +26,7 @@ Everything else is in `{{KIT}}/AGENTS.md` and in the files this skill names. Thi
 
 From `{{KIT}}/doctrine/NEXT.md`, the rows this skill owns and what each says to do:
 
-- **Row 9b** - write the dossier skeleton anyway: each open finding listed by id in section 4 with status `open - owner triage pending`, sections 0, 4, 5, 6, 7, 8, 9 honest; then set `dossier: skeleton (K open, N judges not done)` and `waiting_on_owner: triage of <ids>` in `STATE.md` (row 3 now holds the table), STOP and wait. Nothing moves to promotion *(why: a dossier with open findings is a status report, not a handoff)*
+- **Row 9b** - write the dossier skeleton anyway: each open finding listed by id in section 4 with status `open - owner triage pending`, sections 0, 4, 4b, 5, 6, 7, 8, 9 honest; then set `dossier: skeleton (K open, N judges not done)` and `waiting_on_owner: triage of <ids>` in `STATE.md` (row 3 now holds the table), STOP and wait. Nothing moves to promotion *(why: a dossier with open findings is a status report, not a handoff)*
 - **Row 18** - the handoff dossier (phase 8). **STOP. This is the end of the route.** *(why: the next step is human)*
 - **Row 18b** - the handoff dossier (phase 8), with promotion and rehearsal (phases 6-7, rows 16-17: phases, not judges) counted in the status line's `skipped` and written in section 8 as "not done: light mode" or "not done: the owner's decision in writing", and section 9 saying what promotion would have added. **STOP.** *(why: the next step is human)*
 

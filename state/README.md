@@ -330,7 +330,10 @@ top of the `LOG.md` entry that closes a round, in a fixed shape so that `grep '^
 
 ```
 ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate fail | 230k tokens, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7
+ROUND r05 | phase 4 | regression | vendor-a/large | bench .gauntlet/bench/a05 | 2026-03-09..2026-03-12 | 0H 1M 4L 7I reasoned 0 | gate fail | 180k in, 12k out, 3M cached, 95 min, 41 files read, 6 tests written | reports/r05.md | conf 0.7
 ```
+
+The second line is the same round, its tokens written apart (v0.5.5); either form is valid.
 
 Fields, in order: id · phase · type (`interview`, `spec`, `battery`, `discovery`, `regression`, `black-box`, `verifier`,
 `executor`, `promotion`, `rehearsal`, `handoff`, `simulation`, `threat-model` - the independent list of
@@ -339,7 +342,11 @@ the file it wrote) · model, as specific as you can be - the model REQUESTED: a 
 CLASSIFIED THEM, with REASONED high/medium counted apart (the `reasoned` count is the report's; `round.sh` checks the line's form, not the count against the report) · did the gate pass (discovery and regression: the phase-4 gate, zero high and zero medium open - open when the line is written: a finding this round classified is open until the owner triages it (`NEXT.md` row 9), so `gate pass` above `0H 0M` is honest only when each of those findings is a rediscovery of one already closed - fixed, refused in writing, accepted with a number, handed by name; a closing discovery round reads no list of accepted findings - named in the entry's body; `round.sh` checks one thing (v0.5.4): with no earlier ROUND line that classified a high or a medium, nothing was there to be closed, and `gate pass` above `0H 0M` is refused - write `gate fail`; after that it does not check the count. A threat the owner refused in phase 3 (row 4b) is not a closed finding: the finding is the evidence the refusal did not have, and row 9 reads it; black-box: no divergence left; verifier: every claim held - a verifier report with one FALSE claim writes `gate fail`; an interview, spec or battery line: that phase's gate in `AGENTS.md` §3; an interview played from the owner's files with the read-back pending: `gate pass (read-back pending)` - a real state, not a pass with a footnote: the owner was absent, every question has an answer or an explicit "undecided" from their files, and nobody has yet read the scope and the non-goals back to them; the route continues, the pending item is in `waiting_on_owner` (`read-back of scope`), nothing in phases 6-8 closes without it (`briefs/owner-interview.md`), and the dossier says so in section 8; the same for a SPEC written with the owner absent - phase 1's gate also waits on the owner's read (`AGENTS.md` §3): `gate pass (read-back pending)`, `waiting_on_owner: read-back of the spec`. `scripts/round.sh` writes it for `--type interview` and `--type spec` only, and refuses any other wording) · cost AND effort (tokens, wall-clock,
 files read, tests written; leave out what you cannot measure, never guess - an orchestration harness does not always
 return a subagent's usage, and then the field says `cost not measured`, what `scripts/round.sh` writes when no cost
-field is given) · the report (its own file, `reports/<id>.md`, sealed by `round.sh`; never `DECISIONS.md`, `LOG.md` or
+field is given). The tokens come in four parts, each optional: `<n> tokens`, the total as the harness reports it;
+`<n> in`, input tokens not served from cache - what the harness calls input, cache writes included; `<n> out`, output
+tokens; `<n> cached`, cache reads (each a whole number, or with `k` or `M`). They are priced apart, which is why they
+are written apart; a harness that shows only a total gives only `tokens`. Nothing adds them up or compares them with the
+total: a harness's total may or may not count cache reads · the report (its own file, `reports/<id>.md`, sealed by `round.sh`; never `DECISIONS.md`, `LOG.md` or
 `STATE.md`, any spelling of its case - v0.5.4: refused, an append-only file's seal stops verifying at its next entry) · and, optionally,
 `conf` - the raw_confidence, 0 to 1: what the round's author would bet on its own verdict. Unused by any policy today;
 it is there so that one day a verdict can be weighed against how often its author was right. The effort fields exist for one
@@ -359,6 +366,7 @@ with the script, from named arguments; it checks each one and refuses (exit 2, n
 scripts/round.sh .gauntlet/LOG.md --id r05 --phase 4 --type regression --model "vendor-a/large" --bench .gauntlet/bench/a05 \
   --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate fail \
   --tokens 230k --minutes 95 --files-read 41 --tests-written 6 --report reports/r05.md --conf 0.7
+#   or, the tokens apart: ... --tokens-in 180k --tokens-out 12k --tokens-cached 3M --minutes 95 ...
 scripts/round.sh --json .gauntlet/LOG.md      # the history, one JSON object per ROUND line
 ```
 

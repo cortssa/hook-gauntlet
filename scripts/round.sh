@@ -13,7 +13,8 @@
 #
 # Usage:   scripts/round.sh <LOG.md> --id r05 --phase 4 --type regression --model "vendor-a/large" --bench .gauntlet/bench/a05 \
 #            --dates 2026-03-09..2026-03-12 --high 0 --medium 1 --low 4 --info 7 --reasoned 0 --gate fail \
-#            [--tokens 230k] [--minutes 95] [--files-read 41] [--tests-written 6] --report reports/r05.md [--conf 0.7]
+#            [--tokens 230k] [--tokens-in 180k] [--tokens-out 12k] [--tokens-cached 3M] [--minutes 95] [--files-read 41] \
+#            [--tests-written 6] --report reports/r05.md [--conf 0.7]
 #          scripts/round.sh --json <LOG.md>      one JSON object per ROUND line, in file order, on stdout
 # Args:    --id          the round's id: letters, digits, . _ - (r05, v2, bb1); refused if LOG.md already has it
 #          --phase       0 to 8 (doctrine/NEXT.md)
@@ -38,6 +39,11 @@
 #                        read-back of scope` / `read-back of the spec`)
 #          --tokens (a whole number, or with k / M: 230k), --minutes, --files-read, --tests-written: the cost and the
 #                        effort. OPTIONAL, because what you cannot measure you leave out - never guess it
+#          --tokens-in, --tokens-out, --tokens-cached (v0.5.5; each checked as --tokens, each OPTIONAL, beside the total
+#                        or without it): input tokens not served from cache - what the harness calls input, cache writes
+#                        included; output tokens; cache reads. They are priced apart, so they are written apart; nothing
+#                        here adds them up or compares them with --tokens (a harness's total may or may not count cache
+#                        reads). Written in this order: tokens, in, out, cached, min, files read, tests written
 #          --conf        OPTIONAL raw_confidence, 0 to 1: what the round's author would bet on its own verdict. Recorded;
 #                        no policy reads it today
 #          --dry-run     print the line, write nothing
@@ -92,25 +98,29 @@ if [ "${1:-}" = "--json" ]; then
       if (f[8] !~ /^gate (pass|fail|pass \(read-back pending\))$/) { bad("gate"); next }
       if (f[8] == "gate pass (read-back pending)" && f[3] != "interview" && f[3] != "spec") { bad("gate: read-back pending is an interview'"'"'s or a spec'"'"'s only"); next }
       gate = substr(f[8], 6)
-      c = f[9]; t = ""; mi = ""; fr = ""; tw = ""
+      c = f[9]; t = ""; ti = ""; to = ""; tc = ""; mi = ""; fr = ""; tw = ""; cbad = 0
       if (c != "cost not measured") {
         m = split(c, parts, /, /)
         for (j = 1; j <= m; j++) {
           p = parts[j]
           if (p ~ /^[0-9]+[kM]? tokens$/) { sub(/ tokens$/, "", p); t = p }
+          else if (p ~ /^[0-9]+[kM]? in$/) { sub(/ in$/, "", p); ti = p }
+          else if (p ~ /^[0-9]+[kM]? out$/) { sub(/ out$/, "", p); to = p }
+          else if (p ~ /^[0-9]+[kM]? cached$/) { sub(/ cached$/, "", p); tc = p }
           else if (p ~ /^[0-9]+ min$/) { sub(/ min$/, "", p); mi = p }
           else if (p ~ /^[0-9]+ files read$/) { sub(/ files read$/, "", p); fr = p }
           else if (p ~ /^[0-9]+ tests written$/) { sub(/ tests written$/, "", p); tw = p }
-          else { t = "?"; break }
+          else { cbad = 1; break }
         }
-        if (t == "?") { bad("cost"); next }
+        if (cbad) { bad("cost"); next }
       }
       report = f[10]
       conf = "null"
       if (n == 11) { if (f[11] !~ /^conf (0(\.[0-9]+)?|1(\.0+)?)$/) { bad("conf"); next } conf = substr(f[11], 6) }
       printf "{\"id\":%s,\"phase\":%d,\"type\":%s,\"model\":%s,\"bench\":%s,\"dates\":{\"start\":%s,\"end\":%s},", esc(id), phase, esc(f[3]), esc(model), esc(bench), esc(d0), esc(d1)
       printf "\"findings\":{\"high\":%d,\"medium\":%d,\"low\":%d,\"info\":%d,\"reasoned_high_medium\":%d},\"gate\":%s,", H, M, L, I, g[6], esc(gate)
-      printf "\"cost\":{\"tokens\":%s,\"minutes\":%s,\"files_read\":%s,\"tests_written\":%s},\"report\":%s,\"raw_confidence\":%s}\n", tok(t), num(mi), num(fr), num(tw), esc(report), conf
+      printf "\"cost\":{\"tokens\":%s,\"tokens_in\":%s,\"tokens_out\":%s,\"tokens_cached\":%s,", tok(t), tok(ti), tok(to), tok(tc)
+      printf "\"minutes\":%s,\"files_read\":%s,\"tests_written\":%s},\"report\":%s,\"raw_confidence\":%s}\n", num(mi), num(fr), num(tw), esc(report), conf
     }
     END { exit nbad ? 1 : 0 }
   ' "$2"
@@ -123,17 +133,18 @@ case "$LOG" in "" | --*) refuse "the first argument is the LOG.md to append to (
 [ -f "$LOG" ] || refuse "$LOG does not exist. The state convention installs LOG.md first (state/README.md); this script does not create it."
 
 id="" phase="" type="" model="" bench="" dates="" high="" medium="" low="" info="" reasoned="" gate=""
-tokens="" minutes="" files_read="" tests_written="" report="" conf="" dry=0
+tokens="" tokens_in="" tokens_out="" tokens_cached="" minutes="" files_read="" tests_written="" report="" conf="" dry=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) dry=1; shift; continue ;;
     --id | --phase | --type | --model | --bench | --dates | --high | --medium | --low | --info | --reasoned | --gate | \
-      --tokens | --minutes | --files-read | --tests-written | --report | --conf)
+      --tokens | --tokens-in | --tokens-out | --tokens-cached | --minutes | --files-read | --tests-written | --report | --conf)
       [ $# -ge 2 ] || refuse "$1 has no value."
       case "$1" in
         --id) id="$2" ;; --phase) phase="$2" ;; --type) type="$2" ;; --model) model="$2" ;; --bench) bench="$2" ;;
         --dates) dates="$2" ;; --high) high="$2" ;; --medium) medium="$2" ;; --low) low="$2" ;; --info) info="$2" ;;
         --reasoned) reasoned="$2" ;; --gate) gate="$2" ;; --tokens) tokens="$2" ;; --minutes) minutes="$2" ;;
+        --tokens-in) tokens_in="$2" ;; --tokens-out) tokens_out="$2" ;; --tokens-cached) tokens_cached="$2" ;;
         --files-read) files_read="$2" ;; --tests-written) tests_written="$2" ;; --report) report="$2" ;; --conf) conf="$2" ;;
       esac
       shift 2 ;;
@@ -195,7 +206,10 @@ case "$(basename -- "$report" | tr '[:upper:]' '[:lower:]')" in
   state.md)
     refuse "REFUSED - $(basename -- "$report") is the route's state, rewritten as the route moves, and is never a round's report: write the report as its own file (reports/<id>.md) and seal that." ;;
 esac
-if [ -n "$tokens" ]; then printf '%s' "$tokens" | grep -Eq '^[0-9]+[kM]?$' || refuse "--tokens is a whole number, optionally with k or M (got '$tokens')."; fi
+for pair in "tokens:$tokens" "tokens-in:$tokens_in" "tokens-out:$tokens_out" "tokens-cached:$tokens_cached"; do
+  [ -z "${pair#*:}" ] || printf '%s' "${pair#*:}" | grep -Eq '^[0-9]+[kM]?$' \
+    || refuse "--${pair%%:*} is a whole number, optionally with k or M (got '${pair#*:}')."
+done
 for pair in "minutes:$minutes" "files-read:$files_read" "tests-written:$tests_written"; do
   [ -z "${pair#*:}" ] || is_count "${pair#*:}" || refuse "--${pair%%:*} is a whole number when given (got '${pair#*:}')."
 done
@@ -220,7 +234,9 @@ fi
 
 cost=""
 add() { cost="${cost:+$cost, }$1"; }
-[ -n "$tokens" ] && add "$tokens tokens"; [ -n "$minutes" ] && add "$minutes min"
+[ -n "$tokens" ] && add "$tokens tokens"; [ -n "$tokens_in" ] && add "$tokens_in in"
+[ -n "$tokens_out" ] && add "$tokens_out out"; [ -n "$tokens_cached" ] && add "$tokens_cached cached"
+[ -n "$minutes" ] && add "$minutes min"
 [ -n "$files_read" ] && add "$files_read files read"; [ -n "$tests_written" ] && add "$tests_written tests written"
 [ -n "$cost" ] || cost="cost not measured"
 line="ROUND $id | phase $phase | $type | $model | bench $bench | $dates | ${high}H ${medium}M ${low}L ${info}I reasoned $reasoned | gate $gate | $cost | $report${conf:+ | conf $conf}"

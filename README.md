@@ -39,9 +39,9 @@ scripts/battery.sh foundry-kit   # build + tests + sizes + stale-build check on 
 Done looks like this, on forge 1.8.1 (CI also runs 1.8.3):
 
 ```
-SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 2244 cases, about 600 s
-test      rc=0   (passed 107, failed 0, skipped 0; filter: none)  ...  BATTERY PASSED           # the root kit
-test      rc=0   (passed 288, failed 0, skipped 0; filter: no_match_path = "test/{fork,backtest}/**" (the project's foundry.toml))  suites test=13 test/examples=13 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
+SELFTEST PASSED: every guard went red exactly where it was supposed to.      # 2248 cases, about 600 s
+test      rc=0   (passed 108, failed 0, skipped 0; filter: none)  ...  BATTERY PASSED           # the root kit
+test      rc=0   (passed 289, failed 0, skipped 0; filter: no_match_path = "test/{fork,backtest}/**" (the project's foundry.toml))  suites test=13 test/examples=13 test/sim=15  BATTERY PASSED   # the v4 module, after QUICKSTART step 3
 ```
 
 The v4 module on a mainnet fork is two commands more and needs your own endpoint: `FOUNDRY_PROFILE=fork V4_MANAGER=fork
@@ -262,7 +262,9 @@ Compute is the real cost. Two modes:
 an hour per round on a 440-line hook, so a light-mode run (a ceiling of 4) is on the order of a million tokens of round
 traffic, once, n = 1, before the orchestrator's own reading. We did not meter the project this was distilled from, and a kit whose first rule is
 "measure, do not infer" is not going to dress that up as a price list. The ROUND line of each `LOG.md` entry records the real cost of each of
-your rounds. One whole walk was measured too, in the next paragraph.
+your rounds, with input, output and cache-read tokens apart when the harness shows them - they are priced apart - and
+the dossier's section 7 sums them by model, with the orchestrator's own spend beside, or says `not measured`. One
+whole walk was measured too, in the next paragraph.
 
 **What a walk costs**, measured once (2026-10-06, n = 1): one fresh agent (Opus 5.5) with one subagent, on the v0.4.2
 kit, took a small hook with four planted defects from phase 0 through one adversarial round to the dossier skeleton in
@@ -286,7 +288,8 @@ The long fuzz campaign is the other cost, and it is CPU time, not model spend: e
   detect a blind spot that every model you use shares.
 - **Agent tooling ages fast.** The adapters will rot before the doctrine does. The core is deliberately plain
   Markdown and plain bash so that it outlives them.
-- **v4 hooks only.** The method generalises; this version does not. Widening it means replacing the Foundry kit.
+- **v4 hooks only** - a hook and the contracts shipped with it that create or configure its pools; not the protocol
+  around it. The method generalises; this version does not. Widening it means replacing the Foundry kit.
 
 ## Prior art
 

@@ -19,7 +19,7 @@ published guides; the dossier's author should cite the ones they checked against
 # {{PROJECT}} {{REVISION}} - dossier for security review
 
 **Commit / manifest:** {{COMMIT}} · `{{MANIFEST}}` (sha256 of every file in scope, and of the build configuration)
-**Not deployed. No human security review yet.** Prepared with AI agents under the owner's direction; every claim carries its
+**Not deployed. No human security review yet. Not a guarantee:** this dossier records what was tried and what was not (section 10b says the same of a review). Prepared with AI agents under the owner's direction; every claim carries its
 evidence label (`doctrine/EVIDENCE.md`); MUTATION-TESTED means a test seen red on a deliberately broken version of the code; PROPERTY-TESTED means the claim survived generated sequences over a stated domain, with the success and reach censuses attached; MODEL-TESTED means the contract agrees with an independently written reference model over generated inputs; PROVED means a proof, within its stated bounds; TESTED means a test that passes and has not been seen red - work in progress, not evidence; REASONED means an argument, not a test.
 **Not done: {{N_NOT_DONE}} of the {{N_ROWS}} judges in section 6, {{N_SKIPPED}} steps skipped with the owner's agreement · ceiling_reached: {{yes/no}} · skeleton: {{K}} findings open** -
 the status line: the one line every flag in `doctrine/NEXT.md` points at. `N_ROWS` is the number of rows section 6 has
@@ -44,9 +44,12 @@ one page: the PDF starts section 0 on the next.
 | | |
 |---|---|
 | commit and scope | {{COMMIT}} · in scope: {{FILES_SLOC}} · out of scope: {{OUT_OF_SCOPE}} (section 1) |
+| when | {{FIRST_DATE}} to {{LAST_DATE}} - the first and the last date of the ROUND lines (section 7) |
+| cost | {{COST}} - the whole route: tokens in / out / cached and wall-clock, summed from the ROUND lines by the model that ran, plus the orchestrator's own spend outside any round; every part the harness did not show says "not measured" (section 7) |
 | what the hook does | {{WHAT_IT_DOES}} - one or two sentences (section 2) |
 | what it holds | {{WHAT_IT_HOLDS}} - the tokens, balances or rights it keeps between calls, and who can move them; "nothing" if nothing (sections 2, 3) |
 | the spec | section 2, from `SPEC.md`: the promises, the hostile-actor table, the invariants with their evidence labels, the trust assumptions |
+| findings | {{nH}}H / {{nM}}M / {{nL}}L / {{nI}}I, fixed {{x}}, accepted {{y}}, open {{z}} - section 4b's totals; `open` is high + medium + low, the status line's K |
 | known and accepted issues | {{ACCEPTED}} - by id, each with who accepted it; "none" if none (section 4) |
 | main findings already fixed (at most three) | {{FIXED}} - by id and severity, each with its regression test, seen red (sections 4 and 7) |
 | what was NOT checked | {{NOT_CHECKED_TOP}} - the top items of section 9; the full list is there |
@@ -64,7 +67,8 @@ lib/hook-gauntlet/scripts/doctor.sh   # what this machine lacks, with the comman
 {{EXEC_SUMMARY}}
 
 Two to four sentences, before the reader hits a table: what the hook does, the round count and model families spent
-on it, the headline finding if there was one, and the one sentence the reader most needs before section 1 - whether
+on it, and the token total of section 7 (or that it was not measured), the headline finding if there was one, and
+the one sentence the reader most needs before section 1 - whether
 anything here is still moving. No word a paid auditor would have to walk back later - none of the words `AGENTS.md` section 1
 lists, not even negated (the list, the reason and the phrase to use instead are there) - point at the evidence label (`doctrine/EVIDENCE.md`). The same holds for the Start here page. Write it last, after every other section
 exists: it is the only section with no file to assemble from. Three honest sentences beat four padded ones.
@@ -74,8 +78,8 @@ exists: it is the only section with no file to assemble from. Three honest sente
 | | |
 |---|---|
 | the exact commit (or tree hash) this dossier and the review are scoped to | {{COMMIT}} |
-| files in scope, with lines of code each | {{FILES_SLOC}} |
-| out of scope, and why | {{OUT_OF_SCOPE}} |
+| files in scope, with lines of code each, and for each: reviewed whole, or as a diff against <commit> (the route reads whole files; a fix review reads diffs - section 10b) | {{FILES_SLOC}} |
+| out of scope, and why - a launcher, factory, locker or periphery contract shipped with the hook that creates or configures its pools, positions, orders or tokens is in the files in scope; leaving one out is an owner decision, written here with its reason | {{OUT_OF_SCOPE}} |
 | compiler, EVM version, optimizer, `via_ir` | {{BUILD}} |
 | runtime size and margin to the target chain's code-size limit (24,576 bytes on Ethereum, EIP-170), per contract; initcode size and margin to the initcode limit (49,152 on Ethereum, EIP-3860) | {{SIZES}} |
 | pool admission: which pools may use this hook, who may create one, what the hook does with a `PoolKey` and `hookData` it has never seen (in v4 anyone can initialise a pool pointing at a hook unless `beforeInitialize` refuses) | {{POOL_ADMISSION}} |
@@ -127,8 +131,22 @@ that other software will trust.
 
 ## 4. Known issues and accepted trade-offs (must)
 
-Every finding that was accepted rather than fixed: what an attacker achieves, who loses how much, what it costs them,
-why it was not fixed, and who accepted it. -> `SPEC.md` section 6. Refusals with their reasons -> `DECISIONS.md`.
+The scale every finding here and in section 4b is rated on (`doctrine/SEVERITY.md`), anchored to who loses:
+
+- **high** - an attacker takes funds that are not theirs, or permanently denies the contract to honest users, or bricks
+  state that cannot be recovered; third parties pay.
+- **medium** - a participant is denied service or loses value in a case the spec claims is handled; or an owner or
+  operator action can cause either; or a documented trade-off is measurably worse than the document says.
+- **low** - real and reproducible, and bounded to the party that caused it (a hostile asset or counterparty, its own
+  market or position); or handled correctly but not said.
+- **informational** - naming, documentation, gas, ergonomics, a test that asserts less than its name claims.
+
+A firm's "critical" is this scale's high with `difficulty` low. `severity` (the impact) and `difficulty` (how hard it
+is to make it happen) are separate fields of every finding, never merged into one word.
+
+Every finding of the route, fixed or not, is one row of section 4b; this section is the accepted and the open ones, with
+their reasons. Every finding that was accepted rather than fixed: what an attacker achieves, who loses how much, what
+it costs them, why it was not fixed, and who accepted it. -> `SPEC.md` section 6. Refusals with their reasons -> `DECISIONS.md`.
 Every finding carries a status: `accepted` (with the owner's line), `fixed` (with the regression test), or
 `open - owner triage pending`. Its description may also carry `known upstream: <ref> | not found, checked <date>`
 (`doctrine/LESSONS.md` 15: the upstream tracker, the audit reports and the hook's own issues searched before "new" is
@@ -148,6 +166,20 @@ did not allow (Slither never installed, or the install declined: `not done: stat
 phases, not judges: skipping them - light mode's default, or the owner's decision in writing in full mode (`doctrine/NEXT.md` row 18b) - goes in the status line's `skipped` count and in section 8, not in `N`.
 Phase-3 `pending` findings are listed in section 4 as open. It is a status report for the owner, not a handoff; nothing below it moves to promotion.
 An auditor judges new findings against this list; leaving something out of it is how a known issue becomes a "critical".
+
+## 4b. Findings index (must)
+
+Every finding of the route, one row each, whatever became of it - the fixed ones too, which section 4 does not list:
+
+| id | severity | status (fixed / accepted / open) | fixed by (the commit, when fixed) | regression test, seen red | target `file:line` |
+|---|---|---|---|---|---|
+| {{ID}} | {{SEVERITY}} | {{STATUS}} | {{COMMIT}} | {{TEST}} | {{TARGET}} |
+
+Totals, by severity x status: `{{nH}}H / {{nM}}M / {{nL}}L / {{nI}}I, fixed {{x}}, accepted {{y}}, open {{z}}` - the
+Start here page's `findings` row, the same numbers. `open` counts high + medium + low, so it equals the status line's K;
+an informational finding still open is a row here and is not in it. `target` is the finding's own field
+(`doctrine/SEVERITY.md`, "Shape of a finding"). No script checks these totals against the rows or against the status
+line: count them by hand, last, with the Start here page.
 
 ## 5. Candidates raised and refuted (must)
 
@@ -214,6 +246,12 @@ The ROUND lines of `LOG.md` (`grep '^ROUND '`), one per round: id, kind (audit /
 changed because of it. Every report in full, in the repository. Say which model families were used; if only one, say
 that a blind spot shared by that family is invisible in everything above.
 
+**What it cost.** One line per model that ran (the right side of `->` when the ROUND line has one): rounds, tokens in,
+out, cached, minutes, summed by hand from `scripts/round.sh --json <LOG.md>`; then one line for the orchestrator's own
+spend outside any round - read from the harness at the end of the route, `not measured` when it shows none; then the
+route's total. A part no ROUND line measured is `not measured` in the sum, never a zero, and the line says how many
+rounds measured it. No script checks these sums against the lines.
+
 ## 8. Where we diverged from the usual process (must)
 
 Every divergence recorded under `AGENTS.md` section 6b: which question, what was done instead, why. Here too: a black-box
@@ -267,6 +305,22 @@ finding (fixed / acknowledged / disputed, with the reason); **one commit per fix
 changelog between the commit the auditors reviewed and the fixed one; and the re-run of section 6 on the fixed code. Findings come
 back marked resolved, partially resolved or acknowledged - "acknowledged" is public, and it is the owner's name on it.
 Reports also carry a disclaimer that the review is not a guarantee; neither is this dossier.
+
+**The fix-review addendum.** When the fixes come back, the owner adds this block here, in this file - not a new file,
+and not a phase: the route still ends at the handoff.
+
+| | |
+|---|---|
+| reviewed commit -> fixed commit | {{REVIEWED_COMMIT}} -> {{FIXED_COMMIT}} |
+| the changelog between them | {{CHANGELOG}} |
+| re-run of section 6 on the fixed code | {{RERUN}} - where its output is, inside the project |
+
+| finding | answer (fixed / partially fixed / acknowledged / disputed, with the reason) | fixing commit | regression test, seen red |
+|---|---|---|---|
+| {{ID}} | {{ANSWER}} | {{COMMIT}} | {{TEST}} |
+
+Each fixed finding's row in section 4b gets the same commit and test; the scope sheet says which files the fix review
+read as a diff against the reviewed commit.
 
 Separately from the code: key management, who can pause or upgrade, monitoring, an incident plan and a disclosure
 channel are not measured by anything in this kit. Say where they stand, or say "nothing yet".
