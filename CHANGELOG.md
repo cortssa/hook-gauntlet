@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (v0.5.5)
+## v0.5.5 - 2026-11-03 - what the market finds
 
 - **v0.5.5 - what the market finds.** Doctrine and the dossier's template, from a read of public audit reports of v4
   hooks and the launchers around them; no new route step, `STATE.md` flag, record file or heading form. The scope: a
