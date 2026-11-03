@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (v0.5.4)
+## v0.5.4 - 2026-11-03 - the owner present
 
 - **v0.5.4 - the owner present.** Closes the five Known gaps of v0.5.3: `blackbox: skipped_by_owner` refused beside a
   black-box round; the walker's signature line leaves at the owner's re-record; `--by` refuses any name containing
